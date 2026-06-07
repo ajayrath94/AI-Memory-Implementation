@@ -1,6 +1,16 @@
-node_modules/
-dist/
-.env
-.env.local
+# Python
+__pycache__/
+*.pyc
+*.pyo
+backend/.env
+backend/venv/
+backend/.venv/
+
+# Node / Expo
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+
+# General
 .DS_Store
 *.log

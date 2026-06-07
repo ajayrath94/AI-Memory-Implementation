@@ -1,54 +1,123 @@
-# AI Memory Implementation
+# AI Memory App
 
-A multi-engine AI chat with a three-layered vector memory system based on pillar classification and cosine similarity.
+Multi-engine AI chat with three-layered vector memory, pillar classification, voice + text interface.
 
-## Architecture
-
+## Stack
 ```
-Voice / Text Interface
-        ↓
-   AI Engine (Sonnet / Haiku / Opus)
-        ↓
-  Pillar Classifier  →  Core · Emotion · Functional · Modifiers → 3×3 Matrix
-        ↓
-  ┌─────────────────────────────────────┐
-  │         Memory System               │
-  │  Cache → Recall (STM/LTM) → Decay  │
-  └─────────────────────────────────────┘
-        ↓
-  Pillar Vector Store (cosine similarity + correlation tracking)
+📱 React Native (Expo)   →  mobile/
+🐍 FastAPI (Python)      →  backend/
 ```
 
-## Memory Layers
+---
 
-| Layer | File | Formula | Decay Rate |
-|---|---|---|---|
-| Cache | `memory/cache/CacheMemory.js` | `M(x,t) = (1-α)·M(x,t-1) + α·I(x,t)` | λ=1.0 (minutes) |
-| Recall STM | `memory/recall/RecallMemory.js` | `cos(I(t), M_c) > θ` | λ=0.1 (hours) |
-| Recall LTM | `memory/recall/RecallMemory.js` | cosine similarity retrieval | λ=0.01 (days) |
-| Decay | `memory/decay/DecayMemory.js` | `M(x,t) = M(x,t₀)·e^(-λ(t-t₀))` | tier-specific |
-
-## Pillar System
-
-**Core Pillars:** FINANCE · ASPIRATIONS · CAREER_GOAL · HEALTH_WELLNESS · ENTERTAINMENT · GENERAL
-
-**Emotion Pillars:** OPTIMISM · JOY · FEAR · SADNESS · ANGER · STRESS · NEUTRAL
-
-**Functional Pillars:** PLAN · SEARCH · ORDER · TRACK · NUDGE · CHAT
-
-**Modifiers:** QUANTITY · SPECIFICITY · FORMAT · LOCATION · EXCLUSION · URGENCY · CONDITION · PREFERENCE · TEMPORAL · COMPARISON
-
-## Getting Started
+## Setup — Backend (Python)
 
 ```bash
-npm install
-cp .env.example .env.local
-# Add your VITE_ANTHROPIC_API_KEY to .env.local
-npm run dev
+cd backend
+
+# 1. Create virtual environment
+python -m venv venv
+source venv/bin/activate        # Mac/Linux
+# venv\Scripts\activate         # Windows
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Add your API keys
+cp .env.example .env
+# Open .env and fill in ANTHROPIC_API_KEY (minimum required)
+
+# 4. Run the server
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## Phase 2 (after MVP)
-- [ ] Replace `textToVector` with Anthropic Embeddings API
-- [ ] Connect LTM store to Supabase / Postgres
-- [ ] Add user auth (memories scoped per user)
-- [ ] Add memory debug panel (visualize active slots + decay state)
+Test it's working: open http://localhost:8000 in your browser — should show `{"status": "AI Memory API running"}`
+
+---
+
+## Setup — Mobile (React Native + Expo)
+
+```bash
+cd mobile
+
+# 1. Install dependencies
+npm install
+
+# 2. Set your backend IP
+# Open constants/index.ts
+# If testing on a real iPhone, change API_BASE from localhost to your Mac's IP:
+#   Run: ifconfig | grep "inet " | grep -v 127
+#   e.g. API_BASE = 'http://192.168.1.10:8000'
+
+# 3. Start Expo
+npx expo start
+```
+
+Then:
+- **iPhone**: Install Expo Go from App Store → scan QR code
+- **Simulator**: Press `i` in terminal
+
+---
+
+## Running both together
+
+```bash
+# Terminal 1 — Backend
+cd backend && source venv/bin/activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Terminal 2 — Mobile
+cd mobile && npx expo start
+```
+
+---
+
+## Project Structure
+
+```
+AI-Memory-Implementation/
+├── backend/
+│   ├── main.py                          ← FastAPI app
+│   ├── requirements.txt
+│   ├── .env.example                     ← Copy to .env
+│   ├── classifier/
+│   │   └── pillar_classifier.py         ← Core/Emotion/Functional/Modifiers
+│   ├── memory/
+│   │   ├── cache/cache_memory.py        ← M(x,t) vector field, α-blend
+│   │   ├── recall/recall_memory.py      ← Cosine similarity, STM/LTM
+│   │   └── decay/decay_memory.py        ← λ decay, void threshold
+│   ├── store/
+│   │   └── pillar_vector_store.py       ← Cross-pillar correlation tracking
+│   ├── engine/
+│   │   └── engine_router.py             ← Claude / GPT / Gemini switcher
+│   └── routes/
+│       ├── chat.py                      ← POST /chat/
+│       └── memory.py                    ← GET /memory/cache, /stm, /ltm, etc.
+│
+└── mobile/
+    ├── app.json                         ← Expo config
+    ├── package.json
+    ├── app/
+    │   ├── _layout.tsx                  ← Root layout
+    │   └── index.tsx                    ← Main chat screen
+    ├── components/
+    │   ├── chat/
+    │   │   ├── MessageBubble.tsx
+    │   │   ├── ChatInput.tsx            ← Voice + text input bar
+    │   │   └── ModelPicker.tsx          ← Model switcher sheet
+    │   └── memory/
+    │       └── PillarBadge.tsx          ← Shows active pillars
+    ├── hooks/
+    │   ├── useChat.ts                   ← Send message logic
+    │   └── useVoice.ts                  ← Voice recognition
+    ├── services/api.ts                  ← All API calls to backend
+    ├── store/appStore.ts                ← Zustand global state
+    └── constants/index.ts              ← Colors, models, API_BASE
+```
+
+---
+
+## Phase 2 Roadmap
+- [ ] Real embeddings (Anthropic Embeddings API)
+- [ ] Supabase for persistent LTM across sessions
+- [ ] User auth — memories scoped per user
+- [ ] Memory debug screen — visualize slots + decay
