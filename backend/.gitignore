@@ -1,9 +1,16 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.env
-venv/
-.venv/
-*.egg-info/
-dist/
+backend/.env
+backend/venv/
+backend/.venv/
+
+# Node / Expo
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+
+# General
 .DS_Store
+*.log
