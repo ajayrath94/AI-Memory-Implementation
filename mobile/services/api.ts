@@ -7,49 +7,36 @@ export interface Message {
 
 export interface ChatResponse {
   reply:       string
-  classified:  { core: string; emotion: string; functional: string; modifiers: string[] }
+  session_id:  string
+  message_id:  string
+  classified:  {
+    core:          string
+    emotion:       string
+    functional:    string
+    modifiers:     string[]
+    core_score:    number
+    keyword_count: number
+  }
   memory_used: boolean
+  model:       string
 }
-
-export interface MemoryState {
-  slots:   any[]
-  entropy: { cache: number; stm: number; ltm: number }
-  pillars: { dominant: any[]; correlations: any }
-}
-
-// ── Chat ───────────────────────────────────────────────────────────────────────
 
 export async function sendMessage(
-  text:    string,
-  model:   string,
-  history: Message[]
+  text:       string,
+  model:      string,
+  session_id: string | null,
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/chat/`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ text, model, history }),
+    body:    JSON.stringify({ text, model, session_id }),
   })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`API error: ${res.status} - ${err}`)
+  }
   return res.json()
 }
-
-// ── Memory state ───────────────────────────────────────────────────────────────
-
-export async function fetchMemoryState(): Promise<MemoryState> {
-  const [cacheRes, entropyRes, pillarsRes] = await Promise.all([
-    fetch(`${API_BASE}/memory/cache`),
-    fetch(`${API_BASE}/memory/entropy`),
-    fetch(`${API_BASE}/memory/pillars`),
-  ])
-  const [cache, entropy, pillars] = await Promise.all([
-    cacheRes.json(),
-    entropyRes.json(),
-    pillarsRes.json(),
-  ])
-  return { slots: cache.slots, entropy, pillars }
-}
-
-// ── Health check ───────────────────────────────────────────────────────────────
 
 export async function checkBackend(): Promise<boolean> {
   try {

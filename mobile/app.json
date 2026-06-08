@@ -18,11 +18,14 @@
     },
     "android": {
       "package": "com.aimemory.app",
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-router",
-      "expo-av"
+      "expo-av",
+      "expo-speech-recognition"
     ]
   }
 }
