@@ -58,7 +58,7 @@ export default function ChatScreen() {
       <FlatList
         ref={listRef}
         data={messages}
-        keyExtractor={m => m.id}
+        keyExtractor={(m, i) => m.id || String(i)}
         renderItem={({ item }) => <MessageBubble message={item} />}
         contentContainerStyle={styles.list}
         ListEmptyComponent={

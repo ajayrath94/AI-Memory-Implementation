@@ -26,16 +26,30 @@ export async function sendMessage(
   model:      string,
   session_id: string | null,
 ): Promise<ChatResponse> {
-  const res = await fetch(`${API_BASE}/chat/`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ text, model, session_id }),
-  })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`API error: ${res.status} - ${err}`)
+  // 60 second timeout — Supabase + AI can be slow
+  const controller = new AbortController()
+  const timeoutId  = setTimeout(() => controller.abort(), 60000)
+
+  try {
+    const res = await fetch(`${API_BASE}/chat/`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ text, model, session_id }),
+      signal:  controller.signal,
+    })
+    clearTimeout(timeoutId)
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`API error: ${res.status} - ${err}`)
+    }
+    return res.json()
+  } catch (err: any) {
+    clearTimeout(timeoutId)
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out after 60 seconds')
+    }
+    throw err
   }
-  return res.json()
 }
 
 export async function checkBackend(): Promise<boolean> {
