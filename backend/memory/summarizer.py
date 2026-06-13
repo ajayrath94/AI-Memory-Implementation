@@ -1,0 +1,174 @@
+"""
+RECURSIVE SUMMARIZER
+The core of the cross-session memory system.
+
+Flow:
+  Session ends
+       ↓
+  Summarize session messages → session.summary
+       ↓
+  Load existing user_memory.summary
+       ↓
+  Recursively summarize: new = summarize(old + session)
+       ↓
+  Save back to user_memory
+       ↓
+  Next session starts → inject user_memory into Cache
+
+The summary compounds with every session.
+Gets smarter and richer over time.
+"""
+
+import os
+from typing import Optional, List
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+# ── Core summarizer ────────────────────────────────────────────────────────────
+
+def _call_haiku(prompt: str, max_tokens: int = 500) -> str:
+    """Use Claude Haiku for fast, cheap summarization."""
+    import anthropic
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=max_tokens,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.content[0].text.strip()
+
+
+# ── Session summarizer ─────────────────────────────────────────────────────────
+
+def summarize_session(messages: List[dict]) -> str:
+    """
+    Summarize a single session's messages into a concise summary.
+    Extracts: topics discussed, emotions, key facts, user preferences.
+    """
+    if not messages:
+        return ""
+
+    # Format messages for summarization
+    conversation = "\n".join(
+        f"{m['role'].upper()}: {m['content'][:300]}"  # truncate long messages
+        for m in messages
+        if not m.get("is_summary", False)
+    )
+
+    if len(conversation) < 50:
+        return ""
+
+    prompt = f"""Summarize this conversation concisely. Focus on:
+- What the user talked about or asked for
+- Any personal details mentioned (health, family, preferences, feelings)
+- Key topics and interests revealed
+- Emotional tone
+
+Keep it to 3-5 sentences. Write in third person about the user.
+
+Conversation:
+{conversation}
+
+Summary:"""
+
+    try:
+        return _call_haiku(prompt, max_tokens=300)
+    except Exception as e:
+        print(f"[Summarizer] Session summary failed: {e}")
+        # Fallback: simple extraction
+        words = conversation.split()
+        return f"Session covered: {' '.join(words[:50])}..."
+
+
+# ── Key facts extractor ────────────────────────────────────────────────────────
+
+def extract_key_facts(summary: str) -> List[str]:
+    """
+    Extract discrete key facts from a summary.
+    These become permanent anchors in the user's identity.
+    """
+    if not summary:
+        return []
+
+    prompt = f"""Extract 3-7 specific, concrete facts from this summary.
+Each fact should be a short phrase (5-10 words max).
+Focus on: health conditions, family members, preferences, hobbies, locations.
+Return ONLY the facts, one per line, no bullets or numbering.
+
+Summary:
+{summary}
+
+Facts:"""
+
+    try:
+        result = _call_haiku(prompt, max_tokens=200)
+        facts = [f.strip() for f in result.split("\n") if f.strip()]
+        return facts[:7]
+    except Exception:
+        return []
+
+
+# ── Recursive memory updater ───────────────────────────────────────────────────
+
+def recursive_summarize(existing_memory: Optional[str],
+                        new_session_summary: str,
+                        session_count: int) -> str:
+    """
+    Recursively combine existing memory with new session summary.
+
+    existing_memory: what we know about this user so far
+    new_session_summary: what happened in the latest session
+    session_count: how many sessions total
+
+    Returns: updated, enriched memory summary
+    """
+    if not new_session_summary:
+        return existing_memory or ""
+
+    if not existing_memory:
+        # First session — just use session summary
+        return new_session_summary
+
+    # Recursive combination
+    prompt = f"""You are maintaining a growing memory profile of a person across multiple conversations.
+
+EXISTING MEMORY (from {session_count - 1} previous sessions):
+{existing_memory}
+
+NEW SESSION SUMMARY:
+{new_session_summary}
+
+Update the memory profile by:
+1. Keeping all important existing facts
+2. Adding new information from the latest session
+3. Updating any facts that have changed
+4. Noting patterns (e.g. "mentions knee pain frequently")
+5. Removing outdated or contradicted information
+
+Write a comprehensive but concise profile (5-8 sentences max).
+Write in third person. Be specific with names, preferences, and details.
+
+Updated memory profile:"""
+
+    try:
+        return _call_haiku(prompt, max_tokens=400)
+    except Exception as e:
+        print(f"[Summarizer] Recursive summary failed: {e}")
+        # Fallback: append new to existing
+        return f"{existing_memory}\n\nLatest session: {new_session_summary}"
+
+
+# ── Dominant pillars extractor ─────────────────────────────────────────────────
+
+def extract_dominant_pillars(messages: List[dict]) -> List[str]:
+    """Find the most common pillar tags across all messages."""
+    pillar_counts = {}
+    for msg in messages:
+        for field in ["pillar_core", "pillar_emotion", "pillar_functional"]:
+            val = msg.get(field, "")
+            if val and val not in ("GENERAL", "NEUTRAL", "CHAT"):
+                pillar_counts[val] = pillar_counts.get(val, 0) + 1
+
+    return sorted(pillar_counts, key=pillar_counts.get, reverse=True)[:5]
