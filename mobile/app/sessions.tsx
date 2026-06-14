@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import {
   View, Text, FlatList, StyleSheet,
   SafeAreaView, TouchableOpacity, ActivityIndicator, RefreshControl
@@ -7,7 +7,7 @@ import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { Colors, API_BASE } from '../constants'
 import { useAppStore } from '../store/appStore'
-import { useRouter } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 
 interface Session {
   id:         string
@@ -29,8 +29,8 @@ const PILLAR_COLORS: Record<string, string> = {
 }
 
 export default function SessionsScreen() {
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [loading,  setLoading]  = useState(true)
+  const [sessions,   setSessions]   = useState<Session[]>([])
+  const [loading,    setLoading]    = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const { setSessionId } = useAppStore()
   const router = useRouter()
@@ -48,7 +48,19 @@ export default function SessionsScreen() {
     }
   }
 
-  useEffect(() => { fetchSessions() }, [])
+  // Auto-refresh every 10 seconds
+  useEffect(() => {
+    fetchSessions()
+    const interval = setInterval(fetchSessions, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Refresh when tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchSessions()
+    }, [])
+  )
 
   const onRefresh = () => {
     setRefreshing(true)
@@ -65,10 +77,14 @@ export default function SessionsScreen() {
     const now  = new Date()
     const diff = now.getTime() - date.getTime()
     const days = Math.floor(diff / 86400000)
+    const mins = Math.floor(diff / 60000)
+    const hrs  = Math.floor(diff / 3600000)
 
-    if (days === 0) return 'Today'
+    if (mins < 1)   return 'Just now'
+    if (mins < 60)  return `${mins}m ago`
+    if (hrs < 24)   return `${hrs}h ago`
     if (days === 1) return 'Yesterday'
-    if (days < 7)  return `${days} days ago`
+    if (days < 7)   return `${days} days ago`
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 
@@ -99,7 +115,6 @@ export default function SessionsScreen() {
         onPress={() => openSession(item)}
         activeOpacity={0.7}
       >
-        {/* Header row */}
         <View style={styles.cardHeader}>
           <View style={[styles.pillarBadge,
             { backgroundColor: PILLAR_COLORS[pillar] || PILLAR_COLORS.GENERAL }]}>
@@ -111,23 +126,21 @@ export default function SessionsScreen() {
           </View>
         </View>
 
-        {/* Title */}
         <Text style={styles.cardTitle} numberOfLines={1}>
           {titleText}
         </Text>
 
-        {/* Summary */}
         {item.summary ? (
           <Text style={styles.cardSummary} numberOfLines={3}>
             {item.summary}
           </Text>
         ) : (
-          <Text style={styles.cardNoSummary}>
-            No summary yet
-          </Text>
+          <View style={styles.noSummaryRow}>
+            <ActivityIndicator size="small" color={Colors.textHint} />
+            <Text style={styles.cardNoSummary}>Summarizing...</Text>
+          </View>
         )}
 
-        {/* Footer */}
         <View style={styles.cardFooter}>
           <Ionicons name="arrow-forward" size={14} color={Colors.textHint} />
         </View>
@@ -150,7 +163,6 @@ export default function SessionsScreen() {
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
 
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Sessions</Text>
         <TouchableOpacity onPress={onRefresh}>
@@ -158,7 +170,6 @@ export default function SessionsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Sessions list */}
       <FlatList
         data={sessions}
         keyExtractor={s => s.id}
@@ -184,7 +195,7 @@ export default function SessionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:         { flex: 1, backgroundColor: Colors.bg },
+  safe:   { flex: 1, backgroundColor: Colors.bg },
   header: {
     flexDirection:    'row',
     alignItems:       'center',
@@ -215,45 +226,23 @@ const styles = StyleSheet.create({
     paddingVertical:   3,
   },
   pillarText:   { color: Colors.textMuted, fontSize: 10, fontWeight: '600' },
-  cardMeta: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           8,
-  },
+  cardMeta:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
   modelText:    { color: Colors.textMuted, fontSize: 11 },
   dateText:     { color: Colors.textHint,  fontSize: 11 },
-  cardTitle: {
-    color:      Colors.text,
-    fontSize:   15,
-    fontWeight: '600',
-  },
-  cardSummary: {
-    color:      Colors.textMuted,
-    fontSize:   13,
-    lineHeight: 18,
-  },
-  cardNoSummary: {
-    color:      Colors.textHint,
-    fontSize:   12,
-    fontStyle:  'italic',
-  },
-  cardFooter: {
-    alignItems: 'flex-end',
-    marginTop:  4,
-  },
+  cardTitle:    { color: Colors.text, fontSize: 15, fontWeight: '600' },
+  cardSummary:  { color: Colors.textMuted, fontSize: 13, lineHeight: 18 },
+  noSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardNoSummary: { color: Colors.textHint, fontSize: 12, fontStyle: 'italic' },
+  cardFooter:   { alignItems: 'flex-end', marginTop: 4 },
   center: {
-    flex:           1,
-    alignItems:     'center',
-    justifyContent: 'center',
-    gap:            12,
+    flex: 1, alignItems: 'center',
+    justifyContent: 'center', gap: 12,
   },
-  loadingText:  { color: Colors.textMuted, fontSize: 14 },
+  loadingText: { color: Colors.textMuted, fontSize: 14 },
   empty: {
-    alignItems:     'center',
-    justifyContent: 'center',
-    paddingTop:     100,
-    gap:            10,
+    alignItems: 'center', justifyContent: 'center',
+    paddingTop: 100, gap: 10,
   },
-  emptyText:    { color: Colors.textMuted, fontSize: 16 },
-  emptyHint:    { color: Colors.textHint,  fontSize: 13 },
+  emptyText:  { color: Colors.textMuted, fontSize: 16 },
+  emptyHint:  { color: Colors.textHint,  fontSize: 13 },
 })

@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react'
 import {
-  View, FlatList, Text, StyleSheet, SafeAreaView, TouchableOpacity
+  View, FlatList, Text, StyleSheet,
+  SafeAreaView, TouchableOpacity, AppState
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
@@ -12,15 +13,39 @@ import { ChatInput } from '../components/chat/ChatInput'
 import { ModelPicker } from '../components/chat/ModelPicker'
 
 export default function ChatScreen() {
-  const { messages, loading, lastMeta, memoryUsed, sessionId, clearChat } = useAppStore()
-  const { send } = useChat()
-  const listRef = useRef<FlatList>(null)
+  const { messages, loading, lastMeta, memoryUsed, sessionId } = useAppStore()
+  const { send, clearAndSummarize } = useChat()
+  const listRef   = useRef<FlatList>(null)
+  const appState  = useRef(AppState.currentState)
 
+  // Auto-scroll to bottom
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
     }
   }, [messages])
+
+  // Auto-summarize when app goes to background
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/active/) &&
+        nextAppState.match(/inactive|background/)
+      ) {
+        // App going to background → summarize current session
+        if (sessionId) {
+          console.log('[App] Going to background, summarizing session...')
+          fetch(`http://localhost:8000/chat/end-session`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ session_id: sessionId, user_id: 'default' }),
+          }).catch(console.log)
+        }
+      }
+      appState.current = nextAppState
+    })
+    return () => subscription.remove()
+  }, [sessionId])
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -38,8 +63,11 @@ export default function ChatScreen() {
         </View>
         <View style={styles.headerRight}>
           <ModelPicker />
-          <TouchableOpacity onPress={clearChat} style={styles.clearBtn}>
-            <Ionicons name="trash-outline" size={18} color={Colors.textMuted} />
+          <TouchableOpacity
+            onPress={clearAndSummarize}
+            style={styles.clearBtn}
+          >
+            <Ionicons name="add-circle-outline" size={22} color={Colors.textMuted} />
           </TouchableOpacity>
         </View>
       </View>
@@ -82,27 +110,35 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:         { flex: 1, backgroundColor: Colors.bg },
+  safe:   { flex: 1, backgroundColor: Colors.bg },
   header: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    flexDirection:    'row',
+    alignItems:       'center',
+    justifyContent:   'space-between',
+    paddingHorizontal: 16,
+    paddingVertical:   12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
   headerTitle:  { color: Colors.text, fontSize: 17, fontWeight: '600' },
   sessionId:    { color: Colors.textHint, fontSize: 10, marginTop: 2 },
   headerRight:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
   clearBtn:     { padding: 4 },
   contextBar: {
-    paddingHorizontal: 16, paddingVertical: 5,
-    backgroundColor: '#111', borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingHorizontal: 16,
+    paddingVertical:    5,
+    backgroundColor:   '#111',
+    borderBottomWidth:  1,
+    borderBottomColor:  Colors.border,
   },
   contextText:  { color: Colors.textMuted, fontSize: 11 },
   list:         { paddingVertical: 12, flexGrow: 1 },
   empty: {
-    flex: 1, alignItems: 'center',
-    justifyContent: 'center', paddingTop: 120, gap: 8,
+    flex:           1,
+    alignItems:     'center',
+    justifyContent: 'center',
+    paddingTop:     120,
+    gap:            8,
   },
   emptyIcon:    { fontSize: 40 },
   emptyText:    { color: Colors.textMuted, fontSize: 16 },
