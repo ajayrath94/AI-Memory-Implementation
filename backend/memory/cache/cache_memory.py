@@ -1,13 +1,14 @@
 """
 CACHE MEMORY — Hot Cache Layer
-Implements the vector field M(x,t) from the paper.
+Implements f = w + b with dynamic learning rate.
 
-Update rule:  M(x,t) = (1-α)·M(x,t-1) + α·I(x,t)
-Decay:        M(x,t) = M(x,t₀)·e^(-λ(t-t₀))
-λ_cache = 1.0 (minutes scale)
-ε = 0.05 (void threshold)
+f = w + b
+w = existing memory strength
+b = lr × new_input_strength
+lr = base_lr × time_factor × density_factor
 
-On void: slot moves to Recall Store (not deleted).
+Decay: M(x,t) = M(x,t₀)·e^(-λ(t-t₀))
+Void threshold ε = 0.05 → slot moves to STM
 """
 
 import math
@@ -16,9 +17,9 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from classifier.pillar_classifier import ClassifiedInput
 
-ALPHA          = 0.4
-LAMBDA_CACHE   = 1.0
 VOID_THRESHOLD = 0.05
+LAMBDA_CACHE   = 1.0   # per minute
+
 
 @dataclass
 class CacheSlot:
@@ -33,36 +34,59 @@ class CacheSlot:
     functional:   str   = ""
     session_id:   str   = ""
     model:        str   = ""
+    lr_used:      float = 0.4   # track what lr was used
 
-# Hot cache vector field
+
 _cache: Dict[str, CacheSlot] = {}
-
-# Archive of voided slots (moved to recall, not deleted)
 _voided_archive: List[CacheSlot] = []
 
 
 def _update_slot(key: str, value: str, pillar: str,
                  session_id: str = "", model: str = "",
-                 core: str = "", emotion: str = "", functional: str = ""):
+                 core: str = "", emotion: str = "",
+                 functional: str = "", session_count: int = 1):
+    """
+    f = w + b  where b = lr × new_input_strength
+    """
+    from memory.learning_rate import update_memory, dynamic_lr
+
     existing = _cache.get(key)
+
     if existing is None:
-        _cache[key] = CacheSlot(key=key, value=value, strength=1.0,
-                                 timestamp=time.time(), pillar=pillar,
-                                 session_id=session_id, model=model,
-                                 core=core, emotion=emotion, functional=functional)
+        # New slot — initialize with full strength
+        lr = dynamic_lr("cache", time.time(), session_count)
+        _cache[key] = CacheSlot(
+            key=key, value=value, strength=lr,
+            timestamp=time.time(), pillar=pillar,
+            session_id=session_id, model=model,
+            core=core, emotion=emotion, functional=functional,
+            lr_used=lr,
+        )
         return
 
-    # α-blend: M(x,t) = (1-α)·M(x,t-1) + α·I(x,t)
-    blended = (1 - ALPHA) * existing.strength + ALPHA * 1.0
-    _cache[key] = CacheSlot(key=key, value=value, strength=blended,
-                             timestamp=time.time(), pillar=pillar,
-                             access_count=existing.access_count + 1,
-                             session_id=session_id, model=model,
-                             core=core, emotion=emotion, functional=functional)
+    # f = w + b (dynamic learning rate)
+    new_strength = update_memory(
+        w=existing.strength,
+        new_input_strength=1.0,
+        tier="cache",
+        timestamp=existing.timestamp,
+        session_count=session_count,
+    )
+    lr_used = dynamic_lr("cache", existing.timestamp, session_count)
+
+    _cache[key] = CacheSlot(
+        key=key, value=value, strength=new_strength,
+        timestamp=time.time(), pillar=pillar,
+        access_count=existing.access_count + 1,
+        session_id=session_id, model=model,
+        core=core, emotion=emotion, functional=functional,
+        lr_used=lr_used,
+    )
 
 
-def update_cache(classified: ClassifiedInput, session_id: str = "", model: str = ""):
-    kwargs = dict(session_id=session_id, model=model,
+def update_cache(classified: ClassifiedInput, session_id: str = "",
+                 model: str = "", session_count: int = 1):
+    kwargs = dict(session_id=session_id, model=model, session_count=session_count,
                   core=classified.core, emotion=classified.emotion,
                   functional=classified.functional)
     _update_slot("core",       classified.core,       "CORE",       **kwargs)
@@ -74,7 +98,7 @@ def update_cache(classified: ClassifiedInput, session_id: str = "", model: str =
 
 
 def apply_decay() -> List[CacheSlot]:
-    """Apply decay. Returns voided slots for promotion to recall."""
+    """Exponential decay. Returns voided slots for promotion to STM."""
     now    = time.time()
     voided = []
     for key, slot in list(_cache.items()):
@@ -94,11 +118,14 @@ def get_cache() -> Dict[str, CacheSlot]:
 
 
 def get_active_slots(top_k: int = 10) -> List[dict]:
-    slots = [{"key": s.key, "value": s.value, "strength": s.strength,
-               "pillar": s.pillar, "timestamp": s.timestamp,
-               "access_count": s.access_count, "core": s.core,
-               "emotion": s.emotion, "functional": s.functional}
-             for s in _cache.values()]
+    slots = [
+        {"key": s.key, "value": s.value, "strength": s.strength,
+         "pillar": s.pillar, "timestamp": s.timestamp,
+         "access_count": s.access_count, "core": s.core,
+         "emotion": s.emotion, "functional": s.functional,
+         "lr_used": s.lr_used}
+        for s in _cache.values()
+    ]
     return sorted(slots, key=lambda x: x["strength"], reverse=True)[:top_k]
 
 

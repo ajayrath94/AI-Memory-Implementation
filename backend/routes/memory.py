@@ -45,3 +45,9 @@ def trigger_summarize(user_id: str, session_id: str):
     """Manually trigger session summarization."""
     process_session_end(session_id, user_id)
     return {"status": "ok", "user_id": user_id, "session_id": session_id}
+
+@router.get("/learning-rate/{session_count}")
+def learning_rate_info(session_count: int):
+    """See current learning rates for a given session count."""
+    from memory.learning_rate import learning_rate_report
+    return learning_rate_report(session_count)
