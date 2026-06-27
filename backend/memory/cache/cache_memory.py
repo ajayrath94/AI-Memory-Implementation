@@ -59,8 +59,17 @@ def _update_slot(key: str, value: str, pillar: str,
     """
     f = w + b  where b = lr × new_input_strength
     Scoped to session_id to prevent cross-user bleed.
+
+    Update rules:
+      - New slot:       initialize with dynamic_lr strength
+      - Same value:     reinforcement_update (strengthens toward 1.0)
+      - Different value on CORE/EMOTION: contradiction_update (weakens gently)
+      - Different value on FUNCTIONAL/RAW: normal update_memory
     """
-    from memory.learning_rate import update_memory, dynamic_lr
+    from memory.learning_rate import (
+        update_memory, dynamic_lr,
+        contradiction_update, reinforcement_update,
+    )
 
     cache_key = _make_key(session_id, key)
     existing  = _cache.get(cache_key)
@@ -76,14 +85,39 @@ def _update_slot(key: str, value: str, pillar: str,
         )
         return
 
-    new_strength = update_memory(
-        w=existing.strength,
-        new_input_strength=1.0,
-        tier="cache",
-        timestamp=existing.timestamp,
-        session_count=session_count,
-    )
     lr_used = dynamic_lr("cache", existing.timestamp, session_count)
+
+    # Same value repeated → reinforce
+    if existing.value == value:
+        new_strength = reinforcement_update(
+            w=existing.strength,
+            tier="cache",
+            timestamp=existing.timestamp,
+            session_count=session_count,
+        )
+        update_type = "reinforce"
+
+    # Different value on identity pillars (CORE/EMOTION) → contradiction
+    elif pillar in ("CORE", "EMOTION"):
+        new_strength = contradiction_update(
+            w=existing.strength,
+            contradiction_strength=1.0,
+            tier="cache",
+            timestamp=existing.timestamp,
+            session_count=session_count,
+        )
+        update_type = "contradict"
+
+    # Different value on FUNCTIONAL/RAW → normal update
+    else:
+        new_strength = update_memory(
+            w=existing.strength,
+            new_input_strength=1.0,
+            tier="cache",
+            timestamp=existing.timestamp,
+            session_count=session_count,
+        )
+        update_type = "update"
 
     _cache[cache_key] = CacheSlot(
         key=key, value=value, strength=new_strength,

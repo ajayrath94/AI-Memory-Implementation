@@ -1,28 +1,22 @@
 """
-DECAY MEMORY — System-wide decay orchestrator
-M(x,t) = M(x,t₀)·e^(-λₓ(t-t₀))
+DECAY MEMORY — Cache decay orchestrator
+M(x,t) = M(x,t₀)·e^(-λ(t-t₀))
 
-Decay hierarchy:
-  λ_cache = 1.0  (minutes)
-  λ_stm   = 0.1  (hours)
-  λ_ltm   = 0.01 (days)
+Only the cache tier is decayed here. STM/LTM decay is not needed
+because both live in Supabase and are managed by strength scores
+on recall — they don't need a periodic tick.
 
-Void flow (per paper):
-  Cache void → demote to STM
-  STM void   → demote to LTM
-  LTM void   → archive (never truly deleted)
+Cache decay constants:
+  λ_cache = 1.0  (per minute) — slots die in ~3 min if not refreshed
 
-System entropy S(t) = Σ(1 - e^(-λᵢ(t-t₀)))
+FIX: Removed calls to apply_stm_decay() and apply_ltm_decay() from
+     the old in-process recall_memory.py — those were no-ops that
+     operated on Python lists never used by the AI.
 """
 
 import math
 import time
-from typing import Optional
 from memory.cache.cache_memory import apply_decay as apply_cache_decay, get_cache
-from memory.recall.recall_memory import (
-    apply_stm_decay, apply_ltm_decay,
-    demote_from_cache, get_stm, get_ltm
-)
 
 DECAY_RATES    = {"cache": 1.0, "stm": 0.1, "ltm": 0.01}
 VOID_THRESHOLD = 0.05
@@ -31,28 +25,19 @@ _last_run: float = time.time()
 
 def track_decay():
     """
-    Full decay tick — called once per user turn.
-    Cache → STM demotion → STM → LTM demotion.
+    Cache decay tick — called once per user turn.
+    Voided cache slots are handled by _compress_cache_to_stm in engine_router.
     """
     global _last_run
     _last_run = time.time()
-
-    # 1. Cache decay — voided slots get demoted to STM
-    voided_slots = apply_cache_decay(session_id="")
-    if voided_slots:
-        demote_from_cache(voided_slots)
-
-    # 2. STM decay — weak entries get demoted to LTM
-    apply_stm_decay()
-
-    # 3. LTM decay — truly expired entries archived
-    apply_ltm_decay()
+    apply_cache_decay(session_id="")
 
 
 def system_entropy() -> dict:
     """
     S(t) = Σ(1 - e^(-λᵢ(t-t₀)))
-    High = lots of decayed memory. Low = fresh memory.
+    Reports entropy for the cache tier (the only active in-process tier).
+    STM/LTM entropy is tracked via Supabase strength scores.
     """
     now = time.time()
 
@@ -68,7 +53,7 @@ def system_entropy() -> dict:
     cache_entries = list(get_cache().values())
     return {
         "cache":    _entropy(cache_entries, "cache", 60),
-        "stm":      _entropy(get_stm(),     "stm",   3600),
-        "ltm":      _entropy(get_ltm(),     "ltm",   86400),
+        "stm":      "managed by Supabase",
+        "ltm":      "managed by Supabase",
         "last_run": _last_run,
     }
