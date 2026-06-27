@@ -167,7 +167,7 @@ def build_memory_context(input_text: str,
 
 def compress_to_recall(session_id: str = "", model: str = "",
                        session_count: int = 1):
-    slots = get_active_slots()
+    slots = get_active_slots(session_id=session_id)
     meaningful = [s for s in slots if s["strength"] > 0.3 and s["pillar"] != "RAW"]
     if not meaningful:
         return

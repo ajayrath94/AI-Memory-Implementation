@@ -38,7 +38,7 @@ def track_decay():
     _last_run = time.time()
 
     # 1. Cache decay — voided slots get demoted to STM
-    voided_slots = apply_cache_decay()
+    voided_slots = apply_cache_decay(session_id="")
     if voided_slots:
         demote_from_cache(voided_slots)
 
