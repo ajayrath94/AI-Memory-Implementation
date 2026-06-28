@@ -9,7 +9,7 @@ import os
 app = FastAPI(title="AI Memory API", version="3.0.0")
 
 # CORS — restrict to your app's origin in production
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+ALLOWED_ORIGINS = ["*"]
 
 app.add_middleware(
     CORSMiddleware,

@@ -51,3 +51,19 @@ def learning_rate_info(session_count: int):
     """See current learning rates for a given session count."""
     from memory.learning_rate import learning_rate_report
     return learning_rate_report(session_count)
+
+@router.get("/stm/user/{user_id}")
+def stm_by_user(user_id: str):
+    """Get all STM clusters for a user across all sessions."""
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        result = db.table("stm_clusters")\
+            .select("*, sessions!inner(user_id)")\
+            .eq("sessions.user_id", user_id)\
+            .order("timestamp", desc=True)\
+            .limit(20)\
+            .execute()
+        return {"entries": result.data or []}
+    except Exception as e:
+        return {"entries": [], "error": str(e)}

@@ -1,15 +1,13 @@
 """
 API Key Authentication
 All endpoints require a valid X-API-Key header.
+OPTIONS requests (CORS preflight) are always allowed through.
 Keys are defined in .env as a comma-separated list:
   API_KEYS=key1,key2,key3
-
-Generate a key:
-  python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 """
 
 import os
-from fastapi import Security, HTTPException, status
+from fastapi import Security, HTTPException, status, Request
 from fastapi.security.api_key import APIKeyHeader
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -19,12 +17,18 @@ def _get_valid_keys() -> set:
     return {k.strip() for k in raw.split(",") if k.strip()}
 
 
-async def require_api_key(api_key: str = Security(_api_key_header)) -> str:
+async def require_api_key(
+    request: Request,
+    api_key: str = Security(_api_key_header)
+) -> str:
+    # Always allow CORS preflight
+    if request.method == "OPTIONS":
+        return "preflight"
+
     valid_keys = _get_valid_keys()
 
     if not valid_keys:
-        # No keys configured — allow in dev mode but warn loudly
-        print("⚠️  WARNING: No API_KEYS set in .env — endpoint is unprotected!")
+        print("WARNING: No API_KEYS set in .env — endpoint is unprotected!")
         return "dev-mode"
 
     if not api_key or api_key not in valid_keys:

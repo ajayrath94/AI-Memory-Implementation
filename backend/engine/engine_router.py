@@ -12,7 +12,7 @@ Memory complete - full embedding pipeline:
 
 import os
 import threading
-from typing import Optional, List
+from typing import Optional, List, Dict
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -291,23 +291,17 @@ Use this to shape your response — ask about the right things, not generic ques
 
     # ── Urgency handling ──────────────────────────────────────────────────────
     if "URGENCY" in classified.modifiers:
-        nancy_persona += """
-🚨 URGENT REQUEST: Respond immediately and practically. No pleasantries first.
-"""
+        nancy_persona += "\nURGENT REQUEST: Respond immediately and practically. No pleasantries first.\n"
     if "TEMPORAL" in classified.modifiers:
-        nancy_persona += "⏰ TIME-SENSITIVE: The person is referencing a specific time. Acknowledge it.
-"
+        nancy_persona += "TIME-SENSITIVE: The person is referencing a specific time. Acknowledge it.\n"
     if "LOCATION" in classified.modifiers:
-        nancy_persona += "📍 LOCATION-SPECIFIC: They need local information. Ask which city/area if not clear.
-"
+        nancy_persona += "LOCATION-SPECIFIC: They need local information. Ask which city/area if not clear.\n"
 
     # ── API triggers ──────────────────────────────────────────────────────────
     if classified.api_triggers:
         top_trigger = list(classified.api_triggers.keys())[0]
         score       = list(classified.api_triggers.values())[0]
-        nancy_persona += f"
-🔔 DETECTED ACTION: {top_trigger} (confidence: {round(score*100)}%) — offer to help with this specifically.
-"
+        nancy_persona += f"\nDETECTED ACTION: {top_trigger} (confidence: {round(score*100)}%) — offer to help with this specifically.\n"
 
     return nancy_persona
 
