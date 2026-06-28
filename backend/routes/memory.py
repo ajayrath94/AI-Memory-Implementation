@@ -52,18 +52,16 @@ def learning_rate_info(session_count: int):
     from memory.learning_rate import learning_rate_report
     return learning_rate_report(session_count)
 
-@router.get("/stm/user/{user_id}")
-def stm_by_user(user_id: str):
-    """Get all STM clusters for a user across all sessions."""
-    try:
-        from supabase_store import get_client
-        db = get_client()
-        result = db.table("stm_clusters")\
-            .select("*, sessions!inner(user_id)")\
-            .eq("sessions.user_id", user_id)\
-            .order("timestamp", desc=True)\
-            .limit(20)\
-            .execute()
-        return {"entries": result.data or []}
-    except Exception as e:
-        return {"entries": [], "error": str(e)}
+
+@router.get("/profile/{user_id}")
+def user_profile(user_id: str = "default"):
+    """Get the full profile for a user."""
+    from memory.profile_store import get_user_profile
+    return get_user_profile(user_id) or {}
+
+@router.post("/profile/{user_id}")
+def update_profile(user_id: str, data: dict):
+    """Manually update a user profile field."""
+    from memory.profile_store import save_user_profile
+    save_user_profile(user_id, data)
+    return {"status": "ok"}

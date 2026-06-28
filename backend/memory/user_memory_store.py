@@ -444,6 +444,13 @@ def process_session_end(session_id: str, user_id: str = "default"):
     except Exception as e:
         print(f"[Forgetting] Failed: {e}")
 
+    # 15. Update user profile
+    try:
+        from memory.profile_store import update_profile_from_session
+        update_profile_from_session(session_id, user_id)
+    except Exception as e:
+        print(f"[Profile] Failed: {e}")
+
     print(f"[UserMemory] Updated for {user_id} — session {new_count}")
     print(f"[UserMemory] Pillars: {dominant_pillars}")
     print(f"[UserMemory] Alerts: {fingerprint.get('alerts', [])}")

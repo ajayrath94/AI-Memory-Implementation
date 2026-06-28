@@ -7,11 +7,17 @@ from memory.user_memory_store import process_session_end
 
 router = APIRouter()
 
+class ProactiveContext(BaseModel):
+    last_seen_hours: float = 0.0
+    opened_app:      bool  = True
+    hour:            Optional[int] = None
+
 class ChatRequest(BaseModel):
     text:       str
-    model:      str = "claude-sonnet-4-20250514"
+    model:      str = "claude-haiku-4-5"
     session_id: Optional[str] = None
     user_id:    str = "default"
+    context:    Optional[ProactiveContext] = None
 
 class EndSessionRequest(BaseModel):
     session_id: str
@@ -19,8 +25,27 @@ class EndSessionRequest(BaseModel):
 
 @router.post("/")
 async def chat(req: ChatRequest):
+    text = req.text
+
+    # If text is empty + context provided → Nancy opens proactively
+    if not text.strip() and req.context:
+        from memory.schedule_engine import generate_proactive_script, should_nancy_open
+        opens = should_nancy_open(
+            req.user_id,
+            req.context.last_seen_hours,
+            req.context.opened_app,
+        )
+        if opens:
+            result = generate_proactive_script(
+                req.user_id,
+                hour = req.context.hour,
+            )
+            text = result.get("script", "")
+            if not text:
+                text = "Namaste! Kaise ho aap?"
+
     return await process_input(
-        text=req.text,
+        text=text,
         model=req.model,
         session_id=req.session_id,
         user_id=req.user_id,

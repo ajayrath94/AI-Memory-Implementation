@@ -12,7 +12,7 @@ Memory complete - full embedding pipeline:
 
 import os
 import threading
-from typing import Optional, List
+from typing import Optional, List, Dict, Tuple
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -206,7 +206,8 @@ def _compress_cache_to_stm(session_id: str, query_embedding: List[float]):
 # ── Nancy system prompt ────────────────────────────────────────────────────────
 
 def _build_system_prompt(classified, user_memory: Optional[str],
-                          session_memory: Optional[str]) -> str:
+                          session_memory: Optional[str],
+                          user_id: str = "") -> str:
     """Nancy — warm, chatty, memory-aware Indian companion."""
 
     nancy_persona = """You are Nancy, a warm and chatty AI companion who genuinely cares about the person you're talking to.
@@ -234,6 +235,16 @@ CONVERSATION STYLE:
 - If it's morning: "Good morning! Chai pi li?"
 - If cricket is on: "Match dekh rahe ho? 🏏"
 - Always end with a question to keep conversation going\n"""
+
+    # Inject personal profile (who they are)
+    try:
+        from memory.profile_store import build_profile_prompt
+        profile_prompt = build_profile_prompt(user_id)
+    except Exception:
+        profile_prompt = None
+
+    if profile_prompt:
+        nancy_persona += f"\n{profile_prompt}\n"
 
     if user_memory:
         nancy_persona += f"\nWHAT YOU KNOW ABOUT THIS PERSON:\n{user_memory}\n"
@@ -444,6 +455,13 @@ async def process_input(text: str, model: str,
     update_cache(classified, session_id=sid, model=model)
     register_pillars(classified, session_id=sid, model=model)
     track_decay()
+
+    # 7b. Enrich user profile from this message (pillar-driven, no extra API call)
+    try:
+        from memory.profile_enricher import enrich_profile_from_message
+        enrich_profile_from_message(text, classified, user_id)
+    except Exception as e:
+        print(f"[ProfileEnricher] {e}")
 
     # 8. Compress cache → STM with embedding
     _compress_cache_to_stm(sid, embedding)
