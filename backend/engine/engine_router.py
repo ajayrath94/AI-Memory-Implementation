@@ -241,19 +241,73 @@ CONVERSATION STYLE:
     if session_memory:
         nancy_persona += f"\nFROM THIS CONVERSATION:\n{session_memory}\n"
 
+    # ── Current context with priority ────────────────────────────────────────
     nancy_persona += f"""
 CURRENT CONTEXT:
-- Topic domain: {classified.core}
-- Emotional tone: {classified.emotion}
-- What they want: {classified.functional}
-- Language: {classified.language}
+- Topic:      {classified.core} (priority: {classified.core_priority})
+- Emotion:    {classified.emotion} (priority: {classified.emotion_priority})
+- Intent:     {classified.functional} (priority: {classified.functional_priority})
+- Language:   {classified.language}
+- Modifiers:  {', '.join(classified.modifiers) if classified.modifiers else 'none'}
 """
 
-    # API triggers
+    # ── Priority-based behaviour instructions ─────────────────────────────────
+    if classified.core_priority == "HIGH":
+        nancy_persona += f"""
+⚠️ HIGH PRIORITY — {classified.core}:
+This is the person's PRIMARY concern right now. Address it directly and warmly before anything else.
+"""
+    if classified.emotion_priority == "HIGH" and classified.emotion in ("FEAR", "STRESS", "SADNESS"):
+        nancy_persona += f"""
+💙 EMOTIONAL SUPPORT NEEDED — {classified.emotion}:
+The person is emotionally vulnerable right now. Lead with empathy. Don't rush to solutions.
+Use soft Hinglish: "Arre, kya hua? Batao mujhe..." or "Arey, pareshan mat ho..."
+"""
+    if classified.emotion_priority == "HIGH" and classified.emotion == "LOVE":
+        nancy_persona += """
+❤️ WARM MOMENT:
+The person is expressing love or affection. Match their warmth. Celebrate it.
+"""
+    if classified.emotion_priority == "HIGH" and classified.emotion in ("JOY", "OPTIMISM"):
+        nancy_persona += """
+🎉 HAPPY MOMENT:
+The person is in a good mood! Be enthusiastic and celebratory with them.
+"""
+
+    # ── Matrix-based response guidance ────────────────────────────────────────
+    core_matrix = classified.core_matrix
+    if core_matrix and classified.core_priority in ("HIGH", "MEDIUM"):
+        subject  = core_matrix.get("SUBJECT", {}).get("primary", "")
+        action   = core_matrix.get("ACTION",  {}).get("primary", "")
+        context  = core_matrix.get("CONTEXT", {}).get("primary", "")
+        if subject or action or context:
+            nancy_persona += f"""
+RESPONSE FOCUS for {classified.core}:
+- Who/What:  {subject}
+- Core need: {action}
+- Context:   {context}
+Use this to shape your response — ask about the right things, not generic questions.
+"""
+
+    # ── Urgency handling ──────────────────────────────────────────────────────
+    if "URGENCY" in classified.modifiers:
+        nancy_persona += """
+🚨 URGENT REQUEST: Respond immediately and practically. No pleasantries first.
+"""
+    if "TEMPORAL" in classified.modifiers:
+        nancy_persona += "⏰ TIME-SENSITIVE: The person is referencing a specific time. Acknowledge it.
+"
+    if "LOCATION" in classified.modifiers:
+        nancy_persona += "📍 LOCATION-SPECIFIC: They need local information. Ask which city/area if not clear.
+"
+
+    # ── API triggers ──────────────────────────────────────────────────────────
     if classified.api_triggers:
         top_trigger = list(classified.api_triggers.keys())[0]
         score       = list(classified.api_triggers.values())[0]
-        nancy_persona += f"\nDETECTED INTENT: {top_trigger} (confidence: {round(score*100)}%)\n"
+        nancy_persona += f"
+🔔 DETECTED ACTION: {top_trigger} (confidence: {round(score*100)}%) — offer to help with this specifically.
+"
 
     return nancy_persona
 

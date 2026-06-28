@@ -100,22 +100,42 @@ def compute_session_centroid(session_id: str) -> List[float]:
 
 def detect_trends(session_centroids: Dict[str, List[float]]) -> dict:
     """
-    Detect behavioural trends across session centroids.
-    Uses cosine similarity between consecutive sessions.
+    Detect behavioural trends across session centroids (chronological order).
+
+    FIX 1: Validates centroid dimension matches current DIMENSION_ORDER (28 dims)
+            before indexing — skips stale 23-dim centroids from old schema.
+    FIX 2: Requires minimum 3 sessions before reporting a trend to avoid
+            false positives from single-session spikes.
+    FIX 3: Uses linear regression slope instead of naive first-vs-last delta
+            for more stable trend detection across noisy data.
     """
     if len(session_centroids) < 2:
         return {}
 
-    session_ids = list(session_centroids.keys())
-    centroids   = list(session_centroids.values())
+    expected_dim = len(DIMENSION_ORDER)  # 28
+    session_ids  = list(session_centroids.keys())
 
-    # Compute cosine similarity between consecutive sessions
+    # Filter out stale centroids with wrong dimensions
+    valid = {
+        sid: c for sid, c in session_centroids.items()
+        if len(c) == expected_dim
+    }
+    stale_count = len(session_centroids) - len(valid)
+    if stale_count:
+        print(f"[Trends] Skipped {stale_count} stale centroids (wrong dim)")
+
+    if len(valid) < 2:
+        return {"note": "Insufficient valid centroids for trend detection"}
+
+    centroids = list(valid.values())
+
+    # Cosine similarity between consecutive sessions
     similarities = []
     for i in range(len(centroids) - 1):
         sim = cosine_similarity(centroids[i], centroids[i+1])
         similarities.append(sim)
 
-    # Find dominant pillar per session
+    # Dominant pillar per session
     session_dominant = []
     for centroid in centroids:
         if any(centroid):
@@ -124,7 +144,7 @@ def detect_trends(session_centroids: Dict[str, List[float]]) -> dict:
         else:
             session_dominant.append("GENERAL")
 
-    # Detect cycles (repeating patterns)
+    # Cycle detection
     cycle_detected = False
     cycle_length   = 0
     if len(session_dominant) >= 4:
@@ -136,48 +156,71 @@ def detect_trends(session_centroids: Dict[str, List[float]]) -> dict:
                 cycle_length   = length
                 break
 
-    # Compute pillar trends (increasing/decreasing/stable)
+    # Pillar trends — need at least 3 sessions, use linear slope
     pillar_trends = {}
     if len(centroids) >= 3:
-        for i, dim in enumerate(DIMENSION_ORDER):
-            values = [c[i] for c in centroids[-5:]]  # last 5 sessions
-            if len(values) >= 2:
-                delta = values[-1] - values[0]
-                if delta > 0.1:
-                    pillar_trends[dim] = "increasing"
-                elif delta < -0.1:
-                    pillar_trends[dim] = "decreasing"
-                else:
-                    pillar_trends[dim] = "stable"
+        window = centroids[-6:]  # last 6 sessions max
+        n      = len(window)
+        xs     = list(range(n))
+        x_mean = sum(xs) / n
 
-    # Detect alerts
+        for i, dim in enumerate(DIMENSION_ORDER):
+            ys     = [c[i] for c in window]
+            y_mean = sum(ys) / n
+
+            # Linear regression slope
+            numerator   = sum((xs[j] - x_mean) * (ys[j] - y_mean) for j in range(n))
+            denominator = sum((xs[j] - x_mean) ** 2 for j in range(n))
+            slope       = numerator / denominator if denominator else 0
+
+            # Only report non-stable trends for pillars with meaningful signal
+            max_val = max(ys)
+            if max_val < 0.05:
+                continue  # pillar never active — skip
+
+            if slope > 0.03:
+                pillar_trends[dim] = "rising"
+            elif slope < -0.03:
+                pillar_trends[dim] = "falling"
+            else:
+                pillar_trends[dim] = "stable"
+
+    # Alerts
     alerts = []
-    health_idx   = DIMENSION_ORDER.index("HEALTH_WELLNESS")
-    stress_idx   = DIMENSION_ORDER.index("STRESS")
     health_trend = pillar_trends.get("HEALTH_WELLNESS", "stable")
     stress_trend = pillar_trends.get("STRESS", "stable")
+    fear_trend   = pillar_trends.get("FEAR",   "stable")
+    sadness_trend = pillar_trends.get("SADNESS", "stable")
 
-    if health_trend == "increasing":
+    if health_trend == "rising":
         alerts.append("Health topics increasing across recent sessions")
-    if stress_trend == "increasing":
+    if stress_trend == "rising":
         alerts.append("Stress indicators rising across recent sessions")
+    if fear_trend == "rising":
+        alerts.append("Anxiety/fear increasing across recent sessions")
+    if sadness_trend == "rising":
+        alerts.append("Sadness increasing — may need emotional support")
 
-    # Check if stress appeared 3 sessions in a row
+    # Consecutive session check
     if len(session_dominant) >= 3:
         last3 = session_dominant[-3:]
-        if all("STRESS" in d or "HEALTH" in d for d in last3):
-            alerts.append("Health/Stress topics in last 3 consecutive sessions")
+        if all("STRESS" in d or "HEALTH_WELLNESS" in d for d in last3):
+            alerts.append("Health/Stress appearing in last 3 consecutive sessions")
+        if all("SADNESS" in d or "FEAR" in d for d in last3):
+            alerts.append("Emotional distress in last 3 consecutive sessions — check in")
 
     avg_sim = sum(similarities) / len(similarities) if similarities else 0
 
     return {
-        "avg_session_similarity":  round(avg_sim, 3),
+        "avg_session_similarity":   round(avg_sim, 3),
         "consecutive_similarities": [round(s, 3) for s in similarities],
         "session_dominant_pillars": session_dominant,
         "cycle_detected":           cycle_detected,
         "cycle_length":             cycle_length,
         "pillar_trends":            pillar_trends,
         "alerts":                   alerts,
+        "sessions_analysed":        len(valid),
+        "stale_skipped":            stale_count,
     }
 
 
