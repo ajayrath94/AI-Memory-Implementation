@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nancy — Memory Flow Visualizer</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f0f0f;--surface:#1a1a1a;--surface2:#222;--border:#333;
+  --text:#f0f0f0;--muted:#888;--hint:#555;
+  --blue:#3a9bd5;--green:#1D9E75;--orange:#D85A30;--red:#E24B4A;
+  --purple:#534AB7;--pink:#D4537E;--amber:#BA7517;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;min-height:100vh}
+.header{padding:1.5rem 2rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:18px;font-weight:500}
+.header p{font-size:13px;color:var(--muted)}
+.main{padding:1.5rem 2rem;display:grid;grid-template-columns:1fr 320px;gap:1.5rem}
+.controls{display:flex;gap:8px;margin-bottom:1.5rem;flex-wrap:wrap}
+.btn{font-size:13px;padding:7px 14px;border:0.5px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);cursor:pointer;transition:all 0.15s}
+.btn:hover{background:var(--surface2);border-color:#555}
+.btn.primary{border-color:var(--blue);color:var(--blue)}
+.btn.danger{border-color:var(--red);color:var(--red)}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.5rem}
+.metric{background:var(--surface);border:0.5px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+.metric-val{font-size:24px;font-weight:500}
+.metric-lbl{font-size:11px;color:var(--muted);margin-top:3px}
+.tier{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:1rem 1.25rem;margin-bottom:8px;transition:box-shadow 0.3s}
+.tier.flash{box-shadow:0 0 0 2px var(--green)}
+.tier-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.tier-name{font-size:14px;font-weight:500}
+.tier-sub{font-size:11px;color:var(--muted)}
+.eq-box{font-family:'SF Mono',monospace;font-size:11px;color:var(--amber);background:#1a1500;padding:3px 8px;border-radius:4px}
+.slot-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.slot-label{font-size:12px;color:var(--muted);width:130px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-track{flex:1;height:6px;background:#2a2a2a;border-radius:3px;overflow:hidden}
+.bar-fill{height:6px;border-radius:3px;transition:width 0.4s ease}
+.slot-val{font-size:12px;font-weight:500;width:36px;text-align:right;flex-shrink:0}
+.badge{font-size:10px;padding:2px 7px;border-radius:99px;flex-shrink:0}
+.slot-eq{font-family:'SF Mono',monospace;font-size:10px;color:var(--hint);flex-shrink:0}
+.arrow{text-align:center;color:var(--hint);font-size:13px;padding:4px 0}
+.empty{font-size:13px;color:var(--hint);padding:4px 0}
+.event-log{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:1rem}
+.event-log h3{font-size:12px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px}
+.log-entries{max-height:400px;overflow-y:auto}
+.log-entry{font-family:'SF Mono',monospace;font-size:11px;color:var(--muted);padding:4px 0;border-bottom:0.5px solid var(--border)}
+.log-entry:last-child{border-bottom:none}
+.log-entry .ts{color:var(--hint)}
+.log-entry.promote{color:var(--green)}
+.log-entry.decay{color:var(--orange)}
+.log-entry.new{color:var(--blue)}
+.log-entry.expire{color:var(--red)}
+.eq-legend{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:1rem}
+.eq-legend h3{font-size:12px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px}
+.eq-item{margin-bottom:10px}
+.eq-name{font-size:12px;color:var(--text);margin-bottom:3px}
+.eq-formula{font-family:'SF Mono',monospace;font-size:12px;color:var(--amber);background:#1a1500;padding:4px 8px;border-radius:4px;display:block;margin-bottom:2px}
+.eq-desc{font-size:11px;color:var(--hint)}
+.pc-section{margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border)}
+.pc-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Nancy — Memory Flow Visualizer</h1>
+    <p>Live simulation of memory equations across Cache → STM → LTM → user_memory</p>
+  </div>
+  <button class="btn danger" onclick="reset()">Reset</button>
+</div>
+
+<div class="main">
+  <div>
+    <div class="controls">
+      <button class="btn primary" onclick="sendMsg('HEALTH_WELLNESS','HIGH')">Health HIGH</button>
+      <button class="btn primary" onclick="sendMsg('SADNESS','HIGH')">Sadness HIGH</button>
+      <button class="btn" onclick="sendMsg('JOY','MEDIUM')">Joy MEDIUM</button>
+      <button class="btn" onclick="sendMsg('ENTERTAINMENT','MEDIUM')">Entertainment</button>
+      <button class="btn" onclick="sendMsg('STRESS','HIGH')">Stress HIGH</button>
+      <button class="btn" onclick="recall()">Recall STM ↑</button>
+      <button class="btn danger" onclick="endSession()">End Session →</button>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><div class="metric-val" id="m-msgs" style="color:var(--blue)">0</div><div class="metric-lbl">messages</div></div>
+      <div class="metric"><div class="metric-val" id="m-stm" style="color:var(--amber)">0</div><div class="metric-lbl">STM clusters</div></div>
+      <div class="metric"><div class="metric-val" id="m-ltm" style="color:var(--green)">0</div><div class="metric-lbl">LTM patterns</div></div>
+      <div class="metric"><div class="metric-val" id="m-sess" style="color:var(--purple)">0</div><div class="metric-lbl">sessions</div></div>
+    </div>
+
+    <!-- Cache tier -->
+    <div class="tier" id="tier-cache">
+      <div class="tier-header">
+        <div>
+          <div class="tier-name">Cache <span style="color:var(--blue)">●</span></div>
+          <div class="tier-sub">In-memory · per session · fastest decay</div>
+        </div>
+        <div class="eq-box">M(t) = M₀ · e^(−λt) · λ=1.0/min</div>
+      </div>
+      <div id="cache-slots"><div class="empty">No active cache slots — send a message</div></div>
+    </div>
+
+    <div class="arrow">↓ compress after ~3 min · dedup by (session_id, pillar) MD5</div>
+
+    <!-- STM tier -->
+    <div class="tier" id="tier-stm">
+      <div class="tier-header">
+        <div>
+          <div class="tier-name">STM — Short Term Memory <span style="color:var(--amber)">●</span></div>
+          <div class="tier-sub">Supabase · per session · promotes at recall_count ≥ 3</div>
+        </div>
+        <div class="eq-box">promote if cosine_sim ≥ 0.65</div>
+      </div>
+      <div id="stm-slots"><div class="empty">No STM clusters yet</div></div>
+    </div>
+
+    <div class="arrow">↓ cosine_similarity(embedding, centroid) ≥ 0.65 → promote</div>
+
+    <!-- LTM tier -->
+    <div class="tier" id="tier-ltm">
+      <div class="tier-header">
+        <div>
+          <div class="tier-name">LTM — Long Term Memory <span style="color:var(--green)">●</span></div>
+          <div class="tier-sub">Supabase · cross-session · slow decay · half-life ~95 days</div>
+        </div>
+        <div class="eq-box">M(t) = M₀ · e^(−0.22·(days/30))</div>
+      </div>
+      <div id="ltm-slots"><div class="empty">No LTM patterns yet — recall STM 3 times</div></div>
+    </div>
+
+    <div class="arrow">↓ session end → Claude Haiku summarization + profile enrichment</div>
+
+    <!-- user_memory -->
+    <div class="tier" id="tier-memory">
+      <div class="tier-header">
+        <div>
+          <div class="tier-name">user_memory <span style="color:var(--purple)">●</span></div>
+          <div class="tier-sub">Cross-session summary + personal centroids</div>
+        </div>
+        <div class="eq-box">centroid = α·session + (1−α)·existing · α=1/n</div>
+      </div>
+      <div id="memory-summary" class="empty">No summary yet — end a session</div>
+      <div id="personal-centroids"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="eq-legend">
+      <h3>Equations</h3>
+      <div class="eq-item">
+        <div class="eq-name">Cache decay</div>
+        <span class="eq-formula">M(t) = M₀ · e^(−λt)</span>
+        <div class="eq-desc">λ = 1.0/min · half-life ~42 sec</div>
+      </div>
+      <div class="eq-item">
+        <div class="eq-name">STM promotion</div>
+        <span class="eq-formula">promote if recall ≥ 3</span>
+        <div class="eq-desc">cosine_similarity(msg_emb, pillar_centroid) ≥ 0.65</div>
+      </div>
+      <div class="eq-item">
+        <div class="eq-name">LTM decay</div>
+        <span class="eq-formula">M(t) = M₀ · e^(−0.22·t/30)</span>
+        <div class="eq-desc">t in days · t½ ≈ 95 days · delete if strength &lt; 0.1</div>
+      </div>
+      <div class="eq-item">
+        <div class="eq-name">Contradiction</div>
+        <span class="eq-formula">M_new = M_old − 0.05</span>
+        <div class="eq-desc">conflicting signal weakens the slot</div>
+      </div>
+      <div class="eq-item">
+        <div class="eq-name">Reinforcement</div>
+        <span class="eq-formula">M_new = min(1.0, M_old + 0.08)</span>
+        <div class="eq-desc">same signal strengthens the slot</div>
+      </div>
+      <div class="eq-item">
+        <div class="eq-name">Personalization</div>
+        <span class="eq-formula">c_new = α·c_sess + (1−α)·c_old</span>
+        <div class="eq-desc">α = 1/session_count · converges over time</div>
+      </div>
+      <div class="eq-item">
+        <div class="eq-name">Cosine similarity</div>
+        <span class="eq-formula">sim = A·B / (|A|·|B|)</span>
+        <div class="eq-desc">3072-dim Gemini embeddings</div>
+      </div>
+      <div class="eq-item">
+        <div class="eq-name">Priority scoring</div>
+        <span class="eq-formula">score ≥ 0.80 → HIGH</span>
+        <div class="eq-desc">0.65-0.80 → MEDIUM · &lt;0.65 → LOW</div>
+      </div>
+    </div>
+
+    <div class="event-log">
+      <h3>Event log</h3>
+      <div class="log-entries" id="log-entries">
+        <div class="log-entry"><span class="ts">[00:00]</span> System ready — send a message to begin</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLORS = {
+  HEALTH_WELLNESS:'#E24B4A',SADNESS:'#534AB7',JOY:'#1D9E75',
+  STRESS:'#D85A30',FEAR:'#993556',LOVE:'#D4537E',
+  ENTERTAINMENT:'#BA7517',GENERAL:'#888',FINANCE:'#3a9bd5',
+  OPTIMISM:'#3B6D11',ANGER:'#D85A30',PLAN:'#7F77DD',
+};
+
+let state = {
+  cache:{},stm:[],ltm:[],
+  msgs:0,sessions:0,sessionCount:0,
+  summary:null,personalCentroids:{},
+};
+let decayTimer = null;
+let startTime  = Date.now();
+
+function ts() {
+  const s = Math.floor((Date.now() - startTime) / 1000);
+  return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+}
+
+function log(msg, type='') {
+  const el   = document.getElementById('log-entries');
+  const line = document.createElement('div');
+  line.className = 'log-entry' + (type ? ' ' + type : '');
+  line.innerHTML = `<span class="ts">[${ts()}]</span> ${msg}`;
+  el.insertBefore(line, el.firstChild);
+  while (el.children.length > 50) el.removeChild(el.lastChild);
+}
+
+function sendMsg(pillar, priority) {
+  state.msgs++;
+  const strength = priority === 'HIGH' ? 0.88 + Math.random()*0.1 : priority === 'MEDIUM' ? 0.68 + Math.random()*0.08 : 0.50 + Math.random()*0.08;
+
+  if (state.cache[pillar]) {
+    const existing = state.cache[pillar];
+    if (strength > existing.strength) {
+      existing.strength = Math.min(1.0, existing.strength + 0.08);
+      existing.type = 'reinforced';
+      log(`REINFORCE cache[${pillar}] → ${existing.strength.toFixed(3)}`,'new');
+    } else {
+      existing.strength = Math.max(0.05, existing.strength - 0.05);
+      existing.type = 'contradiction';
+      log(`CONTRADICT cache[${pillar}] → ${existing.strength.toFixed(3)}`,'decay');
+    }
+  } else {
+    state.cache[pillar] = {strength:parseFloat(strength.toFixed(4)),priority,type:'new',age:0};
+    log(`NEW cache slot: ${pillar} (${priority}) s=${strength.toFixed(3)}`,'new');
+  }
+
+  const exists = state.stm.find(s=>s.pillar===pillar);
+  if (!exists) {
+    state.stm.push({pillar,strength:parseFloat((strength*0.9).toFixed(4)),recall:0,age:0});
+    log(`STM cluster created: ${pillar}`);
+  } else {
+    log(`STM dedup: ${pillar} already exists — skipped (MD5 match)`);
+  }
+
+  render();
+  if (!decayTimer) startDecay();
+}
+
+function recall() {
+  if (!state.stm.length) { log('No STM clusters to recall'); return; }
+  const idx     = Math.floor(Math.random() * state.stm.length);
+  const cluster = state.stm[idx];
+  cluster.recall++;
+  cluster.strength = Math.min(1.0, parseFloat((cluster.strength + 0.1).toFixed(4)));
+  log(`RECALL stm[${cluster.pillar}] recall_count=${cluster.recall} s=${cluster.strength.toFixed(3)}`);
+
+  if (cluster.recall >= 3) {
+    const sim = parseFloat((0.65 + Math.random()*0.3).toFixed(3));
+    log(`cosine_sim=${sim} ≥ 0.65 → PROMOTING ${cluster.pillar} to LTM`,'promote');
+    state.ltm.push({pillar:cluster.pillar,strength:cluster.strength,recalls:cluster.recall,days:0});
+    state.stm.splice(idx,1);
+    flash('tier-ltm');
+    log(`LTM pattern created: ${cluster.pillar} s=1.0`,'promote');
+  }
+  render();
+}
+
+function endSession() {
+  state.sessions++;
+  state.sessionCount++;
+  const alpha   = parseFloat((1/state.sessionCount).toFixed(3));
+  const pillars = Object.keys(state.cache);
+
+  pillars.forEach(pillar => {
+    if (!state.personalCentroids[pillar]) {
+      state.personalCentroids[pillar] = {weight:1.0,sessions:1};
+      log(`INIT personal centroid: ${pillar} (α=1.0, session 1)`,'new');
+    } else {
+      const pc = state.personalCentroids[pillar];
+      pc.weight = parseFloat((alpha*1.0 + (1-alpha)*pc.weight).toFixed(4));
+      pc.sessions++;
+      log(`BLEND centroid: ${pillar} α=${alpha} → w=${pc.weight}`,'promote');
+    }
+  });
+
+  state.summary = `Session ${state.sessions} complete. Topics: ${pillars.join(', ') || 'none'}. Personal centroids updated for ${pillars.length} pillars.`;
+  log(`SESSION ${state.sessions} ended → Haiku summary generated`,'promote');
+  log(`Forgetting check: STM entries >7 days + recall<3 → scheduled for deletion`,'decay');
+  log(`LTM decay scheduled: entries >30 days will lose 20% strength per period`,'decay');
+
+  state.cache = {};
+  render();
+}
+
+function flash(id) {
+  const el = document.getElementById(id);
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'),600);
+}
+
+function startDecay() {
+  decayTimer = setInterval(() => {
+    let changed = false;
+
+    Object.keys(state.cache).forEach(pillar => {
+      const slot   = state.cache[pillar];
+      slot.age    += 1;
+      const prev   = slot.strength;
+      slot.strength= parseFloat((slot.strength * Math.exp(-1.0/60)).toFixed(4));
+      if (slot.strength < 0.04) {
+        delete state.cache[pillar];
+        log(`EXPIRED cache[${pillar}] — strength below threshold`,'expire');
+      }
+      changed = true;
+    });
+
+    state.ltm.forEach(p => {
+      p.days += 0.005;
+      if (p.days > 0.5) {
+        p.strength = parseFloat((p.strength * Math.exp(-0.22*(p.days/30))).toFixed(4));
+        if (p.strength < 0.1 && p.days > 5) {
+          log(`LTM CRITICAL: ${p.pillar} s=${p.strength.toFixed(3)} — would delete after 90 days`,'expire');
+        }
+        changed = true;
+      }
+    });
+
+    if (changed) render();
+  }, 1000);
+}
+
+function render() {
+  document.getElementById('m-msgs').textContent = state.msgs;
+  document.getElementById('m-stm').textContent  = state.stm.length;
+  document.getElementById('m-ltm').textContent  = state.ltm.length;
+  document.getElementById('m-sess').textContent = state.sessions;
+
+  // Cache
+  const cacheEl = document.getElementById('cache-slots');
+  const cEntries = Object.entries(state.cache);
+  if (!cEntries.length) {
+    cacheEl.innerHTML = '<div class="empty">No active cache slots</div>';
+  } else {
+    cacheEl.innerHTML = cEntries.map(([pillar,slot]) => {
+      const pct   = Math.round(slot.strength*100);
+      const color = COLORS[pillar]||'#888';
+      const pc    = {'HIGH':'#E24B4A','MEDIUM':'#BA7517','LOW':'#1D9E75'}[slot.priority]||'#888';
+      const eq    = `e^(−${slot.age}s/${60*60}min)`;
+      return `<div class="slot-row">
+        <span class="slot-label">${pillar.replace(/_/g,' ')}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="slot-val" style="color:${color}">${slot.strength.toFixed(3)}</span>
+        <span class="badge" style="background:${pc}22;color:${pc}">${slot.priority}</span>
+        <span class="slot-eq">${eq}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // STM
+  const stmEl = document.getElementById('stm-slots');
+  if (!state.stm.length) {
+    stmEl.innerHTML = '<div class="empty">No STM clusters yet</div>';
+  } else {
+    stmEl.innerHTML = state.stm.map(s => {
+      const pct   = Math.round(s.strength*100);
+      const color = COLORS[s.pillar]||'#888';
+      const need  = Math.max(0,3-s.recall);
+      const bar   = '█'.repeat(s.recall) + '░'.repeat(3-s.recall);
+      return `<div class="slot-row">
+        <span class="slot-label">${s.pillar.replace(/_/g,' ')}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="slot-val" style="color:${color}">${s.strength.toFixed(3)}</span>
+        <span class="badge" style="background:#3a9bd522;color:#3a9bd5">${bar} ${s.recall}/3</span>
+        <span class="slot-eq">${need>0?`${need} recalls to LTM`:'ready!'}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // LTM
+  const ltmEl = document.getElementById('ltm-slots');
+  if (!state.ltm.length) {
+    ltmEl.innerHTML = '<div class="empty">No LTM patterns yet — recall STM 3 times to promote</div>';
+  } else {
+    ltmEl.innerHTML = state.ltm.map(p => {
+      const pct   = Math.round(p.strength*100);
+      const color = COLORS[p.pillar]||'#888';
+      const t_half= Math.round(30*Math.log(2)/0.22);
+      return `<div class="slot-row">
+        <span class="slot-label">${p.pillar.replace(/_/g,' ')}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="slot-val" style="color:${color}">${p.strength.toFixed(3)}</span>
+        <span class="badge" style="background:#BA751722;color:#BA7517">${p.days.toFixed(1)}d</span>
+        <span class="slot-eq">t½=${t_half}d · e^(−0.22·${p.days.toFixed(1)}/30)</span>
+      </div>`;
+    }).join('');
+  }
+
+  // user_memory
+  const sumEl = document.getElementById('memory-summary');
+  sumEl.textContent = state.summary || 'No summary yet — end a session';
+  sumEl.className   = state.summary ? '' : 'empty';
+  sumEl.style.fontSize = '13px';
+  sumEl.style.lineHeight = '1.6';
+
+  const pcEl = document.getElementById('personal-centroids');
+  const pcEntries = Object.entries(state.personalCentroids);
+  if (!pcEntries.length) {
+    pcEl.innerHTML = '';
+  } else {
+    pcEl.innerHTML = `<div class="pc-section">
+      <div class="pc-title">Personal centroids — c_new = α·c_sess + (1−α)·c_old</div>
+      ${pcEntries.map(([pillar,pc]) => {
+        const alpha = parseFloat((1/pc.sessions).toFixed(3));
+        const color = COLORS[pillar]||'#888';
+        return `<div class="slot-row">
+          <span class="slot-label">${pillar.replace(/_/g,' ')}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(pc.weight*100)}%;background:${color}"></div></div>
+          <span class="slot-val" style="color:${color}">${pc.weight.toFixed(3)}</span>
+          <span class="badge" style="background:${color}22;color:${color}">${pc.sessions} sess</span>
+          <span class="slot-eq">α=${alpha}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+}
+
+function reset() {
+  state = {cache:{},stm:[],ltm:[],msgs:0,sessions:0,sessionCount:0,summary:null,personalCentroids:{}};
+  if (decayTimer) { clearInterval(decayTimer); decayTimer=null; }
+  startTime = Date.now();
+  render();
+  document.getElementById('log-entries').innerHTML = '<div class="log-entry"><span class="ts">[00:00]</span> System reset</div>';
+}
+
+render();
+</script>
+</body>
+</html>
