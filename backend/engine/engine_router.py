@@ -12,7 +12,7 @@ Memory complete - full embedding pipeline:
 
 import os
 import threading
-from typing import Optional, List, Dict
+from typing import Optional, List
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -420,7 +420,7 @@ async def process_input(text: str, model: str,
         seed_cache_from_memory(user_id, sid)
 
     # 4. Classify with EMBEDDINGS (no keyword matching!)
-    classified = classify_input(text)
+    classified = classify_input(text, user_id=user_id)
     embedding  = classified.embedding  # real 1024-dim vector
 
     # 5. Save user message with embedding

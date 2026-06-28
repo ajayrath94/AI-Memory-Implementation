@@ -46,7 +46,8 @@ def save_user_memory(user_id: str, summary: str,
                      session_count: int = 1,
                      pillar_trend: dict = None,
                      behavioural_fingerprint: dict = None,
-                     session_centroids: dict = None):
+                     session_centroids: dict = None,
+                     personal_centroids: dict = None):
     db   = get_client()
     data = {
         "user_id":                  user_id,
@@ -57,6 +58,7 @@ def save_user_memory(user_id: str, summary: str,
         "pillar_trend":             pillar_trend or {},
         "behavioural_fingerprint":  behavioural_fingerprint or {},
         "session_centroids":        session_centroids or {},
+        "personal_centroids":       personal_centroids or {},
         "updated_at":               "now()",
     }
     db.table("user_memory").upsert(data, on_conflict="user_id").execute()
@@ -94,6 +96,86 @@ def compute_session_centroid(session_id: str) -> List[float]:
         if vec and len(vec) == len(DIMENSION_ORDER):
             vectors.append(vec)
     return compute_centroid(vectors) if vectors else [0.0] * len(DIMENSION_ORDER)
+
+
+# ── Personal centroid (cross-session personalization) ─────────────────────────
+
+def get_personal_centroids(user_id: str) -> Dict[str, List[float]]:
+    """Load per-user per-pillar centroids from user_memory."""
+    memory = get_user_memory(user_id)
+    if not memory:
+        return {}
+    return memory.get("personal_centroids") or {}
+
+
+def update_personal_centroids(user_id: str, session_id: str,
+                               session_count: int) -> Dict[str, List[float]]:
+    """
+    Blend this session's message embeddings into the user's personal centroids.
+
+    For each pillar, we compute the average embedding of messages where that
+    pillar was dominant, then blend it with the existing personal centroid:
+
+        new = α × session_embedding + (1-α) × existing
+        α   = 1 / session_count   (learns fast early, stabilizes over time)
+
+    This means after session 1: personal = session (α=1.0)
+                  after session 2: 50/50 blend
+                  after session 5: 20% new, 80% existing
+    """
+    from classifier.pillar_classifier import embed_text, CORE_PILLARS, EMOTION_PILLARS
+
+    messages     = get_session_messages(session_id)
+    existing     = get_personal_centroids(user_id)
+    alpha        = 1.0 / max(session_count, 1)
+
+    # Group message embeddings by dominant pillar
+    pillar_embeddings: Dict[str, List[List[float]]] = {}
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+        pillar = msg.get("pillar_core", "")
+        emb    = msg.get("embedding", [])
+        if pillar and emb and len(emb) == 3072:
+            pillar_embeddings.setdefault(pillar, []).append(emb)
+
+    if not pillar_embeddings:
+        return existing
+
+    updated = dict(existing)
+    for pillar, embeddings in pillar_embeddings.items():
+        session_centroid = compute_centroid(embeddings)
+        if not session_centroid:
+            continue
+
+        if pillar in updated and updated[pillar]:
+            # Blend with existing
+            existing_c = updated[pillar]
+            blended    = [
+                alpha * s + (1 - alpha) * e
+                for s, e in zip(session_centroid, existing_c)
+            ]
+            updated[pillar] = [round(v, 6) for v in blended]
+            print(f"[Personalization] Blended {pillar} centroid (α={alpha:.2f})")
+        else:
+            # First session for this pillar
+            updated[pillar] = [round(v, 6) for v in session_centroid]
+            print(f"[Personalization] Initialized {pillar} centroid")
+
+    return updated
+
+
+def get_personal_score(text_embedding: List[float], pillar: str,
+                        user_id: str) -> Optional[float]:
+    """
+    Get cosine similarity against user's personal centroid for a pillar.
+    Returns None if not enough data (< 2 sessions).
+    """
+    personal = get_personal_centroids(user_id)
+    centroid = personal.get(pillar, [])
+    if not centroid:
+        return None
+    return cosine_similarity(text_embedding, centroid)
 
 
 # ── Trend detection ────────────────────────────────────────────────────────────
@@ -325,7 +407,14 @@ def process_session_end(session_id: str, user_id: str = "default"):
     # 10. Extract key facts
     key_facts = extract_key_facts(new_summary)
 
-    # 11. Save everything
+    # 11. Update personal centroids (cross-session personalization)
+    try:
+        personal_centroids = update_personal_centroids(user_id, session_id, new_count)
+    except Exception as e:
+        print(f"[Personalization] Failed to update centroids: {e}")
+        personal_centroids = {}
+
+    # 12. Save everything
     save_user_memory(
         user_id=user_id,
         summary=new_summary,
@@ -335,9 +424,10 @@ def process_session_end(session_id: str, user_id: str = "default"):
         pillar_trend=trend,
         behavioural_fingerprint=fingerprint,
         session_centroids=existing_centroids,
+        personal_centroids=personal_centroids,
     )
 
-    # 12. Store in STM
+    # 13. Store in STM
     if new_summary:
         save_stm_cluster(
             session_id=session_id,
@@ -346,6 +436,13 @@ def process_session_end(session_id: str, user_id: str = "default"):
             strength=1.0,
             pillar_tags=dominant_pillars,
         )
+
+    # 14. Run forgetting in background
+    try:
+        from memory.forgetting import run_forgetting
+        run_forgetting(user_id)
+    except Exception as e:
+        print(f"[Forgetting] Failed: {e}")
 
     print(f"[UserMemory] Updated for {user_id} — session {new_count}")
     print(f"[UserMemory] Pillars: {dominant_pillars}")

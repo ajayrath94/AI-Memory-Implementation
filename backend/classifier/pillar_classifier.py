@@ -96,7 +96,7 @@ def _get_groups():
 
 # Legacy constants for backward compatibility
 CORE_PILLARS       = ["FINANCE", "ASPIRATIONS", "CAREER_GOAL", "HEALTH_WELLNESS", "ENTERTAINMENT", "GENERAL"]
-EMOTION_PILLARS    = ["OPTIMISM", "JOY", "FEAR", "SADNESS", "ANGER", "STRESS"]
+EMOTION_PILLARS    = ["OPTIMISM", "JOY", "FEAR", "SADNESS", "ANGER", "STRESS", "LOVE"]
 FUNCTIONAL_PILLARS = ["PLAN", "SEARCH", "ORDER", "TRACK", "NUDGE"]
 MODIFIER_PILLARS   = ["QUANTITY", "SPECIFICITY", "FORMAT", "LOCATION", "EXCLUSION",
                        "URGENCY", "CONDITION", "PREFERENCE", "TEMPORAL", "COMPARISON"]
@@ -451,25 +451,56 @@ class ClassifiedInput:
 
 # ── Main classifier ────────────────────────────────────────────────────────────
 
-def classify_input(text: str) -> ClassifiedInput:
+def classify_input(text: str, user_id: str = "") -> ClassifiedInput:
     """
     Full embedding-based classification using pillars.xml as source of truth.
     Returns enriched ClassifiedInput with priority and 3x3 matrix per pillar.
+
+    If user_id is provided, personal centroids are blended in for higher
+    accuracy based on how this specific user talks about each topic.
+    Personal score weight increases with session count (max 30%).
     """
     lang      = _detect_language(text)
     embedding = embed_text(text)
     centroids = get_centroids()
 
+    # Load personal centroids if user_id provided
+    personal_centroids = {}
+    if user_id:
+        try:
+            from memory.user_memory_store import get_personal_centroids, get_user_memory
+            personal_centroids = get_personal_centroids(user_id)
+            mem          = get_user_memory(user_id)
+            session_count = mem.get("session_count", 0) if mem else 0
+            # Personal weight grows from 0% to 30% over 10 sessions
+            personal_weight = min(0.30, session_count * 0.03)
+        except Exception:
+            personal_centroids = {}
+            personal_weight    = 0.0
+    else:
+        personal_weight = 0.0
+
     # Score all embedding pillars
     scores = {}
     for pillar, centroid in centroids.items():
         if centroid and len(centroid) == len(embedding):
-            scores[pillar] = cosine_similarity(embedding, centroid)
+            generic_score = cosine_similarity(embedding, centroid)
+
+            # Blend with personal centroid if available
+            if personal_weight > 0 and pillar in personal_centroids:
+                personal_c     = personal_centroids[pillar]
+                personal_score = cosine_similarity(embedding, personal_c)
+                scores[pillar] = (
+                    (1 - personal_weight) * generic_score +
+                    personal_weight * personal_score
+                )
+            else:
+                scores[pillar] = generic_score
 
     if not scores:
         return ClassifiedInput(
             text=text, core="GENERAL", emotion="STRESS",
-            functional="CHAT", modifiers=[],
+            functional="PLAN", modifiers=[],
             pillar_vector=[0.0] * len(DIMENSION_ORDER),
             embedding=embedding, language=lang,
         )
