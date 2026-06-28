@@ -1098,4 +1098,48 @@
     </keywords>
   </pillar>
 
+
+  <!-- LOVE / AFFECTION — added for elderly Indian users -->
+  <pillar name="LOVE" type="emotion" classification="embedding">
+    <description>Affection, love for family, gratitude, warmth, missing a loved one fondly</description>
+    <priority_threshold high="0.78" medium="0.63" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / grandchildren / spouse / family</cell>
+        <cell position="secondary">old friend / memory / place</cell>
+        <cell position="modifier">deeply / fondly / always</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">love / adore / miss fondly / cherish</cell>
+        <cell position="secondary">feel grateful / feel warm / appreciate</cell>
+        <cell position="modifier">so much / deeply / unconditionally</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">affection / warmth / gratitude</cell>
+        <cell position="secondary">family bond / relationship</cell>
+        <cell position="modifier">always / lifelong / special moment</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">I love my grandchildren so much</example>
+      <example lang="en">Miss my wife dearly</example>
+      <example lang="en">So grateful for my family</example>
+      <example lang="en">My son means everything to me</example>
+      <example lang="en">Feeling so much love today</example>
+      <example lang="en">Blessed to have such family</example>
+      <example lang="en">Love spending time with grandkids</example>
+      <example lang="en">My daughter is my pride</example>
+      <example lang="en">Grateful for everything</example>
+      <example lang="en">Heart full of love</example>
+      <example lang="hi">Mere pote se bahut pyaar hai</example>
+      <example lang="hi">Patni ki bahut yaad aati hai</example>
+      <example lang="hi">Parivaar ke liye shukrguzaar hoon</example>
+      <example lang="hi">Beta meri jaan hai</example>
+      <example lang="hi">Beti se bahut pyaar hai</example>
+      <example lang="hi">Dil mein bahut pyaar hai</example>
+      <example lang="hi">Naati naatin ke saath khushi</example>
+      <example lang="hi">Bhagwan ka shukriya</example>
+    </examples>
+  </pillar>
+
 </pillars>
