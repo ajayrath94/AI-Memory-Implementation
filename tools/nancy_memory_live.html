@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nancy — Live Memory State</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f0f0f;color:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px}
+.header{padding:1.5rem 2rem;border-bottom:0.5px solid #333;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:18px;font-weight:500}
+.header p{font-size:13px;color:#888}
+.toolbar{padding:1rem 2rem;background:#1a1a1a;border-bottom:0.5px solid #333;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toolbar input{font-size:13px;padding:7px 12px;border:0.5px solid #333;border-radius:8px;background:#222;color:#f0f0f0;min-width:160px}
+.toolbar button{font-size:13px;padding:7px 14px;border:0.5px solid #333;border-radius:8px;background:#222;color:#f0f0f0;cursor:pointer}
+.toolbar button:hover{background:#2a2a2a}
+.toolbar button.primary{background:#185FA5;border-color:#185FA5}
+.toolbar button.live{background:#1D9E75;border-color:#1D9E75}
+.toolbar button.live.off{background:#222;border-color:#333;color:#888}
+#status{font-size:12px;color:#888;padding:0.5rem 2rem}
+.main{padding:1.5rem 2rem}
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:1.5rem}
+.metric{background:#1a1a1a;border:0.5px solid #333;border-radius:10px;padding:12px;text-align:center}
+.metric-val{font-size:22px;font-weight:500}
+.metric-lbl{font-size:11px;color:#888;margin-top:3px}
+.tier{background:#1a1a1a;border:0.5px solid #333;border-radius:12px;padding:1rem 1.25rem;margin-bottom:8px;transition:box-shadow 0.3s}
+.tier.flash{box-shadow:0 0 0 2px #1D9E75}
+.tier-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.tier-name{font-size:14px;font-weight:500}
+.tier-sub{font-size:11px;color:#888}
+.eq-box{font-family:'SF Mono',monospace;font-size:11px;color:#BA7517;background:#1a1500;padding:3px 8px;border-radius:4px}
+.slot-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.slot-label{font-size:12px;color:#888;width:160px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-track{flex:1;height:6px;background:#2a2a2a;border-radius:3px;overflow:hidden}
+.bar-fill{height:6px;border-radius:3px;transition:width 0.4s ease}
+.slot-val{font-size:12px;font-weight:500;width:40px;text-align:right;flex-shrink:0}
+.badge{font-size:10px;padding:2px 7px;border-radius:99px;flex-shrink:0}
+.empty{font-size:13px;color:#555;padding:4px 0}
+.arrow{text-align:center;color:#555;font-size:13px;padding:4px 0}
+.alert-card{display:flex;gap:10px;padding:10px 12px;border-radius:8px;margin-bottom:8px;font-size:13px}
+.alert-critical{background:#2a1010;border:0.5px solid #5a2e2e;color:#e88}
+.alert-medium{background:#2a2010;border:0.5px solid #5a4e2e;color:#e8c888}
+.profile-row{display:flex;gap:10px;font-size:13px;padding:6px 0;border-bottom:0.5px solid #2a2a2a}
+.profile-row:last-child{border-bottom:none}
+.profile-label{color:#888;width:140px;flex-shrink:0}
+.profile-val{color:#f0f0f0;flex:1}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Nancy — Live Memory State</h1>
+    <p>Real Supabase data · auto-refreshes every 3s</p>
+  </div>
+</div>
+
+<div class="toolbar">
+  <input id="uid" type="text" placeholder="user_id" value="test_user" />
+  <input id="base" type="text" placeholder="API URL" value="http://localhost:8000" />
+  <input id="apikey" type="text" placeholder="X-API-Key" value="CnsC4wsdDWBlvc9crEM2-NdyVavBOK08GDpQyjwT144" />
+  <button class="primary" onclick="loadOnce()">Load Once</button>
+  <button class="live" id="liveBtn" onclick="toggleLive()">⏸ Live: ON</button>
+</div>
+
+<div id="status">Ready</div>
+
+<div class="main">
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-val" id="m-stm" style="color:#BA7517">0</div><div class="metric-lbl">STM clusters</div></div>
+    <div class="metric"><div class="metric-val" id="m-ltm" style="color:#1D9E75">0</div><div class="metric-lbl">LTM patterns</div></div>
+    <div class="metric"><div class="metric-val" id="m-sessions" style="color:#534AB7">0</div><div class="metric-lbl">sessions</div></div>
+    <div class="metric"><div class="metric-val" id="m-alerts" style="color:#E24B4A">0</div><div class="metric-lbl">live alerts</div></div>
+    <div class="metric"><div class="metric-val" id="m-facts" style="color:#3a9bd5">0</div><div class="metric-lbl">key facts</div></div>
+  </div>
+
+  <div class="tier" id="tier-cache">
+    <div class="tier-header">
+      <div>
+        <div class="tier-name">Cache 🔵</div>
+        <div class="tier-sub">In-memory · only exists during an ACTIVE session (not after end-session)</div>
+      </div>
+      <div class="eq-box">M(t) = M₀·e^(−λt) · λ=1.0/min</div>
+    </div>
+    <div id="cache-list"><div class="empty">No active session — cache is empty by design. Send a message without ending the session to see live cache state.</div></div>
+  </div>
+
+  <div class="arrow">↓ compress after ~3 min</div>
+
+  <div class="tier" id="tier-stm">
+    <div class="tier-header">
+      <div>
+        <div class="tier-name">STM — Short Term Memory 🟠</div>
+        <div class="tier-sub">Live from Supabase · last 10 sessions</div>
+      </div>
+      <div class="eq-box">promote at recall_count ≥ 3</div>
+    </div>
+    <div id="stm-list"><div class="empty">Load to see STM clusters</div></div>
+  </div>
+
+  <div class="arrow">↓ cosine_similarity ≥ 0.65 → promote</div>
+
+  <div class="tier" id="tier-ltm">
+    <div class="tier-header">
+      <div>
+        <div class="tier-name">LTM — Long Term Memory 🟢</div>
+        <div class="tier-sub">Live from Supabase · sorted by strength</div>
+      </div>
+      <div class="eq-box">M(t) = M₀·e^(−0.22·t/30)</div>
+    </div>
+    <div id="ltm-list"><div class="empty">Load to see LTM patterns</div></div>
+  </div>
+
+  <div class="arrow">↓ session end → Haiku summarization</div>
+
+  <div class="grid2">
+    <div class="tier" id="tier-memory">
+      <div class="tier-header">
+        <div class="tier-name">user_memory 🟣</div>
+      </div>
+      <div id="memory-summary" class="empty">Load to see summary</div>
+    </div>
+
+    <div class="tier" id="tier-alerts">
+      <div class="tier-header">
+        <div class="tier-name">Live Alerts 🔴</div>
+      </div>
+      <div id="alerts-list"><div class="empty">Load to see alerts</div></div>
+    </div>
+  </div>
+
+  <div class="tier" id="tier-profile" style="margin-top:8px">
+    <div class="tier-header">
+      <div class="tier-name">user_profile 🔵</div>
+    </div>
+    <div id="profile-list"><div class="empty">Load to see profile</div></div>
+  </div>
+
+</div>
+
+<script>
+const PILLAR_COLORS = {
+  HEALTH_WELLNESS:'#E24B4A', SADNESS:'#534AB7', JOY:'#1D9E75',
+  STRESS:'#D85A30', FEAR:'#993556', LOVE:'#D4537E',
+  ENTERTAINMENT:'#BA7517', GENERAL:'#888', FINANCE:'#3a9bd5',
+  OPTIMISM:'#3B6D11', PLAN:'#7F77DD', TRACK:'#3B6D11', SEARCH:'#1D9E75',
+};
+
+let liveInterval = null;
+let isLive = true;
+
+function base()   { return document.getElementById('base').value.trim().replace(/\/$/, ''); }
+function uid()     { return document.getElementById('uid').value.trim() || 'test_user'; }
+function headers() {
+  const h = {'Content-Type': 'application/json'};
+  const k = document.getElementById('apikey').value.trim();
+  if (k) h['X-API-Key'] = k;
+  return h;
+}
+
+function setStatus(msg, isErr) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.style.color = isErr ? '#e88' : '#888';
+}
+
+function daysAgo(timestamp) {
+  if (!timestamp) return 0;
+  const t = new Date(timestamp).getTime();
+  return (Date.now() - t) / 86400000;
+}
+
+async function loadOnce() {
+  setStatus('Loading...');
+  try {
+    const res = await fetch(`${base()}/memory/state/${uid()}`, { headers: headers() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    render(data);
+    setStatus(`Updated ${new Date().toLocaleTimeString()}`);
+  } catch (e) {
+    setStatus(`Error: ${e.message}`, true);
+  }
+}
+
+function toggleLive() {
+  isLive = !isLive;
+  const btn = document.getElementById('liveBtn');
+  if (isLive) {
+    btn.textContent = '⏸ Live: ON';
+    btn.classList.remove('off');
+    startLive();
+  } else {
+    btn.textContent = '▶ Live: OFF';
+    btn.classList.add('off');
+    if (liveInterval) clearInterval(liveInterval);
+  }
+}
+
+function startLive() {
+  if (liveInterval) clearInterval(liveInterval);
+  loadOnce();
+  liveInterval = setInterval(loadOnce, 3000);
+}
+
+function render(data) {
+  const counts = data.counts || {};
+  document.getElementById('m-stm').textContent      = counts.stm_clusters || 0;
+  document.getElementById('m-ltm').textContent       = counts.ltm_patterns || 0;
+  document.getElementById('m-sessions').textContent  = counts.sessions || 0;
+  document.getElementById('m-alerts').textContent    = counts.alerts || 0;
+  document.getElementById('m-facts').textContent     = (data.user_memory?.key_facts || []).length;
+
+  // STM
+  const stmEl = document.getElementById('stm-list');
+  const stm = data.stm || [];
+  if (!stm.length) {
+    stmEl.innerHTML = '<div class="empty">No STM clusters</div>';
+  } else {
+    stmEl.innerHTML = stm.slice(0, 10).map(s => {
+      const color   = PILLAR_COLORS[s.pillar] || '#888';
+      const strength = s.strength || 0;
+      const pct     = Math.round(strength * 100);
+      const recall  = s.recall_count || 0;
+      const text    = (s.text || '').slice(0, 60);
+      return `<div class="slot-row">
+        <span class="slot-label" title="${s.text || ''}">${text}${text.length >= 60 ? '...' : ''}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="slot-val" style="color:${color}">${strength.toFixed(2)}</span>
+        <span class="badge" style="background:#3a9bd522;color:#3a9bd5">${recall}/3 recalls</span>
+      </div>`;
+    }).join('');
+  }
+
+  // LTM
+  const ltmEl = document.getElementById('ltm-list');
+  const ltm = data.ltm || [];
+  if (!ltm.length) {
+    ltmEl.innerHTML = '<div class="empty">No LTM patterns yet</div>';
+  } else {
+    ltmEl.innerHTML = ltm.slice(0, 10).map(p => {
+      // Real schema: pattern_name = "CORE"/"EMOTION"/etc, text = "CORE: HEALTH_WELLNESS"
+      // Extract the actual pillar name from the text field (after the colon)
+      const rawText  = p.text || '';
+      const pillarMatch = rawText.match(/:\s*(\w+)/);
+      const pillarName  = pillarMatch ? pillarMatch[1] : (p.pattern_name || 'UNKNOWN');
+      const color    = PILLAR_COLORS[pillarName] || '#888';
+      const strength = p.strength || 0;
+      const pct      = Math.round(strength * 100);
+      const age      = daysAgo(p.timestamp || p.created_at).toFixed(1);
+      const recall   = p.recall_count || 0;
+      return `<div class="slot-row">
+        <span class="slot-label" title="${rawText}">${rawText || pillarName}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="slot-val" style="color:${color}">${strength.toFixed(2)}</span>
+        <span class="badge" style="background:#BA751722;color:#BA7517">${age}d · ${recall}× recalled</span>
+      </div>`;
+    }).join('');
+  }
+
+  // user_memory summary
+  const memEl = document.getElementById('memory-summary');
+  const mem = data.user_memory || {};
+  if (mem.summary) {
+    const dominantStr = (mem.dominant_pillars || []).join(', ');
+    memEl.innerHTML = `
+      <p style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:8px">${mem.summary.replace(/^#+\s*/,'').slice(0, 280)}...</p>
+      <div style="font-size:11px;color:#888">Dominant: ${dominantStr || 'none yet'}</div>
+    `;
+  } else {
+    memEl.innerHTML = '<div class="empty">No summary yet</div>';
+  }
+
+  // Alerts
+  const alertsEl = document.getElementById('alerts-list');
+  const alerts = data.alerts || [];
+  if (!alerts.length) {
+    alertsEl.innerHTML = '<div class="empty">No alerts — all clear</div>';
+  } else {
+    alertsEl.innerHTML = alerts.map(a => {
+      const cls = (a.severity === 'critical' || a.severity === 'high') ? 'alert-critical' : 'alert-medium';
+      return `<div class="alert-card ${cls}">
+        <div>
+          <strong>${(a.alert_type||'').toUpperCase()}</strong> (${a.severity})<br>
+          <span style="font-size:12px">${a.message || ''}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Profile
+  const profEl = document.getElementById('profile-list');
+  const profile = data.profile || {};
+  const rows = [];
+  if (profile.name) rows.push(['Name', profile.name]);
+  if (profile.language_pref) rows.push(['Language', profile.language_pref]);
+  if (profile.health?.conditions?.length) rows.push(['Health', profile.health.conditions.join(', ')]);
+  if (profile.family?.children?.length) rows.push(['Family', profile.family.children.join(', ')]);
+  if (profile.personality?.emotional_state) rows.push(['Emotional state', profile.personality.emotional_state]);
+  if (profile.life_context?.living_situation) rows.push(['Living', profile.life_context.living_situation]);
+
+  profEl.innerHTML = rows.length
+    ? rows.map(([label, val]) => `<div class="profile-row"><span class="profile-label">${label}</span><span class="profile-val">${val}</span></div>`).join('')
+    : '<div class="empty">No profile data yet</div>';
+}
+
+// Start live on page load
+startLive();
+</script>
+</body>
+</html>
