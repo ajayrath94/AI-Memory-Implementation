@@ -451,6 +451,13 @@ def process_session_end(session_id: str, user_id: str = "default"):
     except Exception as e:
         print(f"[Profile] Failed: {e}")
 
+    # 16. Run alert engine
+    try:
+        from memory.alert_engine import run_alert_engine
+        run_alert_engine(user_id)
+    except Exception as e:
+        print(f"[AlertEngine] Failed: {e}")
+
     print(f"[UserMemory] Updated for {user_id} — session {new_count}")
     print(f"[UserMemory] Pillars: {dominant_pillars}")
     print(f"[UserMemory] Alerts: {fingerprint.get('alerts', [])}")
