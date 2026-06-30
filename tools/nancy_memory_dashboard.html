@@ -50,7 +50,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 1rem 1.25rem; }
 .card-title { font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.06em; display: flex; align-items: center; gap: 6px; }
 .card-title i { font-size: 15px; }
-.summary-text { font-size: 14px; line-height: 1.7; color: var(--text); }
+.summary-text { font-size: 14px; line-height: 1.7; color: var(--text); text-align: left; }
+.summary-text p { margin-bottom: 10px; }
+.summary-text p:last-child { margin-bottom: 0; }
 .fact { font-size: 14px; padding: 7px 0; border-bottom: 0.5px solid var(--border); display: flex; gap: 8px; align-items: flex-start; }
 .fact:last-child { border-bottom: none; }
 .fact i { color: var(--text3); font-size: 14px; margin-top: 2px; flex-shrink: 0; }
@@ -178,17 +180,35 @@ function headers() {
 function base() { return document.getElementById('base').value.trim().replace(/\/$/, ''); }
 function uid()  { return document.getElementById('uid').value.trim() || 'test_user'; }
 
+function formatSummary(text) {
+  // Split on markdown-style headers or double newlines into paragraphs
+  const cleaned = text.replace(/^#+\s*/gm, '').trim();
+  const paragraphs = cleaned.split(/\n\n+/).filter(p => p.trim());
+  if (paragraphs.length <= 1) {
+    // No paragraph breaks found — split on sentence groups (every ~2 sentences)
+    const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
+    const grouped = [];
+    for (let i = 0; i < sentences.length; i += 2) {
+      grouped.push(sentences.slice(i, i + 2).join(' ').trim());
+    }
+    return grouped.map(p => `<p>${p}</p>`).join('');
+  }
+  return paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
+}
+
 async function loadAll() {
   setStatus('Loading...');
   try {
-    const [memRes, stmRes] = await Promise.all([
+    const [memRes, stmRes, alertRes] = await Promise.all([
       fetch(`${base()}/memory/user/${uid()}`, { headers: headers() }),
       fetch(`${base()}/memory/stm/all?user_id=${uid()}`, { headers: headers() }).catch(() => null),
+      fetch(`${base()}/alerts/detected/${uid()}`, { headers: headers() }).catch(() => null),
     ]);
     if (!memRes.ok) throw new Error(`/memory/user returned ${memRes.status}`);
     const mem = await memRes.json();
     const stm = stmRes?.ok ? await stmRes.json() : null;
-    render(mem, stm);
+    const liveAlerts = alertRes?.ok ? await alertRes.json() : null;
+    render(mem, stm, liveAlerts);
     setStatus(`Loaded "${uid()}" — updated ${mem.updated_at ? new Date(mem.updated_at).toLocaleString() : 'unknown'}`);
   } catch(e) {
     setStatus(`Error: ${e.message}`, 'error');
@@ -205,20 +225,24 @@ function clearAll() {
   setStatus('');
 }
 
-function render(mem, stm) {
+function render(mem, stm, liveAlerts) {
   const facts   = mem.key_facts ?? [];
   const pillars = mem.dominant_pillars ?? [];
   const trend   = mem.pillar_trend ?? {};
   const fp      = mem.behavioural_fingerprint ?? {};
-  const alerts  = trend.alerts ?? [];
+
+  // Combine trend-based string alerts with live-detected structured alerts
+  const trendAlerts = trend.alerts ?? [];
+  const detectedAlerts = liveAlerts?.alerts ?? [];
+  const totalAlertCount = Math.max(trendAlerts.length, detectedAlerts.length);
 
   document.getElementById('m-sessions').textContent = mem.session_count ?? 0;
   document.getElementById('m-facts').textContent    = facts.length;
   document.getElementById('m-pillars').textContent  = pillars.length;
-  document.getElementById('m-alerts').textContent   = alerts.length;
+  document.getElementById('m-alerts').textContent   = totalAlertCount;
 
   document.getElementById('summary').innerHTML = mem.summary
-    ? `<p class="summary-text">${mem.summary}</p>`
+    ? `<div class="summary-text">${formatSummary(mem.summary)}</div>`
     : '<div class="empty">No summary yet — complete a session first</div>';
 
   document.getElementById('facts').innerHTML = facts.length
@@ -243,25 +267,62 @@ function render(mem, stm) {
       }).join('')
     : '<div class="empty">No pillar data yet</div>';
 
+  // Pillar trends — fallback to deriving from detected alerts if pillar_trends dict is empty
   const pillarTrends = trend.pillar_trends ?? {};
-  document.getElementById('trends').innerHTML = Object.keys(pillarTrends).length
-    ? Object.entries(pillarTrends)
-        .filter(([,v]) => v !== 'stable')
-        .map(([p,t]) => {
-          const cls  = t === 'rising' ? 'pill-rising' : 'pill-falling';
-          const icon = t === 'rising' ? 'ti-trending-up' : 'ti-trending-down';
-          return `<span class="pill ${cls}"><i class="ti ${icon}" style="font-size:11px;"></i>${p.replace(/_/g,' ')} ${t}</span>`;
-        }).join('') || '<div class="empty">All pillars stable</div>'
-    : '<div class="empty">Need 3+ sessions for trend data</div>';
+  let trendsHtml = '';
 
-  document.getElementById('alerts').innerHTML = alerts.length
-    ? alerts.map(a => {
-        const isDanger = a.toLowerCase().includes('distress') || a.toLowerCase().includes('stress');
-        const cls = isDanger ? 'alert-danger' : 'alert-warn';
-        const icon = isDanger ? 'ti-alert-triangle' : 'ti-info-circle';
-        return `<div class="alert ${cls}"><i class="ti ${icon}"></i><span>${a}</span></div>`;
-      }).join('')
-    : '<div class="alert alert-ok"><i class="ti ti-check"></i><span>No alerts — memory looks healthy</span></div>';
+  if (Object.keys(pillarTrends).length) {
+    const rows = Object.entries(pillarTrends).filter(([,v]) => v !== 'stable');
+    if (rows.length) {
+      trendsHtml = rows.map(([p,t]) => {
+        const cls  = t === 'rising' ? 'pill-rising' : 'pill-falling';
+        const icon = t === 'rising' ? 'ti-trending-up' : 'ti-trending-down';
+        return `<span class="pill ${cls}"><i class="ti ${icon}" style="font-size:11px;"></i>${p.replace(/_/g,' ')} ${t}</span>`;
+      }).join('');
+    }
+  }
+
+  // Fallback: derive trend pills from live detected alerts (pillar field) when pillar_trends is empty
+  if (!trendsHtml && detectedAlerts.length) {
+    const seen = new Set();
+    trendsHtml = detectedAlerts.filter(a => {
+      const key = a.pillar || a.alert_type;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).map(a => {
+      const label = (a.pillar || a.alert_type || '').replace(/_/g,' ');
+      return `<span class="pill pill-rising"><i class="ti ti-trending-up" style="font-size:11px;"></i>${label} rising</span>`;
+    }).join('');
+  }
+
+  document.getElementById('trends').innerHTML = trendsHtml
+    || (mem.session_count >= 3
+        ? '<div class="empty">All pillars stable</div>'
+        : '<div class="empty">Need 3+ sessions for trend data</div>');
+
+  // Alerts — prefer live structured alerts (richer), fallback to trend string alerts
+  let alertsHtml = '';
+  if (detectedAlerts.length) {
+    alertsHtml = detectedAlerts.map(a => {
+      const severity = (a.severity || '').toLowerCase();
+      const isDanger = severity === 'critical' || severity === 'high';
+      const cls  = isDanger ? 'alert-danger' : 'alert-warn';
+      const icon = isDanger ? 'ti-alert-triangle' : 'ti-info-circle';
+      const label = a.alert_type ? a.alert_type.charAt(0).toUpperCase() + a.alert_type.slice(1) : 'Alert';
+      return `<div class="alert ${cls}"><i class="ti ${icon}"></i><span><strong>${label}</strong> (${severity || 'info'}) — ${a.message || ''}</span></div>`;
+    }).join('');
+  } else if (trendAlerts.length) {
+    alertsHtml = trendAlerts.map(a => {
+      const isDanger = a.toLowerCase().includes('distress') || a.toLowerCase().includes('stress');
+      const cls = isDanger ? 'alert-danger' : 'alert-warn';
+      const icon = isDanger ? 'ti-alert-triangle' : 'ti-info-circle';
+      return `<div class="alert ${cls}"><i class="ti ${icon}"></i><span>${a}</span></div>`;
+    }).join('');
+  }
+
+  document.getElementById('alerts').innerHTML = alertsHtml
+    || '<div class="alert alert-ok"><i class="ti ti-check"></i><span>No alerts — memory looks healthy</span></div>';
 
   const stmEntries = stm?.entries ?? stm?.clusters ?? [];
   document.getElementById('stm').innerHTML = stmEntries.length
@@ -278,5 +339,3 @@ function render(mem, stm) {
 </script>
 </body>
 </html>
-
-
