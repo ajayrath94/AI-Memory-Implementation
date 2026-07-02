@@ -246,6 +246,15 @@ CONVERSATION STYLE:
     if profile_prompt:
         nancy_persona += f"\n{profile_prompt}\n"
 
+    # Inject pillar weight preferences
+    try:
+        from memory.pillar_weights import build_weights_prompt
+        weights_prompt = build_weights_prompt(user_id)
+        if weights_prompt:
+            nancy_persona += f"\n{weights_prompt}\n"
+    except Exception:
+        pass
+
     if user_memory:
         nancy_persona += f"\nWHAT YOU KNOW ABOUT THIS PERSON:\n{user_memory}\n"
 
@@ -431,7 +440,7 @@ async def process_input(text: str, model: str,
         seed_cache_from_memory(user_id, sid)
 
     # 4. Classify with EMBEDDINGS (no keyword matching!)
-    classified = classify_input(text)
+    classified = classify_input(text, user_id=user_id)
     embedding  = classified.embedding  # real 1024-dim vector
 
     # 5. Save user message with embedding

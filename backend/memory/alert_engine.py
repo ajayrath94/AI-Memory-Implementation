@@ -52,8 +52,22 @@ def detect_alerts(user_id: str) -> List[dict]:
     personality = profile.get("personality", {})
     emotion_state = personality.get("emotional_state", "")
 
+    # Apply pillar weights to alert sensitivity
+    try:
+        from memory.pillar_weights import get_pillar_weights
+        weights = get_pillar_weights(user_id)
+    except Exception:
+        weights = {}
+
+    def is_alert_active(pillar, base_condition):
+        """Check if alert should fire considering user weights."""
+        w = weights.get(pillar, 1.0)
+        if w < 0.5:
+            return False  # User explicitly de-prioritized this pillar
+        return base_condition
+
     # ── HEALTH alert ──────────────────────────────────────────────────────────
-    if pillar_trends.get("HEALTH_WELLNESS") == "rising" and conditions:
+    if is_alert_active("HEALTH_WELLNESS", pillar_trends.get("HEALTH_WELLNESS") == "rising" and conditions):
         alerts.append({
             "alert_type": "health",
             "severity":   "high",
@@ -62,7 +76,7 @@ def detect_alerts(user_id: str) -> List[dict]:
         })
 
     # ── STRESS alert ──────────────────────────────────────────────────────────
-    if pillar_trends.get("STRESS") == "rising":
+    if is_alert_active("STRESS", pillar_trends.get("STRESS") == "rising"):
         alerts.append({
             "alert_type": "stress",
             "severity":   "medium",
@@ -71,7 +85,7 @@ def detect_alerts(user_id: str) -> List[dict]:
         })
 
     # ── SADNESS alert ─────────────────────────────────────────────────────────
-    if pillar_trends.get("SADNESS") == "rising":
+    if is_alert_active("SADNESS", pillar_trends.get("SADNESS") == "rising"):
         lonely = "lives alone" in living.lower() if living else False
         severity = "high" if lonely else "medium"
         alerts.append({
