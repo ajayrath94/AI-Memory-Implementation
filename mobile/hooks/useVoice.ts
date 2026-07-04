@@ -3,7 +3,7 @@ import { Alert, Platform } from 'react-native'
 import { Audio } from 'expo-av'
 import * as Haptics from 'expo-haptics'
 import * as FileSystem from 'expo-file-system'
-import { API_BASE } from '../constants'
+import { API_BASE, API_KEY } from '../constants'
 
 export function useVoice(onTranscript: (text: string) => void) {
   const [isListening, setIsListening]   = useState(false)
@@ -69,7 +69,7 @@ export function useVoice(onTranscript: (text: string) => void) {
       const res = await fetch(`${API_BASE}/voice/transcribe`, {
         method:  'POST',
         body:    formData,
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'multipart/form-data', 'X-API-Key': API_KEY },
       })
 
       if (!res.ok) {

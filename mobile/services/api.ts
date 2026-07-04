@@ -1,4 +1,4 @@
-import { API_BASE } from '../constants'
+import { API_BASE, API_KEY } from '../constants'
 
 export interface ChatResponse {
   reply:       string
@@ -25,7 +25,7 @@ export async function sendMessage(
   try {
     const res = await fetch(`${API_BASE}/chat/`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
       body:    JSON.stringify({ text, model, session_id }),
       signal:  controller.signal,
     })
@@ -46,7 +46,7 @@ export async function endSession(session_id: string): Promise<void> {
   try {
     await fetch(`${API_BASE}/chat/end-session`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
       body:    JSON.stringify({ session_id, user_id: 'default' }),
     })
   } catch (err) {
