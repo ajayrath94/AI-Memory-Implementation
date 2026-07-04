@@ -108,9 +108,9 @@ export const Shadow = {
 }
 
 // ── API ────────────────────────────────────────────────────────────────────────
-const DEV_IP = '192.168.1.2'  // ← update to your local IP
-export const API_BASE   = __DEV__ ? `http://${DEV_IP}:8000` : 'https://api.nancyai.co'
-export const API_KEY    = 'CnsC4wsdDWBlvc9crEM2-NdyVavBOK08GDpQyjwT144'
+const DEV_IP = 'ai-memory-implementation-production.up.railway.app'  // ← update to your local IP
+export const API_BASE   = __DEV__ ? `https://${DEV_IP}` : 'https://ai-memory-implementation-production.up.railway.app'
+export const API_KEY    = 'jSQ2qdMyXMJq4Y8dwcQuDjkc7zp_vB79uHvCvDTKVZA'
 
 // ── AI Models ──────────────────────────────────────────────────────────────────
 export const MODELS = [
