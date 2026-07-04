@@ -1,0 +1,1145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PILLAR DEFINITIONS — Single source of truth for the classification system.
+  
+  Structure per pillar:
+    - type:               core | emotion | functional | modifier
+    - classification:     embedding | keyword
+    - priority_threshold: score thresholds for HIGH / MEDIUM / LOW
+    - matrix:             3x3 SUBJECT/ACTION/CONTEXT × PRIMARY/SECONDARY/MODIFIER
+    - keywords:           for modifier pillars (keyword classification)
+    - examples:           Hindi + English training examples for embedding centroids
+-->
+<pillars>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       CORE PILLARS — What the conversation is fundamentally about
+       ═══════════════════════════════════════════════════════════════════════ -->
+
+  <pillar name="FINANCE" type="core" classification="embedding">
+    <description>Money, expenses, savings, pension, bills, banking, investments</description>
+    <priority_threshold high="0.78" medium="0.65" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / family member</cell>
+        <cell position="secondary">bank / institution</cell>
+        <cell position="modifier">account / fund / bill</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">pay / save / send / check</cell>
+        <cell position="secondary">invest / borrow / withdraw</cell>
+        <cell position="modifier">urgently / monthly / due</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">shortage / overdue / concern</cell>
+        <cell position="secondary">planning / routine</cell>
+        <cell position="modifier">today / this month / fixed date</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">I'm worried about my savings</example>
+      <example lang="en">My pension is late this month</example>
+      <example lang="en">How should I manage my budget?</example>
+      <example lang="en">The electricity bill is too high</example>
+      <example lang="en">I need to send money to my son</example>
+      <example lang="en">My fixed deposit is maturing</example>
+      <example lang="en">Worried about hospital expenses</example>
+      <example lang="en">My bank balance is low</example>
+      <example lang="en">Need to check my account</example>
+      <example lang="en">Cost of medicines is rising</example>
+      <example lang="en">Need to save more money</example>
+      <example lang="en">My expenses are too high</example>
+      <example lang="en">Loan EMI is due</example>
+      <example lang="en">Investment returns are low</example>
+      <example lang="hi">Paisa khatam ho raha hai</example>
+      <example lang="hi">Pension nahi aayi abhi tak</example>
+      <example lang="hi">Bijli ka bill bahut aaya</example>
+      <example lang="hi">Bacchon ko paisa bhejana hai</example>
+      <example lang="hi">Bank mein paise kam hain</example>
+      <example lang="hi">Mera budget tight hai</example>
+      <example lang="hi">Savings bahut kam hai</example>
+      <example lang="hi">Ghar ka kharcha bahut hai</example>
+      <example lang="hi">Hospital ka bill aaya</example>
+      <example lang="hi">UPI se bhejdo paise</example>
+      <example lang="hi">Mobile recharge karna hai</example>
+      <example lang="hi">Gas cylinder ka bill</example>
+      <example lang="hi">Property tax due hai</example>
+    </examples>
+  </pillar>
+
+  <pillar name="ASPIRATIONS" type="core" classification="embedding">
+    <description>Dreams, goals, wishes, travel, legacy, personal growth, spiritual journeys</description>
+    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / grandchildren / family</cell>
+        <cell position="secondary">place / activity / skill</cell>
+        <cell position="modifier">lifetime / bucket list</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">visit / learn / achieve / wish</cell>
+        <cell position="secondary">travel / write / teach</cell>
+        <cell position="modifier">before I die / someday / still</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">unfulfilled / hopeful / dreaming</cell>
+        <cell position="secondary">retirement / peaceful</cell>
+        <cell position="modifier">spiritual / personal / family</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">I want to travel before I die</example>
+      <example lang="en">My dream is to visit Varanasi</example>
+      <example lang="en">I hope my grandchildren do well</example>
+      <example lang="en">I want to learn something new</example>
+      <example lang="en">My goal is to stay healthy</example>
+      <example lang="en">I wish I could dance again</example>
+      <example lang="en">I want to write my memoirs</example>
+      <example lang="en">Hope to see everyone settled</example>
+      <example lang="en">I want to visit my hometown</example>
+      <example lang="en">Wish to meet old friends</example>
+      <example lang="en">Dream of peaceful retirement</example>
+      <example lang="en">Want to learn music</example>
+      <example lang="en">Want to volunteer</example>
+      <example lang="en">Hope to live long</example>
+      <example lang="en">Want to teach children</example>
+      <example lang="hi">Mera sapna hai ki main ghoomoon</example>
+      <example lang="hi">Bacche settle ho jaayein</example>
+      <example lang="hi">Kuch naya seekhna chahta hoon</example>
+      <example lang="hi">Life mein kuch aur karna hai</example>
+      <example lang="hi">Tirth yatra karni hai</example>
+      <example lang="hi">Yoga seekhna chahta hoon</example>
+    </examples>
+  </pillar>
+
+  <pillar name="CAREER_GOAL" type="core" classification="embedding">
+    <description>Past work life, retirement, professional identity, job memories, legacy</description>
+    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user (past professional self)</cell>
+        <cell position="secondary">workplace / colleagues</cell>
+        <cell position="modifier">role / title / years</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">worked / retired / ran / served</cell>
+        <cell position="secondary">miss / remember / proud</cell>
+        <cell position="modifier">for X years / decades</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">nostalgia / identity / pride</cell>
+        <cell position="secondary">comparison to present</cell>
+        <cell position="modifier">government / private / own business</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">I used to work as a teacher</example>
+      <example lang="en">My job was very demanding</example>
+      <example lang="en">I retired last year</example>
+      <example lang="en">Miss my colleagues</example>
+      <example lang="en">Work life was different then</example>
+      <example lang="en">I was a government officer</example>
+      <example lang="en">Ran my own business for 30 years</example>
+      <example lang="en">Doctor tha main</example>
+      <example lang="en">Banking career</example>
+      <example lang="en">Army retired</example>
+      <example lang="en">I worked hard all my life</example>
+      <example lang="en">Proud of my work</example>
+      <example lang="en">Miss the routine of work</example>
+      <example lang="hi">Main teacher tha pehle</example>
+      <example lang="hi">Sarkari naukri thi meri</example>
+      <example lang="hi">Business kiya tha</example>
+      <example lang="hi">Apna dukaan tha</example>
+      <example lang="hi">Office mein kaam kiya</example>
+      <example lang="hi">Retired ho gaya hoon</example>
+      <example lang="hi">Colleagues yaad aate hain</example>
+      <example lang="hi">Kaam ki duniya alag thi</example>
+    </examples>
+  </pillar>
+
+  <pillar name="HEALTH_WELLNESS" type="core" classification="embedding">
+    <description>Physical pain, illness, medication, doctor visits, mental wellbeing, chronic conditions</description>
+    <priority_threshold high="0.80" medium="0.65" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / body part</cell>
+        <cell position="secondary">doctor / medicine / hospital</cell>
+        <cell position="modifier">chronic / acute / recurring</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">pain / hurt / ache / problem</cell>
+        <cell position="secondary">check / visit / take medicine</cell>
+        <cell position="modifier">since long / suddenly / getting worse</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">suffering / concern / urgent</cell>
+        <cell position="secondary">routine / monitoring</cell>
+        <cell position="modifier">today / chronic / hereditary</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">My knee has been hurting</example>
+      <example lang="en">I cannot sleep properly</example>
+      <example lang="en">Blood pressure is high today</example>
+      <example lang="en">I need to take my medicine</example>
+      <example lang="en">Feeling tired all the time</example>
+      <example lang="en">Chest feels a bit tight</example>
+      <example lang="en">My back is aching badly</example>
+      <example lang="en">Doctor visit tomorrow</example>
+      <example lang="en">Sugar level is not controlled</example>
+      <example lang="en">Breathing problem</example>
+      <example lang="en">Eyes getting weak</example>
+      <example lang="en">Difficulty walking</example>
+      <example lang="en">Hands trembling</example>
+      <example lang="en">Headache persists</example>
+      <example lang="en">Stomach pain</example>
+      <example lang="en">Acidity problem</example>
+      <example lang="en">I have diabetes</example>
+      <example lang="en">Heart problem</example>
+      <example lang="en">Arthritis pain</example>
+      <example lang="en">Thyroid issue</example>
+      <example lang="hi">Ghutne mein bahut dard hai</example>
+      <example lang="hi">Neend nahi aati raat ko</example>
+      <example lang="hi">BP badha hua hai</example>
+      <example lang="hi">Dawai lena bhool gayi</example>
+      <example lang="hi">Bahut thakaan ho rahi hai</example>
+      <example lang="hi">Seene mein dard hai</example>
+      <example lang="hi">Kamar dard se pareshan hoon</example>
+      <example lang="hi">Doctor ke paas jaana hai</example>
+      <example lang="hi">Sugar control nahi ho rahi</example>
+    </examples>
+  </pillar>
+
+  <pillar name="GENERAL" type="core" classification="embedding">
+    <description>Everyday chitchat, greetings, routine observations, nothing specific</description>
+    <priority_threshold high="0.70" medium="0.55" low="0.40"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / day / weather</cell>
+        <cell position="secondary">routine / habit</cell>
+        <cell position="modifier">casual / passing / light</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">saying hello / checking in</cell>
+        <cell position="secondary">sharing / observing</cell>
+        <cell position="modifier">just / only / simply</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">no urgency / no concern</cell>
+        <cell position="secondary">normal day / routine</cell>
+        <cell position="modifier">morning / evening / random</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">How are you today</example>
+      <example lang="en">Good morning</example>
+      <example lang="en">Just wanted to chat</example>
+      <example lang="en">Nothing specific</example>
+      <example lang="en">Regular routine</example>
+      <example lang="en">Same as usual</example>
+      <example lang="en">Nothing new</example>
+      <example lang="en">Getting by</example>
+      <example lang="en">Nice weather today</example>
+      <example lang="en">What a day</example>
+      <example lang="en">Random thoughts</example>
+      <example lang="en">Just saying hello</example>
+      <example lang="hi">Kaise ho aap</example>
+      <example lang="hi">Subah ki chai</example>
+      <example lang="hi">Aaj kya hua</example>
+      <example lang="hi">Bas baat karni thi</example>
+      <example lang="hi">Kuch khaas nahi</example>
+      <example lang="hi">Aam din hai</example>
+      <example lang="hi">Normal chal raha</example>
+      <example lang="hi">Bas theek hoon</example>
+    </examples>
+  </pillar>
+
+  <pillar name="ENTERTAINMENT" type="core" classification="embedding">
+    <description>Movies, music, cricket, TV serials, books, hobbies, leisure activities</description>
+    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">movie / match / song / show</cell>
+        <cell position="secondary">actor / player / channel</cell>
+        <cell position="modifier">favorite / old / classic</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">watch / listen / play / read</cell>
+        <cell position="secondary">enjoy / follow / discuss</cell>
+        <cell position="modifier">today / tonight / regularly</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">leisure / relaxation / fun</cell>
+        <cell position="secondary">nostalgia / current event</cell>
+        <cell position="modifier">cricket season / festival / evening</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">I want to watch a movie</example>
+      <example lang="en">Cricket match is today</example>
+      <example lang="en">Favorite song is playing</example>
+      <example lang="en">Old Hindi movies are best</example>
+      <example lang="en">Love watching serials</example>
+      <example lang="en">Reading newspaper daily</example>
+      <example lang="en">Playing cards with friends</example>
+      <example lang="en">India vs Pakistan match</example>
+      <example lang="en">IPL is exciting</example>
+      <example lang="en">Old Bollywood films</example>
+      <example lang="en">Comedy shows on TV</example>
+      <example lang="en">Music competition shows</example>
+      <example lang="hi">Movie dekhni hai aaj</example>
+      <example lang="hi">Cricket ka match hai</example>
+      <example lang="hi">Purane gaane sunna chahta</example>
+      <example lang="hi">TV serial achha hai</example>
+      <example lang="hi">Kitaab padh raha hoon</example>
+      <example lang="hi">Bollywood news dekhna</example>
+      <example lang="hi">Sports channel lagao</example>
+      <example lang="hi">Bhajan kirtan</example>
+    </examples>
+  </pillar>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       EMOTION PILLARS — Emotional tone of the conversation
+       ═══════════════════════════════════════════════════════════════════════ -->
+
+  <pillar name="OPTIMISM" type="emotion" classification="embedding">
+    <description>Hope, confidence, positive outlook, excitement about the future</description>
+    <priority_threshold high="0.78" medium="0.63" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / future / family</cell>
+        <cell position="secondary">situation / life</cell>
+        <cell position="modifier">hopeful / confident / sure</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">feeling great / looking forward</cell>
+        <cell position="secondary">believing / hoping</cell>
+        <cell position="modifier">definitely / surely / positively</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">positive / bright / improving</cell>
+        <cell position="secondary">recovery / progress</cell>
+        <cell position="modifier">today / tomorrow / soon</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">Feeling great today</example>
+      <example lang="en">Things are looking up</example>
+      <example lang="en">I am excited about tomorrow</example>
+      <example lang="en">Confident everything will work out</example>
+      <example lang="en">Hopeful for better days</example>
+      <example lang="en">Happy about future</example>
+      <example lang="en">Feeling blessed</example>
+      <example lang="en">Grateful for life</example>
+      <example lang="en">Bright future ahead</example>
+      <example lang="en">Things improving</example>
+      <example lang="en">Getting better each day</example>
+      <example lang="hi">Aaj bahut achha lag raha</example>
+      <example lang="hi">Kal acha hoga</example>
+      <example lang="hi">Positive soch rakhta hoon</example>
+      <example lang="hi">Umeed hai mujhe</example>
+      <example lang="hi">Achhe din aayenge</example>
+      <example lang="hi">Sab theek hoga</example>
+      <example lang="hi">Motivated hoon</example>
+      <example lang="hi">Bhagwan ka ashirwad</example>
+    </examples>
+  </pillar>
+
+  <pillar name="JOY" type="emotion" classification="embedding">
+    <description>Happiness, celebration, good news, family togetherness, laughter</description>
+    <priority_threshold high="0.78" medium="0.63" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / grandchildren / family</cell>
+        <cell position="secondary">event / occasion / visit</cell>
+        <cell position="modifier">birthday / anniversary / festival</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">happy / celebrating / laughing</cell>
+        <cell position="secondary">visiting / sharing good news</cell>
+        <cell position="modifier">today / just now / this moment</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">joyful / delighted / thrilled</cell>
+        <cell position="secondary">family together / reunion</cell>
+        <cell position="modifier">special occasion / surprise</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">I am so happy today</example>
+      <example lang="en">My grandchildren visited</example>
+      <example lang="en">Wonderful news received</example>
+      <example lang="en">Son called from abroad</example>
+      <example lang="en">Daughter got good news</example>
+      <example lang="en">Family is together</example>
+      <example lang="en">Laughed a lot today</example>
+      <example lang="en">Feeling loved</example>
+      <example lang="en">Delicious meal</example>
+      <example lang="en">Peaceful prayer</example>
+      <example lang="hi">Bahut khush hoon aaj</example>
+      <example lang="hi">Beta aa gaya ghar</example>
+      <example lang="hi">Beti ki achhi khabar</example>
+      <example lang="hi">Pota khelne aaya</example>
+      <example lang="hi">Naati ne call kiya</example>
+      <example lang="hi">Parivaar saath hai</example>
+      <example lang="hi">Shaadi ki anniversary</example>
+      <example lang="hi">Festival mein mazaa</example>
+    </examples>
+  </pillar>
+
+  <pillar name="FEAR" type="emotion" classification="embedding">
+    <description>Anxiety, worry, nervousness, scared about health or future or being alone</description>
+    <priority_threshold high="0.80" medium="0.65" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / health / future</cell>
+        <cell position="secondary">surgery / test / result</cell>
+        <cell position="modifier">alone / helpless / uncertain</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">scared / worried / anxious / afraid</cell>
+        <cell position="secondary">nervous / unsure / dreading</cell>
+        <cell position="modifier">very / extremely / constantly</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">health scare / medical / isolation</cell>
+        <cell position="secondary">financial insecurity / children far</cell>
+        <cell position="modifier">night / alone / sudden</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">I am worried about my health</example>
+      <example lang="en">Scared about the future</example>
+      <example lang="en">Anxious about surgery</example>
+      <example lang="en">Nervous about test results</example>
+      <example lang="en">Afraid of falling</example>
+      <example lang="en">Medical anxiety</example>
+      <example lang="en">Health scare</example>
+      <example lang="en">Scared of dying</example>
+      <example lang="en">Fear of pain</example>
+      <example lang="hi">Darr lag raha hai</example>
+      <example lang="hi">Chinta ho rahi hai</example>
+      <example lang="hi">Future ki fikar hai</example>
+      <example lang="hi">Operation se darr</example>
+      <example lang="hi">Test result ka dar</example>
+      <example lang="hi">Akele rehne ki chinta</example>
+      <example lang="hi">Ghar mein koi nahi</example>
+      <example lang="hi">Raat ko darr lagta</example>
+    </examples>
+  </pillar>
+
+  <pillar name="SADNESS" type="emotion" classification="embedding">
+    <description>Grief, loneliness, missing loved ones, depression, feeling forgotten</description>
+    <priority_threshold high="0.80" medium="0.65" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / deceased / absent family</cell>
+        <cell position="secondary">memories / past / loss</cell>
+        <cell position="modifier">spouse / friend / old days</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">missing / grieving / crying / lonely</cell>
+        <cell position="secondary">remembering / mourning</cell>
+        <cell position="modifier">deeply / very / silently</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">loss / isolation / neglect</cell>
+        <cell position="secondary">empty house / no visitors</cell>
+        <cell position="modifier">since passing / long time / daily</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">Feeling very sad today</example>
+      <example lang="en">Missing my husband</example>
+      <example lang="en">Spouse passed away</example>
+      <example lang="en">Lonely without family</example>
+      <example lang="en">Children do not call much</example>
+      <example lang="en">Miss the old days</example>
+      <example lang="en">Depression feeling</example>
+      <example lang="en">Crying today</example>
+      <example lang="en">No one cares</example>
+      <example lang="en">Isolated</example>
+      <example lang="hi">Bahut dukh ho raha hai</example>
+      <example lang="hi">Pati yaad aa rahe hain</example>
+      <example lang="hi">Patni chali gayi</example>
+      <example lang="hi">Akela mehsoos kar raha</example>
+      <example lang="hi">Bacche call nahi karte</example>
+      <example lang="hi">Purane din yaad aate</example>
+      <example lang="hi">Dost nahi rahe</example>
+      <example lang="hi">Ghar soona lagta hai</example>
+    </examples>
+  </pillar>
+
+  <pillar name="ANGER" type="emotion" classification="embedding">
+    <description>Frustration, upset, disrespect, betrayal, injustice, argument</description>
+    <priority_threshold high="0.78" medium="0.63" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / family / system</cell>
+        <cell position="secondary">children / government / fraudster</cell>
+        <cell position="modifier">disrespectful / cheating / ignoring</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">angry / frustrated / upset / cheated</cell>
+        <cell position="secondary">arguing / complaining / hurt</cell>
+        <cell position="modifier">very / extremely / again</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">disrespect / betrayal / injustice</cell>
+        <cell position="secondary">family conflict / system failure</cell>
+        <cell position="modifier">repeated / recent / ongoing</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">I am really frustrated today</example>
+      <example lang="en">Children do not listen</example>
+      <example lang="en">Nobody respects elders anymore</example>
+      <example lang="en">Very upset about this</example>
+      <example lang="en">Makes me so angry</example>
+      <example lang="en">Betrayed by family</example>
+      <example lang="en">Disrespected publicly</example>
+      <example lang="en">Argument happened</example>
+      <example lang="hi">Bahut gussa aa raha</example>
+      <example lang="hi">Bacche nahi sunte</example>
+      <example lang="hi">Budhon ki izzat nahi</example>
+      <example lang="hi">Bahut naraaz hoon</example>
+      <example lang="hi">Cheat kiya kisi ne</example>
+      <example lang="hi">Fraud hua</example>
+      <example lang="hi">Family politics</example>
+      <example lang="hi">Property dispute</example>
+    </examples>
+  </pillar>
+
+  <pillar name="STRESS" type="emotion" classification="embedding">
+    <description>Overwhelm, pressure, exhaustion, too much to handle, caregiver burden</description>
+    <priority_threshold high="0.80" medium="0.65" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / situation / responsibilities</cell>
+        <cell position="secondary">health + finances + family combined</cell>
+        <cell position="modifier">multiple / simultaneous / unending</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">stressed / overwhelmed / exhausted / drained</cell>
+        <cell position="secondary">managing / coping / struggling</cell>
+        <cell position="modifier">alone / without help / daily</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">overload / crisis / burnout</cell>
+        <cell position="secondary">caregiver / financial + health together</cell>
+        <cell position="modifier">chronic / acute / building up</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">Feeling very stressed today</example>
+      <example lang="en">Too much to handle</example>
+      <example lang="en">Overwhelmed by everything</example>
+      <example lang="en">Cannot sleep from worry</example>
+      <example lang="en">Exhausted completely</example>
+      <example lang="en">No energy left</example>
+      <example lang="en">Cannot cope anymore</example>
+      <example lang="en">Multiple problems at once</example>
+      <example lang="en">Mental load heavy</example>
+      <example lang="hi">Bahut tension hai</example>
+      <example lang="hi">Bahut zyada ho gaya</example>
+      <example lang="hi">Sab kuch sambhalna mushkil</example>
+      <example lang="hi">Chinta se neend nahi</example>
+      <example lang="hi">Ghar mein tension hai</example>
+      <example lang="hi">Pressure bohot hai</example>
+      <example lang="hi">Managing alone</example>
+      <example lang="hi">Crisis situation</example>
+    </examples>
+  </pillar>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       FUNCTIONAL PILLARS — What the user wants to DO
+       ═══════════════════════════════════════════════════════════════════════ -->
+
+  <pillar name="PLAN" type="functional" classification="embedding">
+    <description>Scheduling, organizing, preparing, making arrangements, creating routines</description>
+    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / family / appointment</cell>
+        <cell position="secondary">doctor / trip / event</cell>
+        <cell position="modifier">tomorrow / weekly / monthly</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">plan / organize / schedule / arrange</cell>
+        <cell position="secondary">prepare / set up / coordinate</cell>
+        <cell position="modifier">in advance / carefully / properly</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">upcoming / future / routine</cell>
+        <cell position="secondary">health / family / travel</cell>
+        <cell position="modifier">time-bound / specific date</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">I need to plan my doctor visit</example>
+      <example lang="en">Let me organize my medicines</example>
+      <example lang="en">Need to schedule a call with son</example>
+      <example lang="en">Planning family trip</example>
+      <example lang="en">Weekly plan</example>
+      <example lang="en">Daily routine set karna</example>
+      <example lang="en">Morning routine plan</example>
+      <example lang="en">Family gathering plan</example>
+      <example lang="hi">Doctor appointment plan karna</example>
+      <example lang="hi">Dawai ka schedule banana</example>
+      <example lang="hi">Beta se baat ka plan</example>
+      <example lang="hi">Family trip plan</example>
+      <example lang="hi">Agenda banana chahiye</example>
+      <example lang="hi">Timetable banana</example>
+      <example lang="hi">Month ka budget plan</example>
+      <example lang="hi">Market jao plan</example>
+    </examples>
+  </pillar>
+
+  <pillar name="SEARCH" type="functional" classification="embedding">
+    <description>Looking for information, finding doctors, asking for recommendations, researching</description>
+    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user seeking information</cell>
+        <cell position="secondary">doctor / hospital / medicine / recipe</cell>
+        <cell position="modifier">best / nearest / good</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">find / search / look for / recommend</cell>
+        <cell position="secondary">tell me / where is / what is</cell>
+        <cell position="modifier">quickly / right now / for me</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">information need / curiosity</cell>
+        <cell position="secondary">health / local / practical</cell>
+        <cell position="modifier">urgent / routine / one-time</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">Can you find me a good doctor</example>
+      <example lang="en">Where is the nearest hospital</example>
+      <example lang="en">Recommend a good medicine</example>
+      <example lang="en">What is this disease called</example>
+      <example lang="en">Which hospital is best</example>
+      <example lang="en">How to find out</example>
+      <example lang="en">Cricket score</example>
+      <example lang="en">Weather forecast</example>
+      <example lang="en">Train schedule</example>
+      <example lang="hi">Achha doctor dhundo</example>
+      <example lang="hi">Hospital kahan hai</example>
+      <example lang="hi">Dawai suggest karo</example>
+      <example lang="hi">Yeh bimari kya hai</example>
+      <example lang="hi">Kahan milega</example>
+      <example lang="hi">Kaise pata karoon</example>
+      <example lang="hi">Nearest pharmacy</example>
+      <example lang="hi">Bus route to hospital</example>
+    </examples>
+  </pillar>
+
+  <pillar name="ORDER" type="functional" classification="embedding">
+    <description>Placing orders, booking, purchasing, getting deliveries, making transactions</description>
+    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user placing order</cell>
+        <cell position="secondary">medicine / food / grocery / cab</cell>
+        <cell position="modifier">online / home delivery / urgent</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">order / book / buy / purchase / get</cell>
+        <cell position="secondary">deliver / send / arrange</cell>
+        <cell position="modifier">now / today / for me</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">transaction / commerce / delivery</cell>
+        <cell position="secondary">health / food / transport</cell>
+        <cell position="modifier">urgent / routine / one-time</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">Order my medicines online</example>
+      <example lang="en">Book a doctor appointment</example>
+      <example lang="en">Get groceries delivered</example>
+      <example lang="en">Buy this for me</example>
+      <example lang="en">Book movie ticket</example>
+      <example lang="en">Train ticket book</example>
+      <example lang="en">Hotel booking</example>
+      <example lang="hi">Dawai order karo</example>
+      <example lang="hi">Doctor appointment book karo</example>
+      <example lang="hi">Grocery mangao</example>
+      <example lang="hi">Online order karo</example>
+      <example lang="hi">Delivery mangao</example>
+      <example lang="hi">Cab book karo</example>
+      <example lang="hi">Food order karo</example>
+      <example lang="hi">Swiggy se mangao</example>
+    </examples>
+  </pillar>
+
+  <pillar name="TRACK" type="functional" classification="embedding">
+    <description>Monitoring, checking status, following up, tracking health metrics or deliveries</description>
+    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user monitoring something</cell>
+        <cell position="secondary">BP / sugar / medicine / delivery</cell>
+        <cell position="modifier">daily / weekly / ongoing</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">check / monitor / track / follow up</cell>
+        <cell position="secondary">update / status / result</cell>
+        <cell position="modifier">today / since / how much</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">monitoring / awareness / follow-up</cell>
+        <cell position="secondary">health / order / finance</cell>
+        <cell position="modifier">routine / after incident / concern</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">Check my blood pressure today</example>
+      <example lang="en">Monitor my sugar levels</example>
+      <example lang="en">Track my medicine intake</example>
+      <example lang="en">Follow up on test results</example>
+      <example lang="en">Did I take medicine</example>
+      <example lang="en">Steps counted today</example>
+      <example lang="en">Doctor visit history</example>
+      <example lang="en">Account balance</example>
+      <example lang="hi">BP check karo</example>
+      <example lang="hi">Sugar monitor karo</example>
+      <example lang="hi">Dawai track karo</example>
+      <example lang="hi">Test result follow up</example>
+      <example lang="hi">Status check karo</example>
+      <example lang="hi">Progress dekho</example>
+      <example lang="hi">Update kya hai</example>
+      <example lang="hi">Pension credited check</example>
+    </examples>
+  </pillar>
+
+  <pillar name="NUDGE" type="functional" classification="embedding">
+    <description>Reminders, alerts, prompts to not forget something important</description>
+    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user wanting a reminder</cell>
+        <cell position="secondary">medicine / appointment / prayer / call</cell>
+        <cell position="modifier">daily / recurring / one-time</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">remind / alert / notify / don't let me forget</cell>
+        <cell position="secondary">tell me when / set alarm</cell>
+        <cell position="modifier">daily / every morning / at specific time</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">forgetfulness / habit building</cell>
+        <cell position="secondary">health / spiritual / family</cell>
+        <cell position="modifier">urgent / gentle / persistent</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">Remind me to take my medicine</example>
+      <example lang="en">Do not let me forget the appointment</example>
+      <example lang="en">Alert me when son calls</example>
+      <example lang="en">Make sure I drink water</example>
+      <example lang="en">Remind me about prayers</example>
+      <example lang="en">Set alarm for medicine</example>
+      <example lang="en">Daily reminder please</example>
+      <example lang="en">Wake up call</example>
+      <example lang="hi">Dawai yaad dilao</example>
+      <example lang="hi">Appointment mat bhulaana</example>
+      <example lang="hi">Beta ka call yaad dilaana</example>
+      <example lang="hi">Paani peena yaad dilao</example>
+      <example lang="hi">Namaz ka waqt batao</example>
+      <example lang="hi">Pooja ka time batao</example>
+      <example lang="hi">Remind every day</example>
+      <example lang="hi">Bill due reminder</example>
+    </examples>
+  </pillar>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       MODIFIER PILLARS — How / What kind / Qualifiers on the main intent
+       Uses keyword classification (fast, no API call) + embedding fallback
+       ═══════════════════════════════════════════════════════════════════════ -->
+
+  <pillar name="QUANTITY" type="modifier" classification="keyword">
+    <description>How many, how much, number, count, amount</description>
+    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">countable item</cell>
+        <cell position="secondary">measurement / dose</cell>
+        <cell position="modifier">exact / approximate</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">how many / how much</cell>
+        <cell position="secondary">count / total / amount</cell>
+        <cell position="modifier">exactly / approximately</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">quantity needed</cell>
+        <cell position="secondary">dosage / portion / units</cell>
+        <cell position="modifier">per day / per dose / total</cell>
+      </row>
+    </matrix>
+    <keywords>
+      <keyword lang="en">how many</keyword>
+      <keyword lang="en">how much</keyword>
+      <keyword lang="en">number</keyword>
+      <keyword lang="en">count</keyword>
+      <keyword lang="en">total</keyword>
+      <keyword lang="en">amount</keyword>
+      <keyword lang="en">dose</keyword>
+      <keyword lang="en">kitna</keyword>
+      <keyword lang="hi">kitne</keyword>
+      <keyword lang="hi">total</keyword>
+    </keywords>
+  </pillar>
+
+  <pillar name="SPECIFICITY" type="modifier" classification="keyword">
+    <description>Requesting precise, exact, particular details</description>
+    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">specific detail / exact info</cell>
+        <cell position="secondary">particular aspect</cell>
+        <cell position="modifier">precise / accurate</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">specifically / exactly / precisely</cell>
+        <cell position="secondary">in detail / particular</cell>
+        <cell position="modifier">only / just / exactly</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">clarity needed</cell>
+        <cell position="secondary">disambiguation</cell>
+        <cell position="modifier">not general / specific case</cell>
+      </row>
+    </matrix>
+    <keywords>
+      <keyword lang="en">specific</keyword>
+      <keyword lang="en">exactly</keyword>
+      <keyword lang="en">particular</keyword>
+      <keyword lang="en">precise</keyword>
+      <keyword lang="en">detail</keyword>
+      <keyword lang="en">specifically</keyword>
+      <keyword lang="hi">bilkul</keyword>
+      <keyword lang="hi">ekdum</keyword>
+    </keywords>
+  </pillar>
+
+  <pillar name="FORMAT" type="modifier" classification="keyword">
+    <description>Requesting a specific format: list, summary, brief, detailed explanation</description>
+    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">output format</cell>
+        <cell position="secondary">presentation style</cell>
+        <cell position="modifier">length / structure</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">list / summarize / explain / brief</cell>
+        <cell position="secondary">table / steps / points</cell>
+        <cell position="modifier">short / long / detailed</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">user preference for output</cell>
+        <cell position="secondary">readability / comprehension</cell>
+        <cell position="modifier">simple / complex</cell>
+      </row>
+    </matrix>
+    <keywords>
+      <keyword lang="en">list</keyword>
+      <keyword lang="en">table</keyword>
+      <keyword lang="en">summary</keyword>
+      <keyword lang="en">brief</keyword>
+      <keyword lang="en">detailed</keyword>
+      <keyword lang="en">explain</keyword>
+      <keyword lang="en">steps</keyword>
+      <keyword lang="en">points</keyword>
+      <keyword lang="hi">seedha batao</keyword>
+      <keyword lang="hi">short mein</keyword>
+    </keywords>
+  </pillar>
+
+  <pillar name="LOCATION" type="modifier" classification="keyword">
+    <description>Geographic context: where, near me, city, place</description>
+    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">place / area / city</cell>
+        <cell position="secondary">hospital / pharmacy / bank nearby</cell>
+        <cell position="modifier">nearest / local / in this area</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">where / near / location</cell>
+        <cell position="secondary">close to / in / at</cell>
+        <cell position="modifier">walking distance / by auto</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">geographic need</cell>
+        <cell position="secondary">local service / travel</cell>
+        <cell position="modifier">current location / home area</cell>
+      </row>
+    </matrix>
+    <keywords>
+      <keyword lang="en">where</keyword>
+      <keyword lang="en">location</keyword>
+      <keyword lang="en">place</keyword>
+      <keyword lang="en">near</keyword>
+      <keyword lang="en">nearby</keyword>
+      <keyword lang="en">city</keyword>
+      <keyword lang="en">area</keyword>
+      <keyword lang="hi">kahan</keyword>
+      <keyword lang="hi">paas mein</keyword>
+      <keyword lang="hi">yahan</keyword>
+    </keywords>
+  </pillar>
+
+  <pillar name="EXCLUSION" type="modifier" classification="keyword">
+    <description>Excluding something: not, without, avoid, except</description>
+    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">excluded item / avoided thing</cell>
+        <cell position="secondary">allergy / restriction / preference</cell>
+        <cell position="modifier">specifically not / never</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">not / avoid / except / without / skip</cell>
+        <cell position="secondary">exclude / remove / don't include</cell>
+        <cell position="modifier">always / strictly / doctor said</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">dietary / medical / personal restriction</cell>
+        <cell position="secondary">allergy / intolerance / choice</cell>
+        <cell position="modifier">permanent / temporary</cell>
+      </row>
+    </matrix>
+    <keywords>
+      <keyword lang="en">not</keyword>
+      <keyword lang="en">except</keyword>
+      <keyword lang="en">without</keyword>
+      <keyword lang="en">avoid</keyword>
+      <keyword lang="en">exclude</keyword>
+      <keyword lang="en">skip</keyword>
+      <keyword lang="en">no</keyword>
+      <keyword lang="hi">nahi</keyword>
+      <keyword lang="hi">bina</keyword>
+      <keyword lang="hi">chhodkar</keyword>
+    </keywords>
+  </pillar>
+
+  <pillar name="URGENCY" type="modifier" classification="keyword">
+    <description>Time pressure: urgent, now, immediately, asap, jaldi</description>
+    <priority_threshold high="0.95" medium="0.80" low="0.60"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">urgent situation / time-critical need</cell>
+        <cell position="secondary">health emergency / deadline</cell>
+        <cell position="modifier">right now / this minute</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">immediately / now / asap / quickly</cell>
+        <cell position="secondary">right away / without delay</cell>
+        <cell position="modifier">emergency / critical / urgent</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">time pressure / emergency</cell>
+        <cell position="secondary">health / safety / deadline</cell>
+        <cell position="modifier">no time to wait / very urgent</cell>
+      </row>
+    </matrix>
+    <keywords>
+      <keyword lang="en">urgent</keyword>
+      <keyword lang="en">asap</keyword>
+      <keyword lang="en">now</keyword>
+      <keyword lang="en">immediately</keyword>
+      <keyword lang="en">today</keyword>
+      <keyword lang="en">quick</keyword>
+      <keyword lang="en">emergency</keyword>
+      <keyword lang="hi">jaldi</keyword>
+      <keyword lang="hi">abhi</keyword>
+      <keyword lang="hi">turant</keyword>
+    </keywords>
+  </pillar>
+
+  <pillar name="CONDITION" type="modifier" classification="keyword">
+    <description>Conditional statements: if, when, unless, depends, only if</description>
+    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">conditional situation</cell>
+        <cell position="secondary">dependency / prerequisite</cell>
+        <cell position="modifier">possible / maybe / if only</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">if / when / unless / depends / only if</cell>
+        <cell position="secondary">provided that / in case</cell>
+        <cell position="modifier">then / otherwise / else</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">uncertain / conditional</cell>
+        <cell position="secondary">health condition / weather / availability</cell>
+        <cell position="modifier">future / hypothetical</cell>
+      </row>
+    </matrix>
+    <keywords>
+      <keyword lang="en">if</keyword>
+      <keyword lang="en">when</keyword>
+      <keyword lang="en">unless</keyword>
+      <keyword lang="en">only if</keyword>
+      <keyword lang="en">depends</keyword>
+      <keyword lang="en">provided</keyword>
+      <keyword lang="hi">agar</keyword>
+      <keyword lang="hi">jab</keyword>
+      <keyword lang="hi">tabhi</keyword>
+    </keywords>
+  </pillar>
+
+  <pillar name="PREFERENCE" type="modifier" classification="keyword">
+    <description>Expressing likes, wants, favorites, ideal choices</description>
+    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">preferred option / favorite</cell>
+        <cell position="secondary">food / doctor / channel / style</cell>
+        <cell position="modifier">always / usually / mostly</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">prefer / like / want / love / favorite</cell>
+        <cell position="secondary">choose / go for / always pick</cell>
+        <cell position="modifier">more / most / best</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">personal taste / habit</cell>
+        <cell position="secondary">lifestyle / comfort</cell>
+        <cell position="modifier">long-standing / new / situational</cell>
+      </row>
+    </matrix>
+    <keywords>
+      <keyword lang="en">prefer</keyword>
+      <keyword lang="en">like</keyword>
+      <keyword lang="en">want</keyword>
+      <keyword lang="en">favorite</keyword>
+      <keyword lang="en">best</keyword>
+      <keyword lang="en">ideal</keyword>
+      <keyword lang="en">love</keyword>
+      <keyword lang="hi">chahiye</keyword>
+      <keyword lang="hi">pasand</keyword>
+      <keyword lang="hi">achha lagta</keyword>
+    </keywords>
+  </pillar>
+
+  <pillar name="TEMPORAL" type="modifier" classification="keyword">
+    <description>Time references: yesterday, today, tomorrow, this week, recently</description>
+    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">time period / time reference</cell>
+        <cell position="secondary">event in time</cell>
+        <cell position="modifier">past / present / future</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">yesterday / today / tomorrow / recently</cell>
+        <cell position="secondary">this week / last month / next year</cell>
+        <cell position="modifier">since / until / for how long</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">time-anchored statement</cell>
+        <cell position="secondary">routine / event / change</cell>
+        <cell position="modifier">morning / evening / season</cell>
+      </row>
+    </matrix>
+    <keywords>
+      <keyword lang="en">yesterday</keyword>
+      <keyword lang="en">today</keyword>
+      <keyword lang="en">tomorrow</keyword>
+      <keyword lang="en">week</keyword>
+      <keyword lang="en">month</keyword>
+      <keyword lang="en">recently</keyword>
+      <keyword lang="en">last</keyword>
+      <keyword lang="en">next</keyword>
+      <keyword lang="hi">kal</keyword>
+      <keyword lang="hi">aaj</keyword>
+      <keyword lang="hi">parson</keyword>
+    </keywords>
+  </pillar>
+
+  <pillar name="COMPARISON" type="modifier" classification="keyword">
+    <description>Comparing options: vs, better, worse, which one, or</description>
+    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">two or more options</cell>
+        <cell position="secondary">medicines / doctors / products</cell>
+        <cell position="modifier">similar / different / alternative</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">compare / vs / better / worse / or</cell>
+        <cell position="secondary">which one / difference / same</cell>
+        <cell position="modifier">more / less / equal</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">decision making</cell>
+        <cell position="secondary">health / finance / choice</cell>
+        <cell position="modifier">urgent decision / routine choice</cell>
+      </row>
+    </matrix>
+    <keywords>
+      <keyword lang="en">vs</keyword>
+      <keyword lang="en">versus</keyword>
+      <keyword lang="en">compare</keyword>
+      <keyword lang="en">better</keyword>
+      <keyword lang="en">worse</keyword>
+      <keyword lang="en">or</keyword>
+      <keyword lang="en">difference</keyword>
+      <keyword lang="hi">ya</keyword>
+      <keyword lang="hi">behtar</keyword>
+      <keyword lang="hi">farq</keyword>
+    </keywords>
+  </pillar>
+
+
+  <!-- LOVE / AFFECTION — added for elderly Indian users -->
+  <pillar name="LOVE" type="emotion" classification="embedding">
+    <description>Affection, love for family, gratitude, warmth, missing a loved one fondly</description>
+    <priority_threshold high="0.78" medium="0.63" low="0.48"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">user / grandchildren / spouse / family</cell>
+        <cell position="secondary">old friend / memory / place</cell>
+        <cell position="modifier">deeply / fondly / always</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">love / adore / miss fondly / cherish</cell>
+        <cell position="secondary">feel grateful / feel warm / appreciate</cell>
+        <cell position="modifier">so much / deeply / unconditionally</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">affection / warmth / gratitude</cell>
+        <cell position="secondary">family bond / relationship</cell>
+        <cell position="modifier">always / lifelong / special moment</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">I love my grandchildren so much</example>
+      <example lang="en">Miss my wife dearly</example>
+      <example lang="en">So grateful for my family</example>
+      <example lang="en">My son means everything to me</example>
+      <example lang="en">Feeling so much love today</example>
+      <example lang="en">Blessed to have such family</example>
+      <example lang="en">Love spending time with grandkids</example>
+      <example lang="en">My daughter is my pride</example>
+      <example lang="en">Grateful for everything</example>
+      <example lang="en">Heart full of love</example>
+      <example lang="hi">Mere pote se bahut pyaar hai</example>
+      <example lang="hi">Patni ki bahut yaad aati hai</example>
+      <example lang="hi">Parivaar ke liye shukrguzaar hoon</example>
+      <example lang="hi">Beta meri jaan hai</example>
+      <example lang="hi">Beti se bahut pyaar hai</example>
+      <example lang="hi">Dil mein bahut pyaar hai</example>
+      <example lang="hi">Naati naatin ke saath khushi</example>
+      <example lang="hi">Bhagwan ka shukriya</example>
+    </examples>
+  </pillar>
+
+</pillars>

@@ -1,0 +1,282 @@
+"""
+PROFILE ENRICHER v2 — Zero pattern matching
+
+Two sources of truth:
+  1. Classification output (ClassifiedInput) — health, emotion, priority, language
+  2. Claude Haiku micro-extraction — named entities only (name, family, places)
+
+Haiku extraction only fires when classification signals something worth extracting,
+keeping cost minimal (~50 tokens per triggered message).
+"""
+
+import os
+import json
+from typing import Optional
+
+
+# ── Haiku micro-extractor ──────────────────────────────────────────────────────
+
+def _haiku_extract(text: str, context: str) -> dict:
+    """
+    Single focused Haiku call to extract named entities.
+    Returns only what's confidently found — no guessing.
+    """
+    prompt = f"""Extract factual information from this message. Context: {context}
+
+Message: "{text}"
+
+Return ONLY a JSON object with what you are 100% confident about.
+Use empty string/list if not found. Do NOT infer or guess.
+
+{{
+  "name": "user's own name if they said it (not Nancy's name)",
+  "family_members": [
+    {{"relation": "son/daughter/husband/wife/grandson/granddaughter", "name": "", "location": ""}}
+  ],
+  "location": "city/place user mentioned as their own location",
+  "occupation": "past or current job if explicitly mentioned",
+  "interests": ["specific interest/hobby mentioned"],
+  "wants_to": ["specific goal/aspiration mentioned"]
+}}
+
+Return ONLY the JSON."""
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        resp   = client.messages.create(
+            model      = "claude-haiku-4-5",
+            max_tokens = 200,
+            messages   = [{"role": "user", "content": prompt}]
+        )
+        raw  = resp.content[0].text.strip()
+        raw  = raw.replace("```json", "").replace("```", "").strip()
+        return json.loads(raw)
+    except Exception as e:
+        print(f"[ProfileEnricher] Haiku extraction failed: {e}")
+        return {}
+
+
+def _should_run_haiku(classified) -> tuple:
+    """
+    Decide if Haiku extraction is worth running.
+    Returns (should_run, context_hint)
+    Only runs for HIGH/MEDIUM priority signals with specific pillars.
+    """
+    core    = classified.core
+    emotion = classified.emotion
+    cp      = classified.core_priority
+    ep      = classified.emotion_priority
+
+    # High value extractions
+    if core in ("CAREER_GOAL", "ASPIRATIONS") and cp in ("HIGH", "MEDIUM"):
+        return True, "user talking about their work history or life goals"
+
+    if emotion in ("LOVE", "JOY", "SADNESS") and ep in ("HIGH", "MEDIUM"):
+        return True, "user expressing love or happiness about family/people"
+
+    if emotion == "SADNESS" and ep == "HIGH":
+        return True, "user feeling lonely or missing someone"
+
+    if core == "ENTERTAINMENT" and cp in ("HIGH", "MEDIUM"):
+        return True, "user talking about hobbies or entertainment interests"
+
+    return False, ""
+
+
+# ── Classification-driven extractors ──────────────────────────────────────────
+
+def _health_from_classification(classified) -> dict:
+    """
+    Extract health profile purely from classification.
+    The matrix already has structured health info.
+    """
+    if classified.core not in ("HEALTH_WELLNESS", "FEAR"):
+        return {}
+    if classified.core_priority not in ("HIGH", "MEDIUM"):
+        return {}
+
+    health  = {"conditions": [], "concerns": []}
+    matrix  = classified.core_matrix or {}
+    score   = classified.core_score
+
+    action   = matrix.get("ACTION",  {}).get("primary", "")
+    context  = matrix.get("CONTEXT", {}).get("primary", "")
+    modifier = matrix.get("ACTION",  {}).get("modifier", "")
+
+    if "pain" in action or "hurt" in action or "ache" in action:
+        if score >= 0.82:
+            health["conditions"].append("pain/physical discomfort (HIGH confidence)")
+        else:
+            health["conditions"].append("pain/physical discomfort (MEDIUM confidence)")
+
+    if "problem" in action or "bimari" in action:
+        health["conditions"].append("health issue reported")
+
+    if "suffering" in context or "urgent" in context:
+        health["concerns"].append("urgent health concern")
+    elif "concern" in context:
+        health["concerns"].append("health concern")
+
+    if "chronic" in modifier or "since long" in modifier:
+        health["concerns"].append("possibly chronic")
+
+    return {k: list(set(v)) for k, v in health.items() if v}
+
+
+def _emotion_from_classification(classified) -> dict:
+    """Extract emotional state purely from classification."""
+    if classified.emotion_priority not in ("HIGH", "MEDIUM"):
+        return {}
+
+    emotion_map = {
+        "SADNESS":  "feeling lonely/sad",
+        "FEAR":     "anxious/worried",
+        "STRESS":   "stressed/overwhelmed",
+        "JOY":      "happy/cheerful",
+        "OPTIMISM": "positive/hopeful",
+        "ANGER":    "frustrated/upset",
+        "LOVE":     "warm/affectionate",
+    }
+    state = emotion_map.get(classified.emotion, "")
+    if not state:
+        return {}
+
+    style = "Hinglish" if classified.language == "hi" else "English"
+    return {
+        "emotional_state":      state,
+        "communication_style":  style,
+    }
+
+
+def _living_situation_from_classification(classified) -> dict:
+    """
+    Infer living situation from emotion matrix context.
+    SADNESS + isolation context → likely lives alone.
+    """
+    if classified.emotion not in ("SADNESS", "FEAR"):
+        return {}
+
+    context = classified.emotion_matrix.get("CONTEXT", {}).get("primary", "") \
+              if classified.emotion_matrix else ""
+
+    if "isolation" in context or "no visitors" in context or "empty house" in context:
+        return {"living_situation": "possibly lives alone (inferred from emotional context)"}
+
+    return {}
+
+
+# ── Merge Haiku output into profile structure ──────────────────────────────────
+
+def _merge_haiku_output(extracted: dict) -> dict:
+    """Convert Haiku extraction into profile field structure."""
+    updates = {}
+
+    if extracted.get("name"):
+        updates["name"] = extracted["name"]
+
+    if extracted.get("location"):
+        updates["location"] = extracted["location"]
+
+    if extracted.get("occupation"):
+        updates["life_context"] = {"occupation": extracted["occupation"]}
+
+    family_members = extracted.get("family_members", [])
+    if family_members:
+        family = {"children": [], "grandchildren": [], "spouse": "", "other": []}
+        for m in family_members:
+            relation = m.get("relation", "").lower()
+            name     = m.get("name", "")
+            location = m.get("location", "")
+            desc     = f"{name}{' in ' + location if location else ''}".strip() or relation
+
+            if relation in ("son", "daughter"):
+                family["children"].append(desc)
+            elif relation in ("grandson", "granddaughter", "grandchild"):
+                family["grandchildren"].append(desc)
+            elif relation in ("husband", "wife", "spouse"):
+                family["spouse"] = desc
+            else:
+                family["other"].append(desc)
+
+        updates["family"] = {k: v for k, v in family.items() if v}
+
+    interests_list = extracted.get("interests", [])
+    if interests_list:
+        updates["interests"] = {"hobbies": interests_list}
+
+    goals = extracted.get("wants_to", [])
+    if goals:
+        updates["life_context"] = updates.get("life_context", {})
+        updates["life_context"]["notable_events"] = goals
+
+    return updates
+
+
+# ── Main enricher ──────────────────────────────────────────────────────────────
+
+def enrich_profile_from_message(text: str, classified, user_id: str):
+    """
+    Called after every user message. Zero pattern matching.
+
+    Path 1: Classification-driven (always runs, free)
+      → health conditions from HEALTH_WELLNESS classification
+      → emotional state from emotion pillar
+      → living situation inferred from emotion matrix context
+      → language preference from classified.language
+
+    Path 2: Haiku micro-extraction (runs only when worthwhile)
+      → named entities: name, family members, location, occupation, interests
+      → only for HIGH/MEDIUM priority on specific pillars
+    """
+    if not user_id:
+        return
+
+    priorities = {
+        classified.core_priority,
+        classified.emotion_priority,
+        classified.functional_priority,
+    }
+    if priorities == {"LOW"}:
+        return
+
+    updates = {}
+
+    # ── Path 1: Classification-driven ─────────────────────────────────────────
+    health = _health_from_classification(classified)
+    if health:
+        updates["health"] = health
+
+    personality = _emotion_from_classification(classified)
+    if personality:
+        updates["personality"] = personality
+
+    living = _living_situation_from_classification(classified)
+    if living:
+        updates["life_context"] = living
+
+    if classified.language == "hi":
+        updates["language_pref"] = "hinglish"
+
+    # ── Path 2: Haiku micro-extraction ────────────────────────────────────────
+    should_run, context_hint = _should_run_haiku(classified)
+    if should_run:
+        extracted = _haiku_extract(text, context_hint)
+        if extracted:
+            haiku_updates = _merge_haiku_output(extracted)
+            # Deep merge haiku updates into updates
+            for key, val in haiku_updates.items():
+                if key in updates and isinstance(updates[key], dict) and isinstance(val, dict):
+                    updates[key].update(val)
+                else:
+                    updates[key] = val
+
+    # ── Save ──────────────────────────────────────────────────────────────────
+    if updates:
+        try:
+            from memory.profile_store import save_user_profile
+            save_user_profile(user_id, updates)
+            haiku_ran = "+ Haiku" if should_run else ""
+            print(f"[ProfileEnricher] Updated {list(updates.keys())} {haiku_ran} for {user_id}")
+        except Exception as e:
+            print(f"[ProfileEnricher] Save failed: {e}")
