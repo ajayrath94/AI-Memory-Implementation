@@ -6,7 +6,7 @@ export default function RootLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown:     false,
+        headerShown: false,
         tabBarStyle: {
           backgroundColor: '#0f0f0f',
           borderTopColor:  '#1a1a1a',
@@ -17,10 +17,7 @@ export default function RootLayout() {
         },
         tabBarActiveTintColor:   Colors.accent,
         tabBarInactiveTintColor: Colors.textMuted,
-        tabBarLabelStyle: {
-          fontSize:   11,
-          fontWeight: '500',
-        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
       }}
     >
       <Tabs.Screen
@@ -46,10 +43,24 @@ export default function RootLayout() {
         options={{
           title: 'Memory',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="brain-outline" size={size} color={color} />
+            <Ionicons name="hardware-chip-outline" size={size} color={color} />
           ),
         }}
       />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      {/* Hide all caregiver screens from tab bar */}
+      <Tabs.Screen name="caregiver/login"  options={{ href: null }} />
+      <Tabs.Screen name="caregiver/signup" options={{ href: null }} />
+      <Tabs.Screen name="caregiver/reset"  options={{ href: null }} />
     </Tabs>
   )
 }

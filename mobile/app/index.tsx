@@ -1,50 +1,70 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import {
   View, FlatList, Text, StyleSheet,
-  SafeAreaView, TouchableOpacity, AppState
+  SafeAreaView, TouchableOpacity, AppState,
+  Animated, Image,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
-import { Colors } from '../constants'
+import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
 import { useChat } from '../hooks/useChat'
 import { MessageBubble } from '../components/chat/MessageBubble'
 import { ChatInput } from '../components/chat/ChatInput'
-import { ModelPicker } from '../components/chat/ModelPicker'
+
+// Nancy's avatar initials placeholder
+function NancyAvatar({ size = 36 }: { size?: number }) {
+  return (
+    <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
+      <Text style={[styles.avatarText, { fontSize: size * 0.4 }]}>N</Text>
+    </View>
+  )
+}
 
 export default function ChatScreen() {
-  const { messages, loading, lastMeta, memoryUsed, sessionId } = useAppStore()
+  const { messages, loading, sessionId } = useAppStore()
   const { send, clearAndSummarize } = useChat()
-  const listRef   = useRef<FlatList>(null)
-  const appState  = useRef(AppState.currentState)
+  const listRef  = useRef<FlatList>(null)
+  const appState = useRef(AppState.currentState)
+  const pulseAnim = useRef(new Animated.Value(1)).current
 
-  // Auto-scroll to bottom
+  // Pulse animation when Nancy is thinking
+  useEffect(() => {
+    if (loading) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 0.4, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.0, duration: 600, useNativeDriver: true }),
+        ])
+      ).start()
+    } else {
+      pulseAnim.stopAnimation()
+      pulseAnim.setValue(1)
+    }
+  }, [loading])
+
+  // Auto-scroll
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
     }
   }, [messages])
 
-  // Auto-summarize when app goes to background
+  // End session when app goes to background
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', nextAppState => {
-      if (
-        appState.current.match(/active/) &&
-        nextAppState.match(/inactive|background/)
-      ) {
-        // App going to background → summarize current session
+    const sub = AppState.addEventListener('change', next => {
+      if (appState.current.match(/active/) && next.match(/inactive|background/)) {
         if (sessionId) {
-          console.log('[App] Going to background, summarizing session...')
-          fetch(`http://localhost:8000/chat/end-session`, {
+          fetch(`${API_BASE}/chat/end-session`, {
             method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
             body:    JSON.stringify({ session_id: sessionId, user_id: 'default' }),
-          }).catch(console.log)
+          }).catch(() => {})
         }
       }
-      appState.current = nextAppState
+      appState.current = next
     })
-    return () => subscription.remove()
+    return () => sub.remove()
   }, [sessionId])
 
   return (
@@ -53,34 +73,22 @@ export default function ChatScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>AI Memory</Text>
-          {sessionId && (
-            <Text style={styles.sessionId}>
-              Session: {sessionId.slice(0, 8)}...
-            </Text>
-          )}
+        <View style={styles.headerLeft}>
+          <NancyAvatar size={38} />
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerName}>Nancy</Text>
+            <View style={styles.onlineRow}>
+              <View style={styles.onlineDot} />
+              <Text style={styles.onlineText}>Your companion</Text>
+            </View>
+          </View>
         </View>
-        <View style={styles.headerRight}>
-          <ModelPicker />
-          <TouchableOpacity
-            onPress={clearAndSummarize}
-            style={styles.clearBtn}
-          >
-            <Ionicons name="add-circle-outline" size={22} color={Colors.textMuted} />
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={clearAndSummarize} style={styles.headerBtn}>
+            <Ionicons name="create-outline" size={22} color={Colors.textMuted} />
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Pillar context bar */}
-      {lastMeta && (
-        <View style={styles.contextBar}>
-          <Text style={styles.contextText}>
-            {lastMeta.core} · {lastMeta.emotion} · {lastMeta.functional}
-            {memoryUsed ? ' · 🧠 memory active' : ''}
-          </Text>
-        </View>
-      )}
 
       {/* Messages */}
       <FlatList
@@ -89,18 +97,28 @@ export default function ChatScreen() {
         keyExtractor={(m, i) => m.id || String(i)}
         renderItem={({ item }) => <MessageBubble message={item} />}
         contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>🧠</Text>
-            <Text style={styles.emptyText}>Start a conversation</Text>
-            <Text style={styles.emptyHint}>Memory builds as you chat</Text>
+            <NancyAvatar size={72} />
+            <Text style={styles.emptyTitle}>Hi, I'm Nancy</Text>
+            <Text style={styles.emptySubtitle}>
+              I'm here to listen, remember, and care.{'\n'}
+              Tell me how you're feeling today.
+            </Text>
           </View>
         }
       />
 
+      {/* Typing indicator */}
       {loading && (
-        <View style={styles.typing}>
-          <Text style={styles.typingText}>thinking…</Text>
+        <View style={styles.typingRow}>
+          <NancyAvatar size={24} />
+          <View style={styles.typingBubble}>
+            <Animated.View style={[styles.typingDot, { opacity: pulseAnim }]} />
+            <Animated.View style={[styles.typingDot, { opacity: pulseAnim, marginHorizontal: 3 }]} />
+            <Animated.View style={[styles.typingDot, { opacity: pulseAnim }]} />
+          </View>
         </View>
       )}
 
@@ -110,39 +128,81 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: Colors.bg },
+  safe: { flex: 1, backgroundColor: Colors.bg },
+
+  // Header
   header: {
-    flexDirection:    'row',
-    alignItems:       'center',
-    justifyContent:   'space-between',
-    paddingHorizontal: 16,
-    paddingVertical:   12,
-    borderBottomWidth: 1,
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical:   Spacing.md,
+    borderBottomWidth: 0.5,
     borderBottomColor: Colors.border,
+    backgroundColor:   Colors.bg,
   },
-  headerTitle:  { color: Colors.text, fontSize: 17, fontWeight: '600' },
-  sessionId:    { color: Colors.textHint, fontSize: 10, marginTop: 2 },
-  headerRight:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  clearBtn:     { padding: 4 },
-  contextBar: {
-    paddingHorizontal: 16,
-    paddingVertical:    5,
-    backgroundColor:   '#111',
-    borderBottomWidth:  1,
-    borderBottomColor:  Colors.border,
+  headerLeft:    { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  headerInfo:    { gap: 2 },
+  headerName:    { ...Typography.heading, color: Colors.text },
+  onlineRow:     { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  onlineDot:     { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.accentGreen },
+  onlineText:    { ...Typography.caption, color: Colors.textMuted },
+  headerActions: { flexDirection: 'row', gap: Spacing.sm },
+  headerBtn:     { padding: Spacing.sm },
+
+  // Avatar
+  avatar: {
+    backgroundColor: Colors.accent + '22',
+    borderWidth:     1.5,
+    borderColor:     Colors.accent + '44',
+    alignItems:      'center',
+    justifyContent:  'center',
   },
-  contextText:  { color: Colors.textMuted, fontSize: 11 },
-  list:         { paddingVertical: 12, flexGrow: 1 },
+  avatarText: { color: Colors.accent, fontWeight: '700' },
+
+  // Messages
+  list: { paddingVertical: Spacing.md, flexGrow: 1 },
+
+  // Empty state
   empty: {
     flex:           1,
     alignItems:     'center',
     justifyContent: 'center',
-    paddingTop:     120,
-    gap:            8,
+    paddingTop:     100,
+    paddingHorizontal: Spacing.xl,
+    gap:            Spacing.lg,
   },
-  emptyIcon:    { fontSize: 40 },
-  emptyText:    { color: Colors.textMuted, fontSize: 16 },
-  emptyHint:    { color: Colors.textHint,  fontSize: 13 },
-  typing:       { paddingHorizontal: 20, paddingVertical: 6 },
-  typingText:   { color: Colors.textMuted, fontSize: 13 },
+  emptyTitle:    { ...Typography.title, color: Colors.text, marginTop: Spacing.md },
+  emptySubtitle: {
+    ...Typography.body,
+    color:     Colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+
+  // Typing indicator
+  typingRow: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical:   Spacing.sm,
+    gap: Spacing.sm,
+  },
+  typingBubble: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   Colors.bgCard,
+    borderRadius:      Radius.lg,
+    borderBottomLeftRadius: 4,
+    paddingHorizontal: Spacing.md,
+    paddingVertical:   Spacing.md,
+    borderWidth:       0.5,
+    borderColor:       Colors.border,
+  },
+  typingDot: {
+    width:           7,
+    height:          7,
+    borderRadius:    4,
+    backgroundColor: Colors.textMuted,
+  },
 })

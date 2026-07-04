@@ -1,77 +1,114 @@
 import React from 'react'
 import { View, Text, StyleSheet } from 'react-native'
-import { Colors } from '../../constants'
+import { Colors, Typography, Spacing, Radius } from '../../constants'
 
 interface Message {
   id:         string
   role:       'user' | 'assistant'
   content:    string
-  model:      string
+  model?:     string
   timestamp:  number
-  pillar?:    { core: string; emotion: string; functional: string; core_score?: number }
+  pillar?:    { core: string; emotion: string; functional: string }
   memoryUsed?: boolean
 }
 
 export function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user'
+  const time   = new Date(message.timestamp).toLocaleTimeString([], {
+    hour: '2-digit', minute: '2-digit'
+  })
 
   return (
     <View style={[styles.wrapper, isUser ? styles.wrapperUser : styles.wrapperBot]}>
+
+      {/* Nancy avatar dot for assistant messages */}
+      {!isUser && (
+        <View style={styles.nancyDot} />
+      )}
+
       <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}>
-        <Text style={styles.text}>{message.content}</Text>
-
-        {/* Pillar tags on assistant messages */}
-        {!isUser && message.pillar && (
-          <View style={styles.metaRow}>
-            <PillTag label={message.pillar.core} />
-            <PillTag label={message.pillar.emotion} />
-            {message.memoryUsed && <PillTag label="🧠 memory" highlight />}
-          </View>
-        )}
-
-        {/* Model + time */}
-        <Text style={styles.meta}>
-          {!isUser ? message.model?.split('-')[0] + ' · ' : ''}
-          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        <Text style={[styles.text, isUser ? styles.textUser : styles.textBot]}>
+          {message.content}
         </Text>
-      </View>
-    </View>
-  )
-}
 
-function PillTag({ label, highlight }: { label: string; highlight?: boolean }) {
-  return (
-    <View style={[styles.pill, highlight && styles.pillHighlight]}>
-      <Text style={styles.pillText}>{label}</Text>
+        <View style={styles.footer}>
+          {/* Memory indicator — subtle, not cluttered */}
+          {!isUser && message.memoryUsed && (
+            <View style={styles.memoryTag}>
+              <Text style={styles.memoryText}>🧠</Text>
+            </View>
+          )}
+          <Text style={styles.time}>{time}</Text>
+        </View>
+      </View>
+
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  wrapper:      { marginVertical: 4, paddingHorizontal: 16 },
-  wrapperUser:  { alignItems: 'flex-end' },
-  wrapperBot:   { alignItems: 'flex-start' },
+  wrapper: {
+    marginVertical:    3,
+    paddingHorizontal: Spacing.lg,
+    flexDirection:     'row',
+    alignItems:        'flex-end',
+    gap:               Spacing.sm,
+  },
+  wrapperUser: { justifyContent: 'flex-end' },
+  wrapperBot:  { justifyContent: 'flex-start' },
+
+  // Nancy's subtle presence indicator
+  nancyDot: {
+    width:         8,
+    height:        8,
+    borderRadius:  4,
+    backgroundColor: Colors.accent + '60',
+    marginBottom:  16,
+    flexShrink:    0,
+  },
+
   bubble: {
-    maxWidth: '85%', borderRadius: 18,
-    paddingHorizontal: 14, paddingVertical: 10,
+    maxWidth:          '82%',
+    borderRadius:      Radius.xl,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical:   Spacing.md,
   },
+
   bubbleUser: {
-    backgroundColor: Colors.bgUserBubble,
-    borderBottomRightRadius: 4,
-    borderWidth: 1, borderColor: Colors.borderBlue,
+    backgroundColor:    Colors.bgUserBubble,
+    borderBottomRightRadius: Radius.sm,
+    borderWidth:        0.5,
+    borderColor:        Colors.borderBlue,
   },
+
   bubbleBot: {
-    backgroundColor: Colors.bgCard,
-    borderBottomLeftRadius: 4,
-    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor:   Colors.bgCard,
+    borderBottomLeftRadius: Radius.sm,
+    borderWidth:        0.5,
+    borderColor:        Colors.border,
   },
-  text:       { color: Colors.text, fontSize: 15, lineHeight: 22 },
-  metaRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
-  pill: {
-    backgroundColor: '#1a2a3a', borderRadius: 8,
-    paddingHorizontal: 6, paddingVertical: 2,
+
+  text: {
+    ...Typography.body,
+    lineHeight: 24,
   },
-  pillHighlight:  { backgroundColor: '#1a3a2a' },
-  pillText:       { color: Colors.textMuted, fontSize: 10, fontWeight: '500' },
-  meta:           { color: Colors.textHint, fontSize: 10, marginTop: 4 },
+  textUser: { color: Colors.text },
+  textBot:  { color: Colors.text },
+
+  footer: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'flex-end',
+    marginTop:      Spacing.xs,
+    gap:            Spacing.xs,
+  },
+
+  memoryTag: {
+    backgroundColor: Colors.accentPurple + '15',
+    borderRadius:    Radius.sm,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  memoryText: { fontSize: 10 },
+  time:       { ...Typography.caption, color: Colors.textHint },
 })
