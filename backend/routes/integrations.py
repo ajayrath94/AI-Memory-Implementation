@@ -27,16 +27,13 @@ def http_get(url: str, headers: dict = {}) -> dict:
 
 
 def get_user_location(user_id: str) -> tuple:
-    """Get user's location from profile. Returns (city, lat, lng)."""
+    """Get user's active location (current if traveling, home otherwise)."""
     try:
-        from memory.profile_store import get_user_profile
-        profile  = get_user_profile(user_id) or {}
-        location = profile.get("location") or \
-                   profile.get("cultural_context", {}).get("region") or \
-                   "Mumbai"  # Default fallback
-        return location, None, None
+        from memory.location_engine import get_active_location
+        loc = get_active_location(user_id)
+        return loc["location"], loc.get("lat"), loc.get("lng")
     except Exception:
-        return "Mumbai", None, None
+        return "Mumbai", 19.076, 72.877
 
 
 def get_user_interests(user_id: str) -> dict:
@@ -181,16 +178,20 @@ def get_nearby_places(user_id: str, place_type: str = "hospital"):
     location, _, _ = get_user_location(user_id)
 
     try:
-        # First geocode the location
-        encoded  = urllib.parse.quote(location)
-        geo_url  = f"https://maps.googleapis.com/maps/api/geocode/json?address={encoded}&key={api_key}"
-        geo_data = http_get(geo_url)
+        # Use stored lat/lng if available, otherwise geocode
+        if lat and lng:
+            pass  # Already have coordinates
+        else:
+            query    = location if "india" in location.lower() else f"{location}, India"
+            encoded  = urllib.parse.quote(query)
+            geo_url  = f"https://maps.googleapis.com/maps/api/geocode/json?address={encoded}&key={api_key}"
+            geo_data = http_get(geo_url)
 
-        if not geo_data.get("results"):
-            return {"error": "Location not found", "location": location}
+            if not geo_data.get("results"):
+                return {"error": "Location not found", "location": location}
 
-        loc     = geo_data["results"][0]["geometry"]["location"]
-        lat, lng = loc["lat"], loc["lng"]
+            loc_data = geo_data["results"][0]["geometry"]["location"]
+            lat, lng = loc_data["lat"], loc_data["lng"]
 
         # Search nearby places
         places_url = (

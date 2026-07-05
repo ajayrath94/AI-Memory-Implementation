@@ -283,6 +283,13 @@ def enrich_profile_from_message(text: str, classified, user_id: str):
         if cultural:
             updates["cultural_context"] = cultural
 
+    # ── Path 5: Location detection ───────────────────────────────────────────
+    try:
+        from memory.location_engine import process_location_from_message
+        process_location_from_message(text, classified, user_id)
+    except Exception as e:
+        print(f"[LocationEngine] {e}")
+
     # ── Save ──────────────────────────────────────────────────────────────────
     if updates:
         try:
