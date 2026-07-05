@@ -25,6 +25,7 @@ export async function sendMessage(
   text:       string,
   model:      string,
   session_id: string | null,
+  user_id:    string = "default",
 ): Promise<ChatResponse> {
   // 60 second timeout — Supabase + AI can be slow
   const controller = new AbortController()
