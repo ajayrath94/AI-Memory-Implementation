@@ -6,7 +6,7 @@ import {
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
-import { Colors, API_BASE } from '../constants'
+import { Colors, API_BASE, API_KEY } from '../constants'
 
 interface UserMemory {
   user_id:                 string
@@ -56,8 +56,8 @@ export default function MemoryScreen() {
   const fetchAll = async () => {
     try {
       const [memRes, profRes] = await Promise.all([
-        fetch(`${API_BASE}/memory/user/default`),
-        fetch(`${API_BASE}/memory/profile/default`),
+        fetch(`${API_BASE}/memory/user/default`, { headers: { "X-API-Key": API_KEY } }),
+        fetch(`${API_BASE}/memory/profile/default`, { headers: { "X-API-Key": API_KEY } }),
       ])
       const memData  = await memRes.json()
       const profData = await profRes.json()

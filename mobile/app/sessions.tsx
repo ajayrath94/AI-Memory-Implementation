@@ -5,7 +5,7 @@ import {
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
-import { Colors, API_BASE } from '../constants'
+import { Colors, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
 import { useRouter, useFocusEffect } from 'expo-router'
 
@@ -37,7 +37,7 @@ export default function SessionsScreen() {
 
   const fetchSessions = async () => {
     try {
-      const res  = await fetch(`${API_BASE}/memory/sessions/list`)
+      const res  = await fetch(`${API_BASE}/memory/sessions/list`, { headers: { "X-API-Key": API_KEY } })
       const data = await res.json()
       setSessions(data.sessions || [])
     } catch (err) {
