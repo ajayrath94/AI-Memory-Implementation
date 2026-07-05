@@ -140,10 +140,30 @@ def get_weighted_priority(pillar: str, base_score: float, user_id: str) -> str:
 
 # ── Save/update weights ────────────────────────────────────────────────────────
 
-def set_pillar_weight(user_id: str, pillar: str, weight: float) -> bool:
+def log_weight_history(user_id: str, pillar: str, old_weight: float,
+                        new_weight: float, changed_by: str = "user", reason: str = ""):
+    """Log weight change to history table."""
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        db.table("pillar_weight_history").insert({
+            "user_id":    user_id,
+            "changed_by": changed_by,
+            "pillar":     pillar,
+            "old_weight": old_weight,
+            "new_weight": new_weight,
+            "reason":     reason,
+        }).execute()
+    except Exception as e:
+        print(f"[PillarWeights] History log failed: {e}")
+
+
+def set_pillar_weight(user_id: str, pillar: str, weight: float,
+                      changed_by: str = "user", reason: str = "") -> bool:
     """
     Set a single pillar weight for a user.
     Weight is clamped to [0.1, 2.0].
+    Logs change to history table.
     """
     if pillar not in DEFAULT_WEIGHTS:
         print(f"[PillarWeights] Unknown pillar: {pillar}")
@@ -154,6 +174,11 @@ def set_pillar_weight(user_id: str, pillar: str, weight: float) -> bool:
     try:
         from supabase_store import get_client
         db = get_client()
+
+        # Get old weight for history
+        old_weights = get_pillar_weights(user_id)
+        old_weight  = old_weights.get(pillar, 1.0)
+
         db.table("user_pillar_weights").upsert({
             "user_id":    user_id,
             "pillar":     pillar,
@@ -161,8 +186,12 @@ def set_pillar_weight(user_id: str, pillar: str, weight: float) -> bool:
             "updated_at": "now()",
         }, on_conflict="user_id,pillar").execute()
 
+        # Log to history
+        if old_weight != weight:
+            log_weight_history(user_id, pillar, old_weight, weight, changed_by, reason)
+
         invalidate_cache(user_id)
-        print(f"[PillarWeights] Set {pillar}={weight} for {user_id}")
+        print(f"[PillarWeights] Set {pillar}={weight} for {user_id} (was {old_weight})")
         return True
 
     except Exception as e:

@@ -55,3 +55,31 @@ def reset_weights(user_id: str):
     from memory.pillar_weights import reset_pillar_weights
     ok = reset_pillar_weights(user_id)
     return {"status": "ok" if ok else "error", "message": "All weights reset to 1.0"}
+
+
+@router.get("/{user_id}/history")
+def get_weight_history(user_id: str, limit: int = 50):
+    """Get full weight change history for a user."""
+    try:
+        from supabase_store import get_client
+        db     = get_client()
+        result = db.table("pillar_weight_history")\
+            .select("*")\
+            .eq("user_id", user_id)\
+            .order("changed_at", desc=True)\
+            .limit(limit)\
+            .execute()
+        return {"history": result.data or []}
+    except Exception as e:
+        return {"history": [], "error": str(e)}
+
+
+@router.put("/{user_id}/{pillar}")
+def set_single_weight_with_reason(
+    user_id: str, pillar: str, weight: float,
+    changed_by: str = "user", reason: str = ""
+):
+    """Set a single pillar weight with audit trail."""
+    from memory.pillar_weights import set_pillar_weight
+    ok = set_pillar_weight(user_id, pillar.upper(), weight, changed_by, reason)
+    return {"status": "ok" if ok else "error", "pillar": pillar, "weight": weight}
