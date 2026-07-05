@@ -1,4 +1,9 @@
-import { API_BASE, API_KEY } from '../constants'
+import { API_BASE } from '../constants'
+
+export interface Message {
+  role:    'user' | 'assistant'
+  content: string
+}
 
 export interface ChatResponse {
   reply:       string
@@ -10,6 +15,7 @@ export interface ChatResponse {
     functional:    string
     modifiers:     string[]
     core_score:    number
+    keyword_count: number
   }
   memory_used: boolean
   model:       string
@@ -20,12 +26,14 @@ export async function sendMessage(
   model:      string,
   session_id: string | null,
 ): Promise<ChatResponse> {
+  // 60 second timeout — Supabase + AI can be slow
   const controller = new AbortController()
   const timeoutId  = setTimeout(() => controller.abort(), 60000)
+
   try {
     const res = await fetch(`${API_BASE}/chat/`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+      headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ text, model, session_id }),
       signal:  controller.signal,
     })
@@ -37,20 +45,10 @@ export async function sendMessage(
     return res.json()
   } catch (err: any) {
     clearTimeout(timeoutId)
-    if (err.name === 'AbortError') throw new Error('Request timed out')
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out after 60 seconds')
+    }
     throw err
-  }
-}
-
-export async function endSession(session_id: string): Promise<void> {
-  try {
-    await fetch(`${API_BASE}/chat/end-session`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
-      body:    JSON.stringify({ session_id, user_id: 'default' }),
-    })
-  } catch (err) {
-    console.log('End session error:', err)
   }
 }
 

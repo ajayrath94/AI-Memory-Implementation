@@ -1,78 +1,47 @@
 import { useAppStore } from '../store/appStore'
-import { sendMessage, endSession } from '../services/api'
-import * as Haptics from 'expo-haptics'
 import { API_BASE } from '../constants'
+import * as Haptics from 'expo-haptics'
 
 export function useChat() {
-  const {
-    messages, model, sessionId,
-    addMessage, setLoading, setLastMeta,
-    setMemoryUsed, setSessionId, clearChat
-  } = useAppStore()
+  const { messages, model, addMessage, setLoading, setLastMeta, setMemoryUsed } = useAppStore()
 
   const send = async (text: string) => {
     if (!text.trim()) return
 
-    const userMsg = {
-      id:        Date.now().toString(),
-      role:      'user' as const,
-      content:   text,
-      model:     model,
-      timestamp: Date.now(),
-    }
-    addMessage(userMsg)
+    addMessage({ role: 'user', content: text })
     setLoading(true)
 
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-      const data = await sendMessage(text, model, sessionId)
+      
+      console.log('Sending to:', `${API_BASE}/chat/`)
+      console.log('Model:', model)
+      
+      const res = await fetch(`${API_BASE}/chat/`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ text, model, history: messages }),
+      })
 
-      if (data.session_id && data.session_id !== sessionId) {
-        setSessionId(data.session_id)
+      console.log('Response status:', res.status)
+      
+      if (!res.ok) {
+        const errText = await res.text()
+        console.log('Error body:', errText)
+        throw new Error(`API error: ${res.status} - ${errText}`)
       }
 
-      addMessage({
-        id:         data.message_id || Date.now().toString(),
-        role:       'assistant',
-        content:    data.reply,
-        model:      data.model,
-        timestamp:  Date.now(),
-        pillar:     data.classified,
-        memoryUsed: data.memory_used,
-      })
-
+      const data = await res.json()
+      addMessage({ role: 'assistant', content: data.reply })
       setLastMeta(data.classified)
       setMemoryUsed(data.memory_used)
-
     } catch (err) {
-      console.log('Error:', err)
-      addMessage({
-        id:        Date.now().toString(),
-        role:      'assistant',
-        content:   `⚠️ Error: ${err}`,
-        model:     model,
-        timestamp: Date.now(),
-      })
+      console.log('Full error:', err)
+      addMessage({ role: 'assistant', content: `⚠️ Error: ${err}` })
     } finally {
       setLoading(false)
     }
   }
 
-  // Call this when clearing chat or starting new session
-  const endCurrentSession = async () => {
-    if (!sessionId) return
-    try {
-      await endSession(sessionId)
-      console.log('[useChat] Session ended and summarized:', sessionId)
-    } catch (err) {
-      console.log('[useChat] Session end error:', err)
-    }
-  }
-
-  const clearAndSummarize = async () => {
-    await endCurrentSession()
-    clearChat()
-  }
-
-  return { send, endCurrentSession, clearAndSummarize }
+  return { send }
 }
