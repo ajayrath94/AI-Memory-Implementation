@@ -72,7 +72,7 @@ def _should_run_haiku(classified) -> tuple:
     if core in ("CAREER_GOAL", "ASPIRATIONS") and cp in ("HIGH", "MEDIUM"):
         return True, "user talking about their work history or life goals"
 
-    if emotion in ("LOVE", "JOY", "SADNESS") and ep in ("HIGH", "MEDIUM"):
+    if emotion in ("LOVE", "JOY") and ep in ("HIGH", "MEDIUM"):
         return True, "user expressing love or happiness about family/people"
 
     if emotion == "SADNESS" and ep == "HIGH":
@@ -271,6 +271,18 @@ def enrich_profile_from_message(text: str, classified, user_id: str):
                 else:
                     updates[key] = val
 
+    # ── Path 3: Demographics extraction ──────────────────────────────────────
+    if _should_extract_demographics(classified, text):
+        demographics = _extract_demographics_from_haiku(text, classified)
+        if demographics:
+            updates["demographics"] = demographics
+
+    # ── Path 4: Cultural context extraction ───────────────────────────────────
+    if _should_extract_cultural(classified, text):
+        cultural = _extract_cultural_context_from_haiku(text)
+        if cultural:
+            updates["cultural_context"] = cultural
+
     # ── Save ──────────────────────────────────────────────────────────────────
     if updates:
         try:
@@ -280,3 +292,110 @@ def enrich_profile_from_message(text: str, classified, user_id: str):
             print(f"[ProfileEnricher] Updated {list(updates.keys())} {haiku_ran} for {user_id}")
         except Exception as e:
             print(f"[ProfileEnricher] Save failed: {e}")
+
+
+# ── Demographics extractor ─────────────────────────────────────────────────────
+
+def _extract_demographics_from_haiku(text: str, classified) -> dict:
+    """
+    Extract demographics via Haiku — gender, age, marital status, diet.
+    Only fires on HIGH/MEDIUM signals.
+    """
+    import os, json, anthropic
+
+    prompt = f"""Extract demographic information from this message ONLY if explicitly stated.
+Return ONLY a JSON object. Use empty string if not found. Do NOT guess.
+
+Message: "{text}"
+
+{{
+  "age": null,
+  "gender": "",
+  "marital_status": "",
+  "diet": ""
+}}
+
+Rules:
+- age: number only if explicitly stated (e.g. "main 67 saal ki hoon" → 67)
+- gender: "male"/"female" only if clear from pronouns or name context
+- marital_status: "married"/"widowed"/"single"/"divorced" only if mentioned
+- diet: "vegetarian"/"non-vegetarian"/"vegan" only if mentioned
+
+Return ONLY the JSON."""
+
+    try:
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        resp   = client.messages.create(
+            model      = "claude-haiku-4-5",
+            max_tokens = 150,
+            messages   = [{"role": "user", "content": prompt}]
+        )
+        raw  = resp.content[0].text.strip().replace("```json","").replace("```","").strip()
+        data = json.loads(raw)
+        return {k: v for k, v in data.items() if v}
+    except Exception as e:
+        print(f"[ProfileEnricher] Demographics extraction failed: {e}")
+        return {}
+
+
+def _extract_cultural_context_from_haiku(text: str) -> dict:
+    """
+    Extract religion, practices, festivals, region from text.
+    """
+    import os, json, anthropic
+
+    prompt = f"""Extract cultural/religious information from this message ONLY if explicitly mentioned.
+Return ONLY a JSON object. Use empty lists/strings if not found.
+
+Message: "{text}"
+
+{{
+  "religion": "",
+  "practices": [],
+  "festivals": [],
+  "region": ""
+}}
+
+Rules:
+- religion: "Hindu"/"Muslim"/"Sikh"/"Christian"/"Jain"/"Buddhist" only if clear
+- practices: list of religious practices mentioned (e.g. "morning puja", "namaz", "fasting")
+- festivals: list of festivals mentioned (e.g. "Diwali", "Eid", "Navratri")
+- region: state/region if mentioned (e.g. "Gujarat", "Punjab", "Tamil Nadu")
+
+Return ONLY the JSON."""
+
+    try:
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        resp   = client.messages.create(
+            model      = "claude-haiku-4-5",
+            max_tokens = 150,
+            messages   = [{"role": "user", "content": prompt}]
+        )
+        raw  = resp.content[0].text.strip().replace("```json","").replace("```","").strip()
+        data = json.loads(raw)
+        return {k: v for k, v in data.items() if v}
+    except Exception as e:
+        print(f"[ProfileEnricher] Cultural extraction failed: {e}")
+        return {}
+
+
+def _should_extract_demographics(classified, text: str) -> bool:
+    """Check if message likely contains demographic info."""
+    t = text.lower()
+    age_signals      = ["saal", "year", "old", "age", "born", "umar"]
+    gender_signals   = ["main hoon", "mai hoon", "i am", "myself"]
+    diet_signals     = ["vegetarian", "veg", "non-veg", "fasting", "upvas"]
+    marital_signals  = ["husband", "wife", "pati", "patni", "widow", "widower", "divorced"]
+    return any(s in t for s in age_signals + gender_signals + diet_signals + marital_signals)
+
+
+def _should_extract_cultural(classified, text: str) -> bool:
+    """Check if message likely contains cultural/religious info."""
+    t = text.lower()
+    religion_signals = ["mandir", "masjid", "gurudwara", "church", "temple", "mosque",
+                        "puja", "namaz", "prayer", "pooja", "aarti", "bhajan",
+                        "diwali", "eid", "navratri", "holi", "christmas", "vaisakhi",
+                        "fasting", "upvas", "roza", "ekadashi", "ramadan",
+                        "hindu", "muslim", "sikh", "christian", "jain",
+                        "pandit", "maulvi", "granthi"]
+    return any(s in t for s in religion_signals)

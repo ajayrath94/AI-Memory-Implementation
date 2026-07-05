@@ -159,3 +159,7 @@ CREATE TABLE IF NOT EXISTS public.user_pillar_weights (
   updated_at timestamp with time zone DEFAULT now(),
   PRIMARY KEY (user_id, pillar)
 );
+
+-- Demographics and cultural context (added later)
+ALTER TABLE public.user_profile ADD COLUMN IF NOT EXISTS demographics jsonb DEFAULT '{}';
+ALTER TABLE public.user_profile ADD COLUMN IF NOT EXISTS cultural_context jsonb DEFAULT '{}';

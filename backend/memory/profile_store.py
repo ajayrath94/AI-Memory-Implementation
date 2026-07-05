@@ -252,8 +252,31 @@ def build_profile_prompt(user_id: str) -> Optional[str]:
     if life.get("living_situation"):
         lines.append(f"- Living situation: {life['living_situation']}")
 
+    # Demographics
+    demographics = profile.get("demographics", {})
+    if demographics.get("age"):
+        lines.append(f"- Age: {demographics['age']} years old")
+    if demographics.get("gender"):
+        lines.append(f"- Gender: {demographics['gender']}")
+    if demographics.get("marital_status"):
+        lines.append(f"- Marital status: {demographics['marital_status']}")
+    if demographics.get("diet"):
+        lines.append(f"- Diet: {demographics['diet']}")
+
+    # Cultural context
+    cultural = profile.get("cultural_context", {})
+    if cultural.get("religion"):
+        lines.append(f"- Religion: {cultural['religion']}")
+    if cultural.get("practices"):
+        lines.append(f"- Religious practices: {', '.join(cultural['practices'])}")
+    if cultural.get("festivals"):
+        lines.append(f"- Festivals: {', '.join(cultural['festivals'])}")
+    if cultural.get("region"):
+        lines.append(f"- Region: {cultural['region']}")
+
     if len(lines) == 1:
         return None  # Only header, nothing populated
 
     lines.append("\nUse this profile to personalize responses. Address them by name if known.")
+    lines.append("Respect their religious beliefs, dietary preferences, and cultural background.")
     return "\n".join(lines)
