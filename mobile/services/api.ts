@@ -1,4 +1,4 @@
-import { API_BASE } from '../constants'
+import { API_BASE, API_KEY } from '../constants'
 
 export interface Message {
   role:    'user' | 'assistant'
