@@ -33,8 +33,8 @@ export async function sendMessage(
   try {
     const res = await fetch(`${API_BASE}/chat/`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ text, model, session_id }),
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+      body:    JSON.stringify({ text, model, session_id, user_id }),
       signal:  controller.signal,
     })
     clearTimeout(timeoutId)
