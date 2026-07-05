@@ -179,9 +179,7 @@ def get_nearby_places(user_id: str, place_type: str = "hospital"):
 
     try:
         # Use stored lat/lng if available, otherwise geocode
-        if lat and lng:
-            pass  # Already have coordinates
-        else:
+        if not lat or not lng:
             query    = location if "india" in location.lower() else f"{location}, India"
             encoded  = urllib.parse.quote(query)
             geo_url  = f"https://maps.googleapis.com/maps/api/geocode/json?address={encoded}&key={api_key}"
