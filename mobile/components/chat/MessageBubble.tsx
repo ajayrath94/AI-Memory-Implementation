@@ -1,6 +1,7 @@
 import React from 'react'
 import { View, Text, StyleSheet } from 'react-native'
 import { Colors, Typography, Spacing, Radius } from '../../constants'
+import { YouTubePlayer } from '../media/YouTubePlayer'
 
 interface Message {
   id:         string
@@ -14,6 +15,8 @@ interface Message {
 
 export function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user'
+  const youtubeMatch = message.content.match(/youtube\.com\/watch\?v=([\w-]+)/)
+  const videoId = youtubeMatch ? youtubeMatch[1] : null
   const time   = new Date(message.timestamp).toLocaleTimeString([], {
     hour: '2-digit', minute: '2-digit'
   })
