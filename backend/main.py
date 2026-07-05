@@ -8,6 +8,7 @@ from routes.alerts import router as alerts_router
 from routes.memory_state import router as memory_state_router
 from routes.weights import router as weights_router
 from routes.auth import router as auth_router
+from routes.integrations import router as integrations_router
 from utils.auth import require_api_key
 import os
 
@@ -33,6 +34,7 @@ app.include_router(memory_state_router, prefix="/memory", tags=["memory-state"],
 app.include_router(weights_router, prefix="/weights", tags=["weights"], dependencies=[Depends(require_api_key)])
 # Auth routes — no API key required (public endpoints)
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(integrations_router, prefix="/integrations", tags=["integrations"], dependencies=[Depends(require_api_key)])
 
 @app.get("/")
 def root():
