@@ -7,6 +7,7 @@ import {
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { Colors, API_BASE, API_KEY } from '../constants'
+import { useAppStore } from '../store/appStore'
 
 interface UserMemory {
   user_id:                 string
@@ -47,6 +48,7 @@ const PILLAR_COLORS: Record<string, string> = {
 }
 
 export default function MemoryScreen() {
+  const { userId } = useAppStore()
   const [memory,     setMemory]     = useState<UserMemory | null>(null)
   const [profile,    setProfile]    = useState<UserProfile | null>(null)
   const [loading,    setLoading]    = useState(true)
@@ -56,8 +58,8 @@ export default function MemoryScreen() {
   const fetchAll = async () => {
     try {
       const [memRes, profRes] = await Promise.all([
-        fetch(`${API_BASE}/memory/user/default`, { headers: { "X-API-Key": API_KEY } }),
-        fetch(`${API_BASE}/memory/profile/default`, { headers: { "X-API-Key": API_KEY } }),
+        fetch(`${API_BASE}/memory/user/${userId}`, { headers: { "X-API-Key": API_KEY } }),
+        fetch(`${API_BASE}/memory/profile/${userId}`, { headers: { "X-API-Key": API_KEY } }),
       ])
       const memData  = await memRes.json()
       const profData = await profRes.json()

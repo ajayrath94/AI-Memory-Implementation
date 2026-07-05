@@ -8,7 +8,7 @@ import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY } from '../constants'
 
-const USER_ID = 'default' // Replace with auth context later
+const { userId: USER_ID } = require('../store/appStore').useAppStore.getState() // Replace with auth context later
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
