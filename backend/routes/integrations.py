@@ -221,71 +221,58 @@ def get_nearby_places(user_id: str, place_type: str = "hospital"):
         return {"error": str(e), "location": location}
 
 
-# ── Spotify Music ──────────────────────────────────────────────────────────────
-
-def _get_spotify_token() -> str:
-    """Get Spotify access token via client credentials flow."""
-    client_id     = os.getenv("SPOTIFY_CLIENT_ID")
-    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
-    if not client_id or not client_secret:
-        raise Exception("Spotify credentials not set")
-
-    import base64
-    credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-    data        = urllib.parse.urlencode({"grant_type": "client_credentials"}).encode()
-    req         = urllib.request.Request(
-        "https://accounts.spotify.com/api/token",
-        data    = data,
-        headers = {
-            "Authorization": f"Basic {credentials}",
-            "Content-Type":  "application/x-www-form-urlencoded",
-        }
-    )
-    with urllib.request.urlopen(req, timeout=5) as res:
-        return json.loads(res.read())["access_token"]
-
+# ── YouTube Music ──────────────────────────────────────────────────────────────
 
 @router.get("/music/{user_id}")
 def get_music_recommendations(user_id: str):
     """
-    Get Spotify track recommendations based on user's music interests.
-    Kishore Kumar fan → Bollywood classic recommendations.
+    Get YouTube music recommendations based on user interests.
+    Kishore Kumar fan → Kishore Kumar songs on YouTube.
     """
+    api_key   = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return {"error": "GOOGLE_API_KEY not set", "videos": []}
+
+    interests = get_user_interests(user_id)
+    music     = interests.get("music", [])
+    religion  = interests.get("religion", "")
+    language  = interests.get("language", "hinglish")
+
+    # Build search query from interests
+    if music:
+        query = music[0]  # e.g. "Kishore Kumar songs"
+    elif religion == "Hindu":
+        query = "bhajan Hindi devotional songs"
+    elif "hi" in language or "hinglish" in language:
+        query = "Bollywood old Hindi songs"
+    else:
+        query = "Indian classical music"
+
     try:
-        token     = _get_spotify_token()
-        interests = get_user_interests(user_id)
-        music     = interests.get("music", [])
-        language  = interests.get("language", "hinglish")
-
-        # Build search query from music interests
-        if music:
-            query = music[0]  # e.g. "Kishore Kumar songs"
-        elif "hi" in language or "hinglish" in language:
-            query = "Bollywood hits"
-        else:
-            query = "Indian music"
-
         encoded = urllib.parse.quote(query)
-        url     = f"https://api.spotify.com/v1/search?q={encoded}&type=track&limit=5&market=IN"
-        data    = http_get(url, headers={"Authorization": f"Bearer {token}"})
+        url     = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={encoded}&type=video&videoCategoryId=10&key={api_key}&maxResults=5&regionCode=IN"
+        data    = http_get(url)
 
-        tracks = []
-        for track in data.get("tracks", {}).get("items", []):
-            tracks.append({
-                "name":       track.get("name"),
-                "artist":     ", ".join(a["name"] for a in track.get("artists", [])),
-                "album":      track.get("album", {}).get("name"),
-                "preview_url": track.get("preview_url"),
-                "spotify_url": track.get("external_urls", {}).get("spotify"),
+        videos = []
+        for item in data.get("items", []):
+            snippet  = item.get("snippet", {})
+            video_id = item.get("id", {}).get("videoId", "")
+            videos.append({
+                "title":       snippet.get("title"),
+                "channel":     snippet.get("channelTitle"),
+                "description": snippet.get("description", "")[:100],
+                "youtube_url": f"https://www.youtube.com/watch?v={video_id}",
+                "thumbnail":   snippet.get("thumbnails", {}).get("medium", {}).get("url"),
+                "video_id":    video_id,
             })
 
         return {
-            "query":   query,
-            "tracks":  tracks,
-            "count":   len(tracks),
+            "query":  query,
+            "videos": videos,
+            "count":  len(videos),
         }
     except Exception as e:
-        return {"error": str(e), "tracks": []}
+        return {"error": str(e), "videos": []}
 
 
 # ── All context in one call ────────────────────────────────────────────────────
@@ -304,6 +291,6 @@ def get_full_context(user_id: str):
         "user_id":  user_id,
         "weather":  weather,
         "news":     {"top_articles": news.get("articles", [])[:3]},
-        "music":    {"top_tracks": music.get("tracks", [])[:3]},
+        "music":    {"top_videos": music.get("videos", [])[:3]},
         "places":   {},  # Only fetch on demand (health alert triggers)
     }
