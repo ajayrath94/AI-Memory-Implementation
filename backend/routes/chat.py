@@ -69,3 +69,47 @@ async def end_session_route(req: EndSessionRequest):
     thread.start()
 
     return {"status": "summarizing", "session_id": req.session_id}
+
+
+class EditRequest(BaseModel):
+    old_message_id:  str
+    old_reply_id:    Optional[str] = None
+    new_text:        str
+    model:           str = "claude-haiku-4-5"
+    session_id:      Optional[str] = None
+    user_id:         str = "default"
+
+@router.post("/edit")
+async def edit_message(req: EditRequest):
+    """
+    Handle message edit & resend:
+    1. Soft-delete old user message + Nancy reply
+    2. Process new message normally
+    """
+    from supabase_store import get_client
+    db = get_client()
+
+    # Soft delete old user message
+    try:
+        db.table("messages").update({
+            "is_deleted": True,
+        }).eq("id", req.old_message_id).execute()
+    except Exception as e:
+        print(f"[Edit] Failed to soft-delete user message: {e}")
+
+    # Soft delete old Nancy reply if provided
+    if req.old_reply_id:
+        try:
+            db.table("messages").update({
+                "is_deleted": True,
+            }).eq("id", req.old_reply_id).execute()
+        except Exception as e:
+            print(f"[Edit] Failed to soft-delete reply: {e}")
+
+    # Process new message normally
+    return await process_input(
+        text       = req.new_text,
+        model      = req.model,
+        session_id = req.session_id,
+        user_id    = req.user_id,
+    )
