@@ -2,17 +2,16 @@ import React, { useRef, useEffect, useState } from 'react'
 import {
   View, FlatList, Text, StyleSheet,
   SafeAreaView, TouchableOpacity, AppState,
-  Animated, Image,
+  Animated,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
-import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY } from '../constants'
+import { Colors, Typography, Spacing, Radius } from '../constants'
 import { useAppStore } from '../store/appStore'
 import { useChat } from '../hooks/useChat'
 import { MessageBubble } from '../components/chat/MessageBubble'
 import { ChatInput } from '../components/chat/ChatInput'
 
-// Nancy's avatar initials placeholder
 function NancyAvatar({ size = 36 }: { size?: number }) {
   return (
     <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
@@ -22,10 +21,10 @@ function NancyAvatar({ size = 36 }: { size?: number }) {
 }
 
 export default function ChatScreen() {
-  const { messages, loading, sessionId } = useAppStore()
-  const { send, clearAndSummarize } = useChat()
-  const listRef  = useRef<FlatList>(null)
-  const appState = useRef(AppState.currentState)
+  const { messages, loading, sessionId, endSession, clearChat } = useAppStore()
+  const { send } = useChat()
+  const listRef   = useRef<FlatList>(null)
+  const appState  = useRef(AppState.currentState)
   const pulseAnim = useRef(new Animated.Value(1)).current
 
   // Pulse animation when Nancy is thinking
@@ -43,7 +42,7 @@ export default function ChatScreen() {
     }
   }, [loading])
 
-  // Auto-scroll
+  // Auto-scroll to bottom
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100)
@@ -54,13 +53,7 @@ export default function ChatScreen() {
   useEffect(() => {
     const sub = AppState.addEventListener('change', next => {
       if (appState.current.match(/active/) && next.match(/inactive|background/)) {
-        if (sessionId) {
-          fetch(`${API_BASE}/chat/end-session`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
-            body:    JSON.stringify({ session_id: sessionId, user_id: 'default' }),
-          }).catch(() => {})
-        }
+        endSession()
       }
       appState.current = next
     })
@@ -83,11 +76,9 @@ export default function ChatScreen() {
             </View>
           </View>
         </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={clearAndSummarize} style={styles.headerBtn}>
-            <Ionicons name="create-outline" size={22} color={Colors.textMuted} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={clearChat} style={styles.headerBtn}>
+          <Ionicons name="create-outline" size={22} color={Colors.textMuted} />
+        </TouchableOpacity>
       </View>
 
       {/* Messages */}
@@ -129,8 +120,6 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
-
-  // Header
   header: {
     flexDirection:     'row',
     alignItems:        'center',
@@ -139,7 +128,6 @@ const styles = StyleSheet.create({
     paddingVertical:   Spacing.md,
     borderBottomWidth: 0.5,
     borderBottomColor: Colors.border,
-    backgroundColor:   Colors.bg,
   },
   headerLeft:    { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   headerInfo:    { gap: 2 },
@@ -147,10 +135,7 @@ const styles = StyleSheet.create({
   onlineRow:     { flexDirection: 'row', alignItems: 'center', gap: 5 },
   onlineDot:     { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.accentGreen },
   onlineText:    { ...Typography.caption, color: Colors.textMuted },
-  headerActions: { flexDirection: 'row', gap: Spacing.sm },
   headerBtn:     { padding: Spacing.sm },
-
-  // Avatar
   avatar: {
     backgroundColor: Colors.accent + '22',
     borderWidth:     1.5,
@@ -159,45 +144,34 @@ const styles = StyleSheet.create({
     justifyContent:  'center',
   },
   avatarText: { color: Colors.accent, fontWeight: '700' },
-
-  // Messages
-  list: { paddingVertical: Spacing.md, flexGrow: 1 },
-
-  // Empty state
+  list:       { paddingVertical: Spacing.md, flexGrow: 1 },
   empty: {
-    flex:           1,
-    alignItems:     'center',
-    justifyContent: 'center',
-    paddingTop:     100,
+    flex:              1,
+    alignItems:        'center',
+    justifyContent:    'center',
+    paddingTop:        100,
     paddingHorizontal: Spacing.xl,
-    gap:            Spacing.lg,
+    gap:               Spacing.lg,
   },
   emptyTitle:    { ...Typography.title, color: Colors.text, marginTop: Spacing.md },
-  emptySubtitle: {
-    ...Typography.body,
-    color:     Colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-
-  // Typing indicator
+  emptySubtitle: { ...Typography.body, color: Colors.textMuted, textAlign: 'center', lineHeight: 24 },
   typingRow: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical:   Spacing.sm,
-    gap: Spacing.sm,
-  },
-  typingBubble: {
     flexDirection:     'row',
     alignItems:        'center',
-    backgroundColor:   Colors.bgCard,
-    borderRadius:      Radius.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical:   Spacing.sm,
+    gap:               Spacing.sm,
+  },
+  typingBubble: {
+    flexDirection:          'row',
+    alignItems:             'center',
+    backgroundColor:        Colors.bgCard,
+    borderRadius:           Radius.lg,
     borderBottomLeftRadius: 4,
-    paddingHorizontal: Spacing.md,
-    paddingVertical:   Spacing.md,
-    borderWidth:       0.5,
-    borderColor:       Colors.border,
+    paddingHorizontal:      Spacing.md,
+    paddingVertical:        Spacing.md,
+    borderWidth:            0.5,
+    borderColor:            Colors.border,
   },
   typingDot: {
     width:           7,
