@@ -523,3 +523,4 @@ async def end_session(session_id: str, user_id: str = "default") -> dict:
             print(f"[BG] end_session failed: {e}")
     threading.Thread(target=_bg, daemon=True).start()
     return {"status": "summarizing", "session_id": session_id}
+# This will be added via the zip approach
