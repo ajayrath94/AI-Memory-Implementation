@@ -492,6 +492,24 @@ async def process_input(text: str, model: str,
     # 13. Call AI
     reply = _route(model, system_prompt, context_messages)
 
+    # ── YouTube injection ──────────────────────────────────────────────────
+    music_keywords = ["gaana", "song", "music", "sunna", "bajao", "kishore",
+                     "lata", "rafi", "bollywood", "playlist", "suno"]
+    is_music = any(k in text.lower() for k in music_keywords)
+    if is_music and classified.core == "ENTERTAINMENT":
+        try:
+            from routes.integrations import get_music_recommendations
+            music_data = get_music_recommendations(user_id)
+            videos = music_data.get("videos", [])
+            if videos:
+                v = videos[0]
+                reply += f"
+
+🎵 {v['title']}
+{v['youtube_url']}"
+        except Exception as e:
+            print(f"[Engine] YouTube injection failed: {e}")
+
     # 14. Save assistant message with embedding
     save_message(
         session_id=sid, role="assistant", content=reply, model=model,
