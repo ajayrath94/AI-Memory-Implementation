@@ -22,7 +22,7 @@ function NancyAvatar({ size = 36 }: { size?: number }) {
 
 export default function ChatScreen() {
   const { messages, loading, sessionId, endSession, clearChat } = useAppStore()
-  const { send } = useChat()
+  const { send, resend } = useChat()
   const listRef   = useRef<FlatList>(null)
   const appState  = useRef(AppState.currentState)
   const pulseAnim = useRef(new Animated.Value(1)).current
@@ -86,7 +86,7 @@ export default function ChatScreen() {
         ref={listRef}
         data={messages}
         keyExtractor={(m, i) => m.id || String(i)}
-        renderItem={({ item }) => <MessageBubble message={item} />}
+        renderItem={({ item }) => <MessageBubble message={item} onResend={resend} />}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
