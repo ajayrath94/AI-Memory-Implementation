@@ -235,3 +235,33 @@ def update_profile_field(user_id: str, data: dict):
 
     save_user_profile(user_id, update)
     return {"status": "ok", "field": field, "value": value}
+
+
+@router.post("/model/{user_id}")
+def save_model_preference(user_id: str, data: dict):
+    """Save user's preferred AI model."""
+    model = data.get("model", "claude-haiku-4-5")
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        db.table("user_profile").update({
+            "communication": {"preferred_model": model}
+        }).eq("user_id", user_id).execute()
+        return {"status": "ok", "model": model}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@router.get("/model/{user_id}")
+def get_model_preference(user_id: str):
+    """Get user's preferred AI model."""
+    try:
+        from supabase_store import get_client
+        db      = get_client()
+        result  = db.table("user_profile").select("communication").eq("user_id", user_id).execute()
+        if result.data:
+            model = result.data[0].get("communication", {}).get("preferred_model", "claude-haiku-4-5")
+            return {"model": model}
+    except Exception:
+        pass
+    return {"model": "claude-haiku-4-5"}
