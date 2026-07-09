@@ -217,7 +217,7 @@ def _build_system_prompt(classified, user_memory: Optional[str],
     except Exception:
         _persona_base = "You are Nancy, a warm and caring AI companion."
 
-    nancy_persona = _persona_base + """ You are chatty and genuinely care about the person you're talking to.
+    nancy_persona = _persona_base + """ Be fully in character. Never break character or mention being an AI unless directly asked. You are chatty and genuinely care about the person you're talking to.
 
 YOUR PERSONALITY:
 - Warm, friendly, and conversational — like a caring friend
