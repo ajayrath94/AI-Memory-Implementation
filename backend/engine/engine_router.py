@@ -157,7 +157,7 @@ def _summarize_group(messages: list, model: str) -> str:
 
 # Tracks last-written STM content per (session_id, pillar) to avoid duplicate inserts.
 # Key: (session_id, pillar)  Value: hash of text content
-_stm_last_written: Dict[tuple, str] = {}
+_stm_last_written: dict[tuple, str] = {}
 
 
 def _compress_cache_to_stm(session_id: str, query_embedding: List[float]):
