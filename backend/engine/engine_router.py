@@ -546,9 +546,9 @@ async def process_input(text: str, model: str,
         _today = _dt.date.today().isoformat()
         _events = []
         if classified.core:
-            _events.append({"user_id": user_id, "session_id": str(sid), "pillar": classified.core, "event_type": "expressed", "value": text[:200], "strength": float(classified.core_score or 1.0), "context": {"model": model}})
+            _events.append({"user_id": user_id, "session_id": str(sid), "pillar": classified.core, "event_type": "expressed", "value": text[:200], "strength": float(classified.core_score or 1.0), "context": {"model": model}, "date": _today})
         if classified.emotion and classified.emotion != "GENERAL":
-            _events.append({"user_id": user_id, "session_id": str(sid), "pillar": classified.emotion, "event_type": "expressed", "value": text[:200], "strength": 0.8, "context": {"model": model}})
+            _events.append({"user_id": user_id, "session_id": str(sid), "pillar": classified.emotion, "event_type": "expressed", "value": text[:200], "strength": 0.8, "context": {"model": model}, "date": _today})
         if _events:
             _db.table("user_behavioral_events").insert(_events).execute()
         for _ev in _events:
