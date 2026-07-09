@@ -23,7 +23,7 @@ export function YouTubePlayer({ video }: Props) {
   const [playing,  setPlaying]  = useState(false)
   const [loading,  setLoading]  = useState(false)
 
-  const embedUrl = `https://www.youtube.com/embed/${video.video_id}?autoplay=1&playsinline=1&rel=0`
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${video.video_id}?autoplay=1&playsinline=1&rel=0&modestbranding=1&fs=1`
 
   const handlePlay = () => {
     setPlaying(true)
@@ -48,6 +48,7 @@ export function YouTubePlayer({ video }: Props) {
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
           onLoad={() => setLoading(false)}
+          onError={() => { setPlaying(false); openInYouTube() }}
           javaScriptEnabled
           allowsFullscreenVideo
         />
