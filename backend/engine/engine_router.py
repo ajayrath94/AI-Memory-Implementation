@@ -538,6 +538,30 @@ async def process_input(text: str, model: str,
         except Exception as e:
             print(f"[Engine] YouTube injection failed: {e}")
 
+    # ── Log behavioral events ──────────────────────────────────────────────
+    try:
+        from supabase_store import get_client as _get_db
+        import datetime as _dt
+        _db   = _get_db()
+        _today = _dt.date.today().isoformat()
+        _events = []
+        if classified.core:
+            _events.append({"user_id": user_id, "session_id": str(sid), "pillar": classified.core, "event_type": "expressed", "value": text[:200], "strength": float(classified.core_score or 1.0), "context": {"model": model}})
+        if classified.emotion and classified.emotion != "GENERAL":
+            _events.append({"user_id": user_id, "session_id": str(sid), "pillar": classified.emotion, "event_type": "expressed", "value": text[:200], "strength": 0.8, "context": {"model": model}})
+        if _events:
+            _db.table("user_behavioral_events").insert(_events).execute()
+        for _ev in _events:
+            _ex = _db.table("user_pillar_timeseries").select("id,event_count,avg_strength").eq("user_id", user_id).eq("pillar", _ev["pillar"]).eq("date", _today).execute()
+            if _ex.data:
+                _nc = _ex.data[0]["event_count"] + 1
+                _na = (_ex.data[0]["avg_strength"] * _ex.data[0]["event_count"] + _ev["strength"]) / _nc
+                _db.table("user_pillar_timeseries").update({"event_count": _nc, "avg_strength": round(_na, 4)}).eq("id", _ex.data[0]["id"]).execute()
+            else:
+                _db.table("user_pillar_timeseries").insert({"user_id": user_id, "pillar": _ev["pillar"], "date": _today, "avg_strength": _ev["strength"], "event_count": 1}).execute()
+    except Exception as _be:
+        print(f"[Engine] Behavioral log failed: {_be}")
+
     # 14. Save assistant message with embedding
     save_message(
         session_id=sid, role="assistant", content=reply, model=model,
