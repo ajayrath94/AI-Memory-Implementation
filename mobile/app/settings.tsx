@@ -9,12 +9,20 @@ import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY, MODELS } from '
 import { useAppStore } from '../store/appStore'
 
 const BACKGROUNDS = [
-  { id: 'dark',       label: 'Dark',       color: '#0a0a0a' },
-  { id: 'midnight',   label: 'Midnight',   color: '#0d1117' },
-  { id: 'navy',       label: 'Navy',       color: '#0a0f1e' },
-  { id: 'warm_dark',  label: 'Warm',       color: '#1a1008' },
-  { id: 'forest',     label: 'Forest',     color: '#0a1208' },
-  { id: 'purple',     label: 'Purple',     color: '#120a1a' },
+  { id: 'dark',       label: 'Black',    color: '#0a0a0a' },
+  { id: 'charcoal',   label: 'Charcoal', color: '#1a1a1a' },
+  { id: 'midnight',   label: 'Midnight', color: '#0d1117' },
+  { id: 'navy',       label: 'Navy',     color: '#0a0f1e' },
+  { id: 'espresso',   label: 'Espresso', color: '#1a0f08' },
+  { id: 'forest',     label: 'Forest',   color: '#0a1208' },
+  { id: 'purple',     label: 'Purple',   color: '#120a1a' },
+  { id: 'slate',      label: 'Slate',    color: '#0f1419' },
+  { id: 'white',      label: 'White',    color: '#ffffff' },
+  { id: 'soft',       label: 'Soft',     color: '#f5f5f0' },
+  { id: 'warm_light', label: 'Warm',     color: '#fdf6ec' },
+  { id: 'sky',        label: 'Sky',      color: '#eef4fb' },
+  { id: 'mint',       label: 'Mint',     color: '#eef8f4' },
+  { id: 'lavender',   label: 'Lavender', color: '#f3eefb' },
 ]
 
 export default function SettingsScreen() {
