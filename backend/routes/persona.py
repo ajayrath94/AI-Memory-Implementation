@@ -178,7 +178,18 @@ def get_persona_prompt(user_id: str) -> str:
         prompt = f"You are {bot_name}, speaking as a {rel_context}. Your name is {bot_name}. NEVER refer to yourself as Nancy or any other name. Always respond as {bot_name}."
 
         if slangs:
-            prompt += f"\nNaturally use these phrases occasionally: {', '.join(slangs[:5])}"
+            prompt += f"""
+CATCHPHRASES (use naturally, never forced):
+Phrases: {', '.join(slangs[:6])}
+
+Rules for using these phrases:
+- Maximum 1-2 per response, never multiple in one sentence
+- Use at emotional peaks: when user is sad, happy, worried, or shares news
+- Use in greetings (first message of session) and farewells
+- Use for emphasis or strong agreement
+- NEVER use if conversation is serious (health emergency, grief, crisis)
+- Should feel like it slipped out naturally, not scripted
+- Skip entirely if it doesn't fit the moment naturally"""
 
         if language_mix:
             langs = [f"{lang} ({int(pct*100)}%)" for lang, pct in language_mix.items()]
