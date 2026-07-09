@@ -12,7 +12,7 @@ Memory complete - full embedding pipeline:
 
 import os
 import threading
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -210,7 +210,14 @@ def _build_system_prompt(classified, user_memory: Optional[str],
                           user_id: str = "") -> str:
     """Nancy — warm, chatty, memory-aware Indian companion."""
 
-    nancy_persona = """You are Nancy, a warm and chatty AI companion who genuinely cares about the person you're talking to.
+    # Load custom bot persona
+    try:
+        from routes.persona import get_persona_prompt
+        _persona_base = get_persona_prompt(user_id)
+    except Exception:
+        _persona_base = "You are Nancy, a warm and caring AI companion."
+
+    nancy_persona = _persona_base + " You are chatty and genuinely care about the person you're talking to.
 
 YOUR PERSONALITY:
 - Warm, friendly, and conversational — like a caring friend
@@ -440,7 +447,7 @@ async def process_input(text: str, model: str,
         seed_cache_from_memory(user_id, sid)
 
     # 4. Classify with EMBEDDINGS (no keyword matching!)
-    classified = classify_input(text)
+    classified = classify_input(text, user_id=user_id)
     embedding  = classified.embedding  # real 1024-dim vector
 
     # 5. Save user message with embedding
@@ -492,76 +499,6 @@ async def process_input(text: str, model: str,
     # 13. Call AI
     reply = _route(model, system_prompt, context_messages)
 
-    # ── YouTube injection (smart extraction) ─────────────────────────────
-    if classified.core == "ENTERTAINMENT":
-        try:
-            import anthropic as _ac, urllib.parse, urllib.request, json as _json, os as _os
-            _client = _ac.Anthropic(api_key=_os.getenv("ANTHROPIC_API_KEY"))
-            _extract = _client.messages.create(
-                model="claude-haiku-4-5", max_tokens=50,
-                messages=[{"role":"user","content":f"Extract music search query from: \"{text}\". Return ONLY the search query or NONE."}]
-            )
-            music_query = _extract.content[0].text.strip()
-            if music_query and music_query != "NONE":
-                _key     = _os.getenv("GOOGLE_API_KEY")
-                _encoded = urllib.parse.quote(music_query + " songs")
-                _url     = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={_encoded}&type=video&key={_key}&maxResults=1&regionCode=IN"
-                with urllib.request.urlopen(_url, timeout=5) as _res:
-                    _data = _json.loads(_res.read())
-                _items = _data.get("items", [])
-                if _items:
-                    _vid_id = _items[0]["id"]["videoId"]
-                    _title  = _items[0]["snippet"]["title"]
-                    reply  += f"\n\n\U0001f3b5 {_title}\nhttps://www.youtube.com/watch?v={_vid_id}"
-                    print(f"[Engine] YouTube injected: {_title}")
-                    try:
-                        from supabase_store import get_client as _get_db
-                        _db = _get_db()
-                        _existing = _db.table("user_entertainment").select("id,play_count").eq("user_id", user_id).eq("video_id", _vid_id).execute()
-                        if _existing.data:
-                            _db.table("user_entertainment").update({"play_count": _existing.data[0]["play_count"] + 1}).eq("id", _existing.data[0]["id"]).execute()
-                            _plays = _existing.data[0]["play_count"] + 1
-                        else:
-                            _db.table("user_entertainment").insert({"user_id": user_id, "type": "music", "query": music_query, "video_id": _vid_id, "title": _title, "mood": classified.emotion or "general"}).execute()
-                            _plays = 1
-                        if _plays >= 3:
-                            from memory.profile_store import get_user_profile, save_user_profile
-                            _profile = get_user_profile(user_id) or {}
-                            _interests = _profile.get("interests", {})
-                            _music = _interests.get("music", [])
-                            if music_query not in _music:
-                                _music.append(music_query)
-                                save_user_profile(user_id, {"interests": {"music": _music}})
-                                print(f"[Engine] Auto-added {music_query} to interests")
-                    except Exception as _le:
-                        print(f"[Engine] Entertainment log failed: {_le}")
-        except Exception as e:
-            print(f"[Engine] YouTube injection failed: {e}")
-
-    # ── Log behavioral events ──────────────────────────────────────────────
-    try:
-        from supabase_store import get_client as _get_db
-        import datetime as _dt
-        _db   = _get_db()
-        _today = _dt.date.today().isoformat()
-        _events = []
-        if classified.core:
-            _events.append({"user_id": user_id, "session_id": str(sid), "pillar": classified.core, "event_type": "expressed", "value": text[:200], "strength": float(classified.core_score or 1.0), "context": {"model": model}, "date": _today})
-        if classified.emotion and classified.emotion != "GENERAL":
-            _events.append({"user_id": user_id, "session_id": str(sid), "pillar": classified.emotion, "event_type": "expressed", "value": text[:200], "strength": 0.8, "context": {"model": model}, "date": _today})
-        if _events:
-            _db.table("user_behavioral_events").insert(_events).execute()
-        for _ev in _events:
-            _ex = _db.table("user_pillar_timeseries").select("id,event_count,avg_strength").eq("user_id", user_id).eq("pillar", _ev["pillar"]).eq("date", _today).execute()
-            if _ex.data:
-                _nc = _ex.data[0]["event_count"] + 1
-                _na = (_ex.data[0]["avg_strength"] * _ex.data[0]["event_count"] + _ev["strength"]) / _nc
-                _db.table("user_pillar_timeseries").update({"event_count": _nc, "avg_strength": round(_na, 4)}).eq("id", _ex.data[0]["id"]).execute()
-            else:
-                _db.table("user_pillar_timeseries").insert({"user_id": user_id, "pillar": _ev["pillar"], "date": _today, "avg_strength": _ev["strength"], "event_count": 1}).execute()
-    except Exception as _be:
-        print(f"[Engine] Behavioral log failed: {_be}")
-
     # 14. Save assistant message with embedding
     save_message(
         session_id=sid, role="assistant", content=reply, model=model,
@@ -593,4 +530,3 @@ async def end_session(session_id: str, user_id: str = "default") -> dict:
             print(f"[BG] end_session failed: {e}")
     threading.Thread(target=_bg, daemon=True).start()
     return {"status": "summarizing", "session_id": session_id}
-# This will be added via the zip approach
