@@ -492,21 +492,31 @@ async def process_input(text: str, model: str,
     # 13. Call AI
     reply = _route(model, system_prompt, context_messages)
 
-    # ── YouTube injection ──────────────────────────────────────────────────
-    music_keywords = ["gaana", "song", "music", "sunna", "bajao", "kishore",
-                     "lata", "rafi", "bollywood", "playlist", "suno"]
-    is_music = any(k in text.lower() for k in music_keywords)
-    if is_music and classified.core == "ENTERTAINMENT":
+    # ── YouTube injection (smart extraction) ─────────────────────────────
+    if classified.core == "ENTERTAINMENT":
         try:
-            from routes.integrations import get_music_recommendations
-            music_data = get_music_recommendations(user_id)
-            videos = music_data.get("videos", [])
-            if videos:
-                v = videos[0]
-                reply += f"
+            import anthropic as _ac, urllib.parse, urllib.request, json as _json, os as _os
+            _client = _ac.Anthropic(api_key=_os.getenv("ANTHROPIC_API_KEY"))
+            _extract = _client.messages.create(
+                model="claude-haiku-4-5", max_tokens=50,
+                messages=[{"role":"user","content":f"Extract music search query from: \"{text}\". Return ONLY the search query or NONE."}]
+            )
+            music_query = _extract.content[0].text.strip()
+            if music_query and music_query != "NONE":
+                _key     = _os.getenv("GOOGLE_API_KEY")
+                _encoded = urllib.parse.quote(music_query + " songs")
+                _url     = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={_encoded}&type=video&key={_key}&maxResults=1&regionCode=IN"
+                with urllib.request.urlopen(_url, timeout=5) as _res:
+                    _data = _json.loads(_res.read())
+                _items = _data.get("items", [])
+                if _items:
+                    _vid_id = _items[0]["id"]["videoId"]
+                    _title  = _items[0]["snippet"]["title"]
+                    reply  += f"
 
-🎵 {v['title']}
-{v['youtube_url']}"
+🎵 {_title}
+https://www.youtube.com/watch?v={_vid_id}"
+                    print(f"[Engine] YouTube injected: {_title}")
         except Exception as e:
             print(f"[Engine] YouTube injection failed: {e}")
 
