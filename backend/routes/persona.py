@@ -175,7 +175,7 @@ def get_persona_prompt(user_id: str) -> str:
             "caretaker": "professional and caring caretaker",
         }.get(relationship, "caring companion")
 
-        prompt = f"You are {bot_name}, a {rel_context}."
+        prompt = f"You are {bot_name}, speaking as a {rel_context}. Your name is {bot_name}. NEVER refer to yourself as Nancy or any other name. Always respond as {bot_name}."
 
         if slangs:
             prompt += f"\nNaturally use these phrases occasionally: {', '.join(slangs[:5])}"
