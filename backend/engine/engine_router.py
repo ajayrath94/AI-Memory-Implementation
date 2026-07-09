@@ -512,11 +512,29 @@ async def process_input(text: str, model: str,
                 if _items:
                     _vid_id = _items[0]["id"]["videoId"]
                     _title  = _items[0]["snippet"]["title"]
-                    reply  += f"
-
-🎵 {_title}
-https://www.youtube.com/watch?v={_vid_id}"
+                    reply  += f"\n\n\U0001f3b5 {_title}\nhttps://www.youtube.com/watch?v={_vid_id}"
                     print(f"[Engine] YouTube injected: {_title}")
+                    try:
+                        from supabase_store import get_client as _get_db
+                        _db = _get_db()
+                        _existing = _db.table("user_entertainment").select("id,play_count").eq("user_id", user_id).eq("video_id", _vid_id).execute()
+                        if _existing.data:
+                            _db.table("user_entertainment").update({"play_count": _existing.data[0]["play_count"] + 1}).eq("id", _existing.data[0]["id"]).execute()
+                            _plays = _existing.data[0]["play_count"] + 1
+                        else:
+                            _db.table("user_entertainment").insert({"user_id": user_id, "type": "music", "query": music_query, "video_id": _vid_id, "title": _title, "mood": classified.emotion or "general"}).execute()
+                            _plays = 1
+                        if _plays >= 3:
+                            from memory.profile_store import get_user_profile, save_user_profile
+                            _profile = get_user_profile(user_id) or {}
+                            _interests = _profile.get("interests", {})
+                            _music = _interests.get("music", [])
+                            if music_query not in _music:
+                                _music.append(music_query)
+                                save_user_profile(user_id, {"interests": {"music": _music}})
+                                print(f"[Engine] Auto-added {music_query} to interests")
+                    except Exception as _le:
+                        print(f"[Engine] Entertainment log failed: {_le}")
         except Exception as e:
             print(f"[Engine] YouTube injection failed: {e}")
 
