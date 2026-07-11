@@ -92,7 +92,7 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
-      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
+      <View style={[styles.header, { backgroundColor: Colors.bg, borderBottomColor: theme.border }]}>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Settings</Text>
       </View>
 
@@ -124,7 +124,7 @@ export default function SettingsScreen() {
 
         {/* AI Model */}
         <SectionHeader title="🧠 AI Model" />
-        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
           <Text style={[styles.cardHint, { color: theme.textMuted }]}>
             Choose which AI model powers your companion. Haiku is fastest, Sonnet is smarter.
           </Text>
@@ -152,7 +152,7 @@ export default function SettingsScreen() {
 
         {/* Background */}
         <SectionHeader title="🎨 Background" />
-        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
           <View style={styles.bgGrid}>
             {BACKGROUNDS.map(bg => (
               <TouchableOpacity
@@ -176,7 +176,7 @@ export default function SettingsScreen() {
           action={savingW ? undefined : "Reset"}
           onAction={resetWeights}
         />
-        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
           <Text style={[styles.cardHint, { color: theme.textMuted }]}>
             Control what Nancy pays most attention to. Higher = more focus.
           </Text>
@@ -196,7 +196,7 @@ export default function SettingsScreen() {
 
         {/* Data & Privacy */}
         <SectionHeader title="🔒 Data & Privacy" />
-        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
           <SettingRow
             icon="download-outline"
             label="Export my data"
@@ -224,7 +224,7 @@ export default function SettingsScreen() {
 
         {/* Caregiver */}
         <SectionHeader title="👥 Caregiver" />
-        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
           <SettingRow
             icon="people-outline"
             label="Caregiver dashboard"
@@ -320,12 +320,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginTop: Spacing.sm,
   },
-  sectionTitle:  { ...Typography.label, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
+  sectionTitle:  { ...Typography.label, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
   sectionAction: { ...Typography.caption, color: Colors.accent },
 
   card: {
-    backgroundColor: theme.bgCard, borderRadius: Radius.lg,
-    padding: Spacing.lg, borderWidth: 0.5, borderColor: theme.border,
+    backgroundColor: Colors.bgCard, borderRadius: Radius.lg,
+    padding: Spacing.lg, borderWidth: 0.5, borderColor: Colors.border,
     gap: Spacing.md,
   },
   cardHint: { ...Typography.caption, color: theme.textMuted },
@@ -333,8 +333,8 @@ const styles = StyleSheet.create({
   // Persona
   personaCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: theme.bgCard, borderRadius: Radius.lg,
-    padding: Spacing.lg, borderWidth: 0.5, borderColor: theme.border,
+    backgroundColor: Colors.bgCard, borderRadius: Radius.lg,
+    padding: Spacing.lg, borderWidth: 0.5, borderColor: Colors.border,
   },
   personaAvatar: {
     width: 48, height: 48, borderRadius: 24,
@@ -343,21 +343,21 @@ const styles = StyleSheet.create({
   },
   personaAvatarText: { fontSize: 20, fontWeight: '700', color: Colors.accent },
   personaName:       { ...Typography.heading, color: theme.text },
-  personaRole:       { ...Typography.caption, color: theme.textMuted, marginTop: 2 },
+  personaRole:       { ...Typography.caption, color: Colors.textMuted, marginTop: 2 },
   personaSlangs:     { ...Typography.caption, color: Colors.accent, fontStyle: 'italic', marginTop: 2 },
 
   // Model
   modelRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     padding: Spacing.md, borderRadius: Radius.md,
-    borderWidth: 0.5, borderColor: theme.border,
+    borderWidth: 0.5, borderColor: Colors.border,
   },
   modelRowActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '10' },
   modelLeft:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   modelDot:       { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.border },
   modelDotActive: { backgroundColor: Colors.accent },
   modelName:      { ...Typography.label, color: theme.textMuted },
-  modelNameActive:{ color: theme.text, fontWeight: '600' },
+  modelNameActive:{ color: Colors.text, fontWeight: '600' },
   modelProvider:  { ...Typography.caption, color: theme.textMuted },
 
   // Background
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderBottomWidth: 0.5, borderBottomColor: Colors.border,
   },
-  settingLabel: { ...Typography.body, color: theme.text, flex: 1 },
+  settingLabel: { ...Typography.body, color: Colors.text, flex: 1 },
 
   appInfo:     { alignItems: 'center', paddingVertical: Spacing.xl, gap: 4 },
   appInfoText: { ...Typography.caption, color: theme.textHint },

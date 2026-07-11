@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   headerTitle:  { ...Typography.heading, color: Colors.text },
-  headerSub:    { ...Typography.caption, color: theme.textMuted, marginTop: 2 },
+  headerSub:    { ...Typography.caption, color: Colors.textMuted, marginTop: 2 },
   headerBtn:    { padding: Spacing.sm },
   scroll:       { padding: Spacing.lg, gap: Spacing.md },
   criticalBanner: {
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
   statsRow:       { flexDirection: 'row', gap: Spacing.sm },
   statCard: {
     flex:            1,
-    backgroundColor: theme.bgCard,
+    backgroundColor: Colors.bgCard,
     borderRadius:    Radius.md,
     padding:         Spacing.md,
     alignItems:      'center',
@@ -360,11 +360,11 @@ const styles = StyleSheet.create({
   },
   statValue:      { fontSize: 20, fontWeight: '600' },
   statLabel:      { ...Typography.caption, color: Colors.textMuted },
-  sectionTitle:   { ...Typography.label, color: theme.textMuted, marginTop: Spacing.sm },
+  sectionTitle:   { ...Typography.label, color: Colors.textMuted, marginTop: Spacing.sm },
   userCard: {
     flexDirection:   'row',
     alignItems:      'center',
-    backgroundColor: theme.bgCard,
+    backgroundColor: Colors.bgCard,
     borderRadius:    Radius.lg,
     padding:         Spacing.lg,
     borderWidth:     0.5,
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
   addPersonText:  { ...Typography.label, color: Colors.accent },
   alertCard: {
     flexDirection:   'row',
-    backgroundColor: theme.bgCard,
+    backgroundColor: Colors.bgCard,
     borderRadius:    Radius.lg,
     padding:         Spacing.lg,
     gap:             Spacing.md,
@@ -425,11 +425,11 @@ const styles = StyleSheet.create({
   alertType:      { ...Typography.label },
   alertTime:      { ...Typography.caption, color: Colors.textMuted },
   alertUserId:    { ...Typography.caption, color: Colors.textMuted },
-  alertMsg:       { ...Typography.body, color: theme.text, lineHeight: 20 },
+  alertMsg:       { ...Typography.body, color: Colors.text, lineHeight: 20 },
   markReadBtn:    { alignSelf: 'flex-start', marginTop: 4 },
   markReadText:   { ...Typography.caption, color: Colors.accent },
   emptyCard: {
-    backgroundColor: theme.bgCard,
+    backgroundColor: Colors.bgCard,
     borderRadius:    Radius.lg,
     padding:         Spacing.xl,
     alignItems:      'center',
@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
     borderColor:     Colors.border,
   },
   emptyTitle:      { ...Typography.heading, color: Colors.textMuted },
-  emptySub:        { ...Typography.body, color: theme.textMuted, textAlign: 'center' },
+  emptySub:        { ...Typography.body, color: Colors.textMuted, textAlign: 'center' },
   emptyAction: {
     backgroundColor: Colors.accent,
     borderRadius:    Radius.md,

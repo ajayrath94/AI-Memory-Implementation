@@ -67,7 +67,7 @@ export default function ChatScreen() {
       <StatusBar style="light" />
 
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
+      <View style={[styles.header, { backgroundColor: Colors.bg, borderBottomColor: theme.border }]}>
         <View style={styles.headerLeft}>
           <NancyAvatar size={38} />
           <View style={styles.headerInfo}>
@@ -107,7 +107,7 @@ export default function ChatScreen() {
       {loading && (
         <View style={styles.typingRow}>
           <NancyAvatar size={24} />
-          <View style={[styles.typingBubble, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+          <View style={[styles.typingBubble, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
             <Animated.View style={[styles.typingDot, { opacity: pulseAnim }]} />
             <Animated.View style={[styles.typingDot, { opacity: pulseAnim, marginHorizontal: 3 }]} />
             <Animated.View style={[styles.typingDot, { opacity: pulseAnim }]} />
@@ -155,8 +155,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     gap:               Spacing.lg,
   },
-  emptyTitle:    { ...Typography.title, color: theme.text, marginTop: Spacing.md },
-  emptySubtitle: { ...Typography.body, color: theme.textMuted, textAlign: 'center', lineHeight: 24 },
+  emptyTitle:    { ...Typography.title, color: Colors.text, marginTop: Spacing.md },
+  emptySubtitle: { ...Typography.body, color: Colors.textMuted, textAlign: 'center', lineHeight: 24 },
   typingRow: {
     flexDirection:     'row',
     alignItems:        'center',
