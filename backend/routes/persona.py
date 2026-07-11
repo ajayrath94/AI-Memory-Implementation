@@ -44,11 +44,28 @@ def get_presets():
             {"id": "caretaker",  "label": "Dekhbhal Karne Wala"},
         ],
         "suggested_slangs": {
-            "hindi":    ["arre yaar", "kya baat hai", "bilkul sahi", "bas kar", "wah wah", "accha accha"],
-            "gujarati": ["kem cho", "maja ma", "shu thayu", "arre bhai", "hu samju chu"],
-            "punjabi":  ["kiddan", "ki haal", "chak de", "arre yaar", "sat sri akal"],
-            "marathi":  ["aho", "kai zala", "khup chan", "baro aahe", "arre baba"],
-            "tamil":    ["enna da", "super da", "romba nalla", "apdiya", "seri da"],
+            # Indian languages
+            "hindi":     ["arre yaar", "kya baat hai", "bilkul sahi", "bas kar", "wah wah"],
+            "tamil":     ["enna da", "super da", "romba nalla", "apdiya", "seri da"],
+            "telugu":    ["enti", "chala manchidi", "ayyo", "akkada", "bagundi"],
+            "kannada":   ["howdu", "chennagide", "yaake", "illwa", "enu madta"],
+            "malayalam": ["sheriyanu", "kollam", "enthanu", "undo", "adipoli"],
+            "gujarati":  ["kem cho", "maja ma", "shu thayu", "arre bhai", "hu samju chu"],
+            "bengali":   ["ki holo", "bhalo", "ache", "tumi", "durdanto"],
+            "punjabi":   ["kiddan", "ki haal", "chak de", "sat sri akal", "waah"],
+            "marathi":   ["aho", "kai zala", "khup chan", "baro aahe", "arre baba"],
+            "odia":      ["kemiti acha", "bhala", "theek achi", "aha", "sundara"],
+            # South Asian
+            "urdu":      ["mashallah", "wah", "bilkul", "theek hai", "accha"],
+            # Gulf / Middle East
+            "arabic":    ["yalla", "habibi", "inshallah", "mashallah", "khalas"],
+            # European
+            "spanish":   ["venga", "anda ya", "madre mia", "claro", "bueno"],
+            "german":    ["genau", "ach so", "mensch", "prima", "wunderbar"],
+            "french":    ["voila", "alors", "mon dieu", "enfin", "parfait"],
+            # East Asian
+            "chinese":   ["haode", "duile", "aiya", "zhende ma", "tai hao le"],
+            "japanese":  ["sou sou", "naru hodo", "sugoi", "yokatta", "maa maa"],
         }
     }
 

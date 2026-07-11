@@ -105,22 +105,89 @@ DIMENSION_ORDER    = CORE_PILLARS + EMOTION_PILLARS + FUNCTIONAL_PILLARS + MODIF
 
 # ── Language detection ─────────────────────────────────────────────────────────
 
+# Supported languages
+SUPPORTED_LANGUAGES = {
+    # Indian languages
+    "hi": "Hindi",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "kn": "Kannada",
+    "ml": "Malayalam",
+    "gu": "Gujarati",
+    "bn": "Bengali",
+    "pa": "Punjabi",
+    "mr": "Marathi",
+    "or": "Odia",
+    # South Asian
+    "ur": "Urdu",
+    # Middle East / Gulf
+    "ar": "Arabic",
+    # European (via langdetect, no script range needed)
+    "es": "Spanish",
+    "de": "German",
+    "fr": "French",
+    "pt": "Portuguese",
+    "it": "Italian",
+    # East Asian
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+    # Default
+    "en": "English",
+}
+
+# Unicode script ranges for script-based detection
+SCRIPT_RANGES = {
+    "hi": (0x0900, 0x097F),  # Devanagari (Hindi, Marathi)
+    "ta": (0x0B80, 0x0BFF),  # Tamil
+    "te": (0x0C00, 0x0C7F),  # Telugu
+    "kn": (0x0C80, 0x0CFF),  # Kannada
+    "ml": (0x0D00, 0x0D7F),  # Malayalam
+    "gu": (0x0A80, 0x0AFF),  # Gujarati
+    "bn": (0x0980, 0x09FF),  # Bengali
+    "pa": (0x0A00, 0x0A7F),  # Punjabi (Gurmukhi)
+    "or": (0x0B00, 0x0B7F),  # Odia
+    "ur": (0x0600, 0x06FF),  # Urdu (Arabic script)
+    "ar": (0x0600, 0x06FF),  # Arabic (same script as Urdu)
+    "zh": (0x4E00, 0x9FFF),  # Chinese (CJK)
+    "ja": (0x3040, 0x30FF),  # Japanese (Hiragana + Katakana)
+    "ko": (0xAC00, 0xD7AF),  # Korean (Hangul)
+}
+
 def _detect_language(text: str) -> str:
-    # Devanagari script detection (most reliable)
-    hindi_chars = set("अआइईउऊएऐओऔकखगघचछजझटठडढणतथदधनपफबभमयरलवशषसह")
-    if any(c in hindi_chars for c in text):
-        return "hi"
-    # Use langdetect for romanized Hindi/Hinglish
+    """
+    Detect language from text using Unicode script ranges.
+    Supports all major Indian languages + English.
+    Falls back to langdetect for romanized text.
+    """
+    # Script-based detection (most reliable)
+    char_counts = {lang: 0 for lang in SCRIPT_RANGES}
+    for char in text:
+        cp = ord(char)
+        for lang, (start, end) in SCRIPT_RANGES.items():
+            if start <= cp <= end:
+                char_counts[lang] += 1
+
+    # Return language with most characters
+    max_lang = max(char_counts, key=char_counts.get)
+    if char_counts[max_lang] > 0:
+        # Special case: Devanagari used by both Hindi and Marathi
+        if max_lang == "hi":
+            return "hi"  # Default to Hindi for Devanagari
+        return max_lang
+
+    # Romanized text — use langdetect
     try:
         from langdetect import detect
         lang = detect(text)
-        return "hi" if lang in ["hi", "ur"] else "en"
+        return lang if lang in SUPPORTED_LANGUAGES else "en"
     except Exception:
+        # Final fallback — basic Hinglish detection
         hinglish = ["hai", "hoon", "karo", "nahi", "aaj", "kal",
-                    "mera", "meri", "mere", "aap", "tum", "main",
-                    "beta", "beti", "dadi", "nana", "kyun", "kaise",
-                    "tumhara", "tujhe", "humara", "unka", "inko"]
-        return "hi" if any(w in text.lower().split() for w in hinglish) else "en"
+                    "mera", "meri", "aap", "tum", "main", "beta",
+                    "enna", "nalla", "emi", "chala", "howdu", "chennagide",
+                    "kem", "maja", "ki holo", "bhalo"]
+        return "hi" if any(w in text.lower() for w in hinglish) else "en"
 
 
 # ── Embedding (Google gemini-embedding-001) ────────────────────────────────────

@@ -50,7 +50,7 @@ const SUGGESTED_SLANGS: Record<string, string[]> = {
   marathi:  ['aho', 'kai zala', 'khup chan', 'arre baba'],
 }
 
-const LANGUAGES = ['hindi', 'english', 'gujarati', 'punjabi', 'marathi', 'tamil', 'telugu']
+const LANGUAGES = ['hindi', 'english', 'tamil', 'telugu', 'kannada', 'malayalam', 'gujarati', 'bengali', 'punjabi', 'marathi', 'odia', 'urdu', 'arabic', 'spanish', 'german', 'french', 'chinese']
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 interface Props {
