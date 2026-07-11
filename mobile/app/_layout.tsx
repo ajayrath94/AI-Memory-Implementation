@@ -1,13 +1,13 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Animated, Dimensions, Pressable, ActivityIndicator,
+  Animated, Dimensions, Pressable,
 } from 'react-native'
 import { Slot, useRouter, usePathname } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { Colors, Spacing, Radius } from '../constants'
 import { useAppStore } from '../store/appStore'
-import { SafeAreaView } from 'react-native-safe-area-context'
 
 const COLLAPSED_W = 56
 const EXPANDED_W  = 200
@@ -22,69 +22,64 @@ const NAV_ITEMS = [
 ]
 
 export default function RootLayout() {
-  const router    = useRouter()
-  const pathname  = usePathname()
-  const [open,        setOpen]        = useState(false)
-  const [authChecked, setAuthChecked] = useState(true)
+  // ── All hooks at top, no conditionals before them ──
+  const router   = useRouter()
+  const pathname = usePathname()
+  const { bgColor, setUserId } = useAppStore()
+  const [open, setOpen] = useState(false)
+  const anim     = useRef(new Animated.Value(COLLAPSED_W)).current
+  const fadeAnim = useRef(new Animated.Value(0)).current
 
+  const isHidden = pathname.startsWith('/caregiver') ||
+                   pathname === '/persona-setup' ||
+                   pathname === '/onboarding'
 
-  const anim      = useRef(new Animated.Value(COLLAPSED_W)).current
-  const fadeAnim  = useRef(new Animated.Value(0)).current
-
-  if (!authChecked) return (
-    <View style={{ flex: 1, backgroundColor: '#0a0a0a', alignItems: 'center', justifyContent: 'center' }}>
-      <ActivityIndicator color="#4a90d9" size="large" />
-    </View>
-  )
-
-  const isHidden  = pathname.startsWith('/caregiver') || pathname === '/persona-setup'
-
-  const toggle = () => {
+  const toggle = useCallback(() => {
     const toW    = open ? COLLAPSED_W : EXPANDED_W
     const toFade = open ? 0 : 1
     Animated.parallel([
       Animated.spring(anim, { toValue: toW, useNativeDriver: false, damping: 20, stiffness: 200 }),
       Animated.timing(fadeAnim, { toValue: toFade, duration: ANIM_MS, useNativeDriver: true }),
     ]).start()
-    setOpen(!open)
-  }
+    setOpen(o => !o)
+  }, [open, anim, fadeAnim])
 
-  const navigate = (path: string) => {
+  const navigate = useCallback((path: string) => {
     router.push(path as any)
     if (open) toggle()
-  }
+  }, [router, open, toggle])
 
+  // ── Full screen for hidden routes ──
   if (isHidden) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: bgColor || Colors.bg }]} edges={['top', 'bottom']}>
         <Slot />
       </SafeAreaView>
     )
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: bgColor || Colors.bg }]} edges={['top', 'bottom']}>
       <View style={styles.root}>
 
-        {/* Overlay — tap to close */}
+        {/* Overlay */}
         {open && (
           <Pressable style={styles.overlay} onPress={toggle} />
         )}
 
         {/* Sidebar */}
-        <Animated.View style={[styles.sidebar, { width: anim }]}>
+        <Animated.View style={[styles.sidebar, { width: anim, backgroundColor: bgColor ? (bgColor > '#888888' ? '#f0f0f0' : '#0d0d0d') : '#0d0d0d' }]}>
 
-          {/* Logo / toggle button */}
+          {/* Logo */}
           <TouchableOpacity style={styles.logoBtn} onPress={toggle} activeOpacity={0.8}>
             <View style={styles.logo}>
               <Text style={styles.logoText}>N</Text>
             </View>
-            <Animated.Text style={[styles.appName, { opacity: fadeAnim }]}>
+            <Animated.Text style={[styles.appName, { opacity: fadeAnim }]} numberOfLines={1}>
               Nancy
             </Animated.Text>
           </TouchableOpacity>
 
-          {/* Divider */}
           <View style={styles.divider} />
 
           {/* Nav items */}
@@ -115,10 +110,10 @@ export default function RootLayout() {
             })}
           </View>
 
-          {/* Bottom — online dot */}
+          {/* Online dot */}
           <View style={styles.sidebarBottom}>
             <View style={styles.onlineDot} />
-            <Animated.Text style={[styles.onlineText, { opacity: fadeAnim }]}>
+            <Animated.Text style={[styles.onlineText, { opacity: fadeAnim }]} numberOfLines={1}>
               Online
             </Animated.Text>
           </View>
@@ -126,7 +121,7 @@ export default function RootLayout() {
         </Animated.View>
 
         {/* Main content */}
-        <View style={styles.content}>
+        <View style={[styles.content, { backgroundColor: bgColor || Colors.bg }]}>
           <Slot />
         </View>
 
@@ -141,7 +136,7 @@ const styles = StyleSheet.create({
 
   overlay: {
     position:        'absolute',
-    top:             0, left: 0, right: 0, bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: '#00000055',
     zIndex:          10,
   },
@@ -157,12 +152,12 @@ const styles = StyleSheet.create({
   },
 
   logoBtn: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           Spacing.md,
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             Spacing.md,
     paddingVertical: Spacing.sm,
     paddingHorizontal: 4,
-    marginBottom:  Spacing.sm,
+    marginBottom:    Spacing.sm,
   },
   logo: {
     width:           36,
@@ -181,37 +176,26 @@ const styles = StyleSheet.create({
   divider: { height: 0.5, backgroundColor: Colors.border, marginBottom: Spacing.sm },
 
   navList:  { flex: 1, gap: 2 },
-
   navItem: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    gap:             Spacing.md,
-    paddingVertical: 11,
+    flexDirection:    'row',
+    alignItems:       'center',
+    gap:              Spacing.md,
+    paddingVertical:  11,
     paddingHorizontal: 8,
-    borderRadius:    Radius.md,
+    borderRadius:     Radius.md,
   },
   navItemActive: { backgroundColor: Colors.accent + '15' },
-
-  navLabel: {
-    fontSize:   15,
-    color:      Colors.textMuted,
-    fontWeight: '500',
-    flexShrink: 0,
-  },
-  navLabelActive: { color: Colors.text, fontWeight: '600' },
+  navLabel:      { fontSize: 15, color: Colors.textMuted, fontWeight: '500', flexShrink: 0 },
+  navLabelActive:{ color: Colors.text, fontWeight: '600' },
 
   sidebarBottom: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           Spacing.md,
+    flexDirection:    'row',
+    alignItems:       'center',
+    gap:              Spacing.md,
     paddingHorizontal: 8,
-    paddingVertical:   Spacing.sm,
+    paddingVertical:  Spacing.sm,
   },
-  onlineDot: {
-    width: 8, height: 8, borderRadius: 4,
-    backgroundColor: Colors.accentGreen,
-    flexShrink: 0,
-  },
+  onlineDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.accentGreen, flexShrink: 0 },
   onlineText: { fontSize: 13, color: Colors.textMuted },
 
   content: { flex: 1, backgroundColor: Colors.bg },
