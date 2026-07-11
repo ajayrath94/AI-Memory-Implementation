@@ -25,6 +25,7 @@ export default function RootLayout() {
   const router    = useRouter()
   const pathname  = usePathname()
   const [open,        setOpen]        = useState(false)
+  const [authChecked, setAuthChecked] = useState(true)
 
 
   const anim      = useRef(new Animated.Value(COLLAPSED_W)).current
