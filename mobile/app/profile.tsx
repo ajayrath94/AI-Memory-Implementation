@@ -6,9 +6,11 @@ import {
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
+import { useTheme } from '../hooks/useTheme'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY } from '../constants'
 
-const { userId: USER_ID } = require('../store/appStore').useAppStore.getState() // Replace with auth context later
+const theme = useTheme()
+  const { userId: USER_ID } = require('../store/appStore').useAppStore.getState() // Replace with auth context later
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -575,7 +577,7 @@ const styles = StyleSheet.create({
 
   // Identity card
   identityCard: {
-    backgroundColor: Colors.bgCard,
+    backgroundColor: theme.bgCard,
     borderRadius:    Radius.xl,
     padding:         Spacing.lg,
     flexDirection:   'row',
@@ -604,9 +606,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
     gap:             Spacing.sm,
   },
-  editableLabel:       { ...Typography.caption, color: Colors.textMuted, width: 70 },
+  editableLabel:       { ...Typography.caption, color: theme.textMuted, width: 70 },
   editableRight:       { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, justifyContent: 'flex-end' },
-  editableValue:       { ...Typography.label, color: Colors.text, textAlign: 'right' },
+  editableValue:       { ...Typography.label, color: theme.text, textAlign: 'right' },
   editablePlaceholder: { color: Colors.textHint },
 
   // Emotion card
@@ -625,7 +627,7 @@ const styles = StyleSheet.create({
 
   // Sections
   section: {
-    backgroundColor: Colors.bgCard,
+    backgroundColor: theme.bgCard,
     borderRadius:    Radius.lg,
     padding:         Spacing.lg,
     borderWidth:     0.5,
@@ -654,12 +656,12 @@ const styles = StyleSheet.create({
     borderRadius:   Radius.full,
   },
   addBtnText: { ...Typography.caption, color: Colors.accent, fontWeight: '600' },
-  emptySection: { ...Typography.body, color: Colors.textMuted, lineHeight: 22 },
+  emptySection: { ...Typography.body, color: theme.textMuted, lineHeight: 22 },
 
   // Tag rows
   tagRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 4 },
   tagDot: { width: 8, height: 8, borderRadius: 4 },
-  tagLabel: { ...Typography.body, color: Colors.text, flex: 1 },
+  tagLabel: { ...Typography.body, color: theme.text, flex: 1 },
   tagRemove: { padding: 4 },
 
   // Interests
@@ -725,7 +727,7 @@ const styles = StyleSheet.create({
     justifyContent:  'flex-end',
   },
   modalCard: {
-    backgroundColor: Colors.bgCard,
+    backgroundColor: theme.bgCard,
     borderRadius:    Radius.xl,
     padding:         Spacing.xl,
     margin:          Spacing.lg,

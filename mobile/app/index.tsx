@@ -6,6 +6,7 @@ import {
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
+import { useTheme } from '../hooks/useTheme'
 import { Colors, Typography, Spacing, Radius } from '../constants'
 import { useAppStore } from '../store/appStore'
 import { useChat } from '../hooks/useChat'
@@ -21,6 +22,7 @@ function NancyAvatar({ size = 36 }: { size?: number }) {
 }
 
 export default function ChatScreen() {
+  const theme = useTheme()
   const { messages, loading, sessionId, endSession, clearChat } = useAppStore()
   const { send, resend } = useChat()
   const listRef   = useRef<FlatList>(null)
@@ -153,8 +155,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     gap:               Spacing.lg,
   },
-  emptyTitle:    { ...Typography.title, color: Colors.text, marginTop: Spacing.md },
-  emptySubtitle: { ...Typography.body, color: Colors.textMuted, textAlign: 'center', lineHeight: 24 },
+  emptyTitle:    { ...Typography.title, color: theme.text, marginTop: Spacing.md },
+  emptySubtitle: { ...Typography.body, color: theme.textMuted, textAlign: 'center', lineHeight: 24 },
   typingRow: {
     flexDirection:     'row',
     alignItems:        'center',

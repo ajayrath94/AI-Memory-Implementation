@@ -5,6 +5,7 @@ import {
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import { useTheme } from '../hooks/useTheme'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY, MODELS } from '../constants'
 import { useAppStore } from '../store/appStore'
 
@@ -26,6 +27,7 @@ const BACKGROUNDS = [
 ]
 
 export default function SettingsScreen() {
+  const theme = useTheme()
   const { model, setModel, userId } = useAppStore()
   const [weights,    setWeights]    = useState<Record<string, number>>({})
   const [loadingW,   setLoadingW]   = useState(true)
@@ -318,12 +320,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginTop: Spacing.sm,
   },
-  sectionTitle:  { ...Typography.label, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
+  sectionTitle:  { ...Typography.label, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
   sectionAction: { ...Typography.caption, color: Colors.accent },
 
   card: {
-    backgroundColor: Colors.bgCard, borderRadius: Radius.lg,
-    padding: Spacing.lg, borderWidth: 0.5, borderColor: Colors.border,
+    backgroundColor: theme.bgCard, borderRadius: Radius.lg,
+    padding: Spacing.lg, borderWidth: 0.5, borderColor: theme.border,
     gap: Spacing.md,
   },
   cardHint: { ...Typography.caption, color: Colors.textMuted },
@@ -331,8 +333,8 @@ const styles = StyleSheet.create({
   // Persona
   personaCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: Colors.bgCard, borderRadius: Radius.lg,
-    padding: Spacing.lg, borderWidth: 0.5, borderColor: Colors.border,
+    backgroundColor: theme.bgCard, borderRadius: Radius.lg,
+    padding: Spacing.lg, borderWidth: 0.5, borderColor: theme.border,
   },
   personaAvatar: {
     width: 48, height: 48, borderRadius: 24,
@@ -341,21 +343,21 @@ const styles = StyleSheet.create({
   },
   personaAvatarText: { fontSize: 20, fontWeight: '700', color: Colors.accent },
   personaName:       { ...Typography.heading, color: Colors.text },
-  personaRole:       { ...Typography.caption, color: Colors.textMuted, marginTop: 2 },
+  personaRole:       { ...Typography.caption, color: theme.textMuted, marginTop: 2 },
   personaSlangs:     { ...Typography.caption, color: Colors.accent, fontStyle: 'italic', marginTop: 2 },
 
   // Model
   modelRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     padding: Spacing.md, borderRadius: Radius.md,
-    borderWidth: 0.5, borderColor: Colors.border,
+    borderWidth: 0.5, borderColor: theme.border,
   },
   modelRowActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '10' },
   modelLeft:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   modelDot:       { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.border },
   modelDotActive: { backgroundColor: Colors.accent },
   modelName:      { ...Typography.label, color: Colors.textMuted },
-  modelNameActive:{ color: Colors.text, fontWeight: '600' },
+  modelNameActive:{ color: theme.text, fontWeight: '600' },
   modelProvider:  { ...Typography.caption, color: Colors.textMuted },
 
   // Background
@@ -383,7 +385,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderBottomWidth: 0.5, borderBottomColor: Colors.border,
   },
-  settingLabel: { ...Typography.body, color: Colors.text, flex: 1 },
+  settingLabel: { ...Typography.body, color: theme.text, flex: 1 },
 
   appInfo:     { alignItems: 'center', paddingVertical: Spacing.xl, gap: 4 },
   appInfoText: { ...Typography.caption, color: Colors.textHint },

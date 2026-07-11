@@ -6,6 +6,7 @@ import {
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import { useTheme } from '../hooks/useTheme'
 import { Colors, Typography, Spacing, Radius } from '../constants'
 import { requestOTP, verifyOTP } from '../services/authService'
 import { useAppStore } from '../store/appStore'
@@ -13,6 +14,7 @@ import { useAppStore } from '../store/appStore'
 type Step = 'phone' | 'otp' | 'done'
 
 export default function OnboardingScreen() {
+  const theme = useTheme()
   const { setUserId } = useAppStore()
   const [step,    setStep]    = useState<Step>('phone')
   const [phone,   setPhone]   = useState('')
@@ -181,16 +183,16 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   logoText:  { fontSize: 32, fontWeight: '700', color: Colors.accent },
-  title:     { ...Typography.title, color: Colors.text, marginBottom: Spacing.sm },
-  subtitle:  { ...Typography.body, color: Colors.textMuted, textAlign: 'center' },
+  title:     { ...Typography.title, color: theme.text, marginBottom: Spacing.sm },
+  subtitle:  { ...Typography.body, color: theme.textMuted, textAlign: 'center' },
 
   form:  { gap: Spacing.md },
   label: { ...Typography.label, color: Colors.textMuted },
 
   phoneRow: { flexDirection: 'row', gap: Spacing.sm },
   countryCode: {
-    backgroundColor: Colors.bgCard,
-    borderWidth: 0.5, borderColor: Colors.border,
+    backgroundColor: theme.bgCard,
+    borderWidth: 0.5, borderColor: theme.border,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     justifyContent: 'center',
@@ -199,9 +201,9 @@ const styles = StyleSheet.create({
 
   phoneInput: {
     flex: 1,
-    backgroundColor: Colors.bgCard,
-    color: Colors.text,
-    borderWidth: 0.5, borderColor: Colors.border,
+    backgroundColor: theme.bgCard,
+    color: theme.text,
+    borderWidth: 0.5, borderColor: theme.border,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,

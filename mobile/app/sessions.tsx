@@ -5,6 +5,7 @@ import {
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
+import { useTheme } from '../hooks/useTheme'
 import { Colors, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
 import { useRouter, useFocusEffect } from 'expo-router'
@@ -32,6 +33,7 @@ export default function SessionsScreen() {
   const [sessions,   setSessions]   = useState<Session[]>([])
   const [loading,    setLoading]    = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const theme = useTheme()
   const { setSessionId } = useAppStore()
   const router = useRouter()
 
@@ -205,10 +207,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
-  headerTitle:  { color: Colors.text, fontSize: 17, fontWeight: '600' },
+  headerTitle:  { color: theme.text, fontSize: 17, fontWeight: '600' },
   list:         { padding: 16, gap: 12 },
   card: {
-    backgroundColor: Colors.bgCard,
+    backgroundColor: theme.bgCard,
     borderRadius:    12,
     padding:         14,
     borderWidth:     1,
@@ -225,12 +227,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical:   3,
   },
-  pillarText:   { color: Colors.textMuted, fontSize: 10, fontWeight: '600' },
+  pillarText:   { color: theme.textMuted, fontSize: 10, fontWeight: '600' },
   cardMeta:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  modelText:    { color: Colors.textMuted, fontSize: 11 },
+  modelText:    { color: theme.textMuted, fontSize: 11 },
   dateText:     { color: Colors.textHint,  fontSize: 11 },
-  cardTitle:    { color: Colors.text, fontSize: 15, fontWeight: '600' },
-  cardSummary:  { color: Colors.textMuted, fontSize: 13, lineHeight: 18 },
+  cardTitle:    { color: theme.text, fontSize: 15, fontWeight: '600' },
+  cardSummary:  { color: theme.textMuted, fontSize: 13, lineHeight: 18 },
   noSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cardNoSummary: { color: Colors.textHint, fontSize: 12, fontStyle: 'italic' },
   cardFooter:   { alignItems: 'flex-end', marginTop: 4 },
@@ -238,11 +240,11 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center',
     justifyContent: 'center', gap: 12,
   },
-  loadingText: { color: Colors.textMuted, fontSize: 14 },
+  loadingText: { color: theme.textMuted, fontSize: 14 },
   empty: {
     alignItems: 'center', justifyContent: 'center',
     paddingTop: 100, gap: 10,
   },
-  emptyText:  { color: Colors.textMuted, fontSize: 16 },
+  emptyText:  { color: theme.textMuted, fontSize: 16 },
   emptyHint:  { color: Colors.textHint,  fontSize: 13 },
 })

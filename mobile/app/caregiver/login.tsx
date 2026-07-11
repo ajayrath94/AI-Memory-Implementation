@@ -6,6 +6,7 @@ import {
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { router } from 'expo-router'
+import { useTheme } from '../../hooks/useTheme'
 import { Colors, Typography, Spacing, Radius, API_BASE } from '../../constants'
 
 export default function LoginScreen() {
@@ -141,11 +142,11 @@ const styles = StyleSheet.create({
   },
   logoText:      { fontSize: 28, fontWeight: '700', color: Colors.accent },
   brandName:     { ...Typography.display, color: Colors.text },
-  brandTagline:  { ...Typography.label, color: Colors.textMuted, marginTop: 4 },
+  brandTagline:  { ...Typography.label, color: theme.textMuted, marginTop: 4 },
 
   // Form
   form: {
-    backgroundColor: Colors.bgCard,
+    backgroundColor: theme.bgCard,
     borderRadius:    Radius.xl,
     padding:         Spacing.xl,
     borderWidth:     0.5,
@@ -153,7 +154,7 @@ const styles = StyleSheet.create({
     gap:             Spacing.lg,
   },
   formTitle:    { ...Typography.title, color: Colors.text },
-  formSubtitle: { ...Typography.body, color: Colors.textMuted, marginTop: -Spacing.sm },
+  formSubtitle: { ...Typography.body, color: theme.textMuted, marginTop: -Spacing.sm },
 
   // Fields
   field:        { gap: Spacing.xs },
