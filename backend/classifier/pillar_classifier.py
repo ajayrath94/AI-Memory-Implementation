@@ -106,14 +106,21 @@ DIMENSION_ORDER    = CORE_PILLARS + EMOTION_PILLARS + FUNCTIONAL_PILLARS + MODIF
 # ── Language detection ─────────────────────────────────────────────────────────
 
 def _detect_language(text: str) -> str:
+    # Devanagari script detection (most reliable)
     hindi_chars = set("अआइईउऊएऐओऔकखगघचछजझटठडढणतथदधनपफबभमयरलवशषसह")
     if any(c in hindi_chars for c in text):
         return "hi"
-    hinglish = ["hai", "hoon", "karo", "nahi", "aaj", "kal", "mera", "meri",
-                "mere", "aap", "tum", "main", "beta", "beti", "dadi", "nana"]
-    if any(w in text.lower().split() for w in hinglish):
-        return "hi"
-    return "en"
+    # Use langdetect for romanized Hindi/Hinglish
+    try:
+        from langdetect import detect
+        lang = detect(text)
+        return "hi" if lang in ["hi", "ur"] else "en"
+    except Exception:
+        hinglish = ["hai", "hoon", "karo", "nahi", "aaj", "kal",
+                    "mera", "meri", "mere", "aap", "tum", "main",
+                    "beta", "beti", "dadi", "nana", "kyun", "kaise",
+                    "tumhara", "tujhe", "humara", "unka", "inko"]
+        return "hi" if any(w in text.lower().split() for w in hinglish) else "en"
 
 
 # ── Embedding (Google gemini-embedding-001) ────────────────────────────────────
