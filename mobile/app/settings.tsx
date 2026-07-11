@@ -91,9 +91,9 @@ export default function SettingsScreen() {
   ]
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
+      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Settings</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -124,20 +124,20 @@ export default function SettingsScreen() {
 
         {/* AI Model */}
         <SectionHeader title="🧠 AI Model" />
-        <View style={styles.card}>
-          <Text style={styles.cardHint}>
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+          <Text style={[styles.cardHint, { color: theme.textMuted }]}>
             Choose which AI model powers your companion. Haiku is fastest, Sonnet is smarter.
           </Text>
           {MODELS.map(m => (
             <TouchableOpacity
               key={m.value}
-              style={[styles.modelRow, model === m.value && styles.modelRowActive]}
+              style={[styles.modelRow, { borderColor: theme.border }, model === m.value && styles.modelRowActive]}
               onPress={() => setModel(m.value)}
             >
               <View style={styles.modelLeft}>
                 <View style={[styles.modelDot, model === m.value && styles.modelDotActive]} />
                 <View>
-                  <Text style={[styles.modelName, model === m.value && styles.modelNameActive]}>
+                  <Text style={[styles.modelName, { color: theme.textMuted }, model === m.value && styles.modelNameActive]}>
                     {m.label}
                   </Text>
                   <Text style={styles.modelProvider}>{m.provider}</Text>
@@ -152,7 +152,7 @@ export default function SettingsScreen() {
 
         {/* Background */}
         <SectionHeader title="🎨 Background" />
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
           <View style={styles.bgGrid}>
             {BACKGROUNDS.map(bg => (
               <TouchableOpacity
@@ -176,8 +176,8 @@ export default function SettingsScreen() {
           action={savingW ? undefined : "Reset"}
           onAction={resetWeights}
         />
-        <View style={styles.card}>
-          <Text style={styles.cardHint}>
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+          <Text style={[styles.cardHint, { color: theme.textMuted }]}>
             Control what Nancy pays most attention to. Higher = more focus.
           </Text>
           {loadingW ? (
@@ -196,7 +196,7 @@ export default function SettingsScreen() {
 
         {/* Data & Privacy */}
         <SectionHeader title="🔒 Data & Privacy" />
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
           <SettingRow
             icon="download-outline"
             label="Export my data"
@@ -224,7 +224,7 @@ export default function SettingsScreen() {
 
         {/* Caregiver */}
         <SectionHeader title="👥 Caregiver" />
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
           <SettingRow
             icon="people-outline"
             label="Caregiver dashboard"
@@ -239,8 +239,8 @@ export default function SettingsScreen() {
 
         {/* App info */}
         <View style={styles.appInfo}>
-          <Text style={styles.appInfoText}>Nancy AI · Built with ❤️</Text>
-          <Text style={styles.appInfoText}>Memory never forgets</Text>
+          <Text style={[styles.appInfoText, { color: theme.textHint }]}>Nancy AI · Built with ❤️</Text>
+          <Text style={[styles.appInfoText, { color: theme.textHint }]}>Memory never forgets</Text>
         </View>
 
       </ScrollView>
@@ -255,7 +255,7 @@ function SectionHeader({ title, action, onAction }: {
 }) {
   return (
     <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>{title}</Text>
       {action && (
         <TouchableOpacity onPress={onAction}>
           <Text style={styles.sectionAction}>{action}</Text>
@@ -269,7 +269,7 @@ function SettingRow({ icon, label, onPress, color }: {
   icon: any; label: string; onPress: () => void; color?: string
 }) {
   return (
-    <TouchableOpacity style={styles.settingRow} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={[styles.settingRow, { borderBottomColor: theme.border }]} onPress={onPress} activeOpacity={0.7}>
       <Ionicons name={icon} size={20} color={color || Colors.textMuted} />
       <Text style={[styles.settingLabel, color && { color }]}>{label}</Text>
       <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
@@ -291,14 +291,14 @@ function WeightRow({ pillar, value, onChange }: {
       <Text style={styles.weightEmoji}>{pillar.emoji}</Text>
       <View style={{ flex: 1 }}>
         <View style={styles.weightLabelRow}>
-          <Text style={styles.weightLabel}>{pillar.label}</Text>
+          <Text style={[styles.weightLabel, { color: theme.text }]}>{pillar.label}</Text>
           <Text style={[styles.weightValue, { color: lcolor }]}>{label}</Text>
         </View>
         <View style={styles.weightDots}>
           {steps.map(v => (
             <TouchableOpacity
               key={v}
-              style={[styles.weightDot,
+              style={[styles.weightDot, { backgroundColor: theme.bgInput },
                 value >= v && { backgroundColor: pillar.color }]}
               onPress={() => onChange(v)}
             />

@@ -89,10 +89,10 @@ export default function ChatScreen() {
         data={messages}
         keyExtractor={(m, i) => m.id || String(i)}
         renderItem={({ item }) => <MessageBubble message={item} onResend={resend} />}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { backgroundColor: theme.bg }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <View style={styles.empty}>
+          <View style={[styles.empty, { backgroundColor: theme.bg }]}>
             <NancyAvatar size={72} />
             <Text style={[styles.emptyTitle, { color: theme.text }]}>Hi, I'm Nancy</Text>
             <Text style={[styles.emptySubtitle, { color: theme.textMuted }]}>
@@ -107,7 +107,7 @@ export default function ChatScreen() {
       {loading && (
         <View style={styles.typingRow}>
           <NancyAvatar size={24} />
-          <View style={styles.typingBubble}>
+          <View style={[styles.typingBubble, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
             <Animated.View style={[styles.typingDot, { opacity: pulseAnim }]} />
             <Animated.View style={[styles.typingDot, { opacity: pulseAnim, marginHorizontal: 3 }]} />
             <Animated.View style={[styles.typingDot, { opacity: pulseAnim }]} />
@@ -179,6 +179,6 @@ const styles = StyleSheet.create({
     width:           7,
     height:          7,
     borderRadius:    4,
-    backgroundColor: Colors.textMuted,
+    backgroundColor: theme.textMuted,
   },
 })
