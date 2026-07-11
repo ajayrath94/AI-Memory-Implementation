@@ -6,6 +6,8 @@ import {
 import { Slot, useRouter, usePathname } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { Colors, Spacing, Radius } from '../constants'
+import { isLoggedIn, getCurrentUser } from '../services/authService'
+import { useEffect } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 const COLLAPSED_W = 56
