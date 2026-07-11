@@ -154,19 +154,27 @@ export default function SettingsScreen() {
         <SectionHeader title="🎨 Background" />
         <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
           <View style={styles.bgGrid}>
-            {BACKGROUNDS.map(bg => (
-              <TouchableOpacity
-                key={bg.id}
-                style={[styles.bgSwatch, { backgroundColor: bg.color },
-                  background === bg.id && styles.bgSwatchActive]}
-                onPress={() => setBackground(bg.id)}
-              >
-                {background === bg.id && (
-                  <Ionicons name="checkmark" size={18} color="#fff" />
-                )}
-                <Text style={styles.bgLabel}>{bg.label}</Text>
-              </TouchableOpacity>
-            ))}
+            {BACKGROUNDS.map(bg => {
+              const r = parseInt(bg.color.replace('#','').substring(0,2),16)
+              const g = parseInt(bg.color.replace('#','').substring(2,4),16)
+              const b = parseInt(bg.color.replace('#','').substring(4,6),16)
+              const isLightSwatch = (0.299*r + 0.587*g + 0.114*b)/255 > 0.5
+              const labelColor    = isLightSwatch ? '#000000' : '#ffffff'
+              const checkColor    = isLightSwatch ? '#000000' : '#ffffff'
+              const borderColor   = background === bg.id ? (isLightSwatch ? '#000000' : Colors.accent) : 'transparent'
+              return (
+                <TouchableOpacity
+                  key={bg.id}
+                  style={[styles.bgSwatch, { backgroundColor: bg.color, borderWidth: 2, borderColor }]}
+                  onPress={() => { setBackground(bg.id); setBgColor(bg.color) }}
+                >
+                  {background === bg.id && (
+                    <Ionicons name="checkmark" size={18} color={checkColor} />
+                  )}
+                  <Text style={[styles.bgLabel, { color: labelColor }]}>{bg.label}</Text>
+                </TouchableOpacity>
+              )
+            })}
           </View>
         </View>
 
