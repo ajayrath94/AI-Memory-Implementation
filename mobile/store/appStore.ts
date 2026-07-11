@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { MODELS, API_BASE, API_KEY } from '../constants'
+import { MODELS } from '../constants'
 
 export interface Message {
   id:          string
@@ -17,7 +17,7 @@ interface AppState {
   loading:     boolean
   sessionId:   string | null
   userId:      string
-  bgColor:     string        // real user_id — set after auth, default for now
+  bgColor:     string
   lastMeta:    { core: string; emotion: string; functional: string } | null
   memoryUsed:  boolean
 
@@ -39,7 +39,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   loading:    false,
   sessionId:  null,
   userId:     'default',
-  bgColor:    '#0a0a0a',   // will be replaced with real user_id after auth
+  bgColor:    '#0a0a0a',
   lastMeta:   null,
   memoryUsed: false,
 
@@ -52,21 +52,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLastMeta:   (meta)  => set({ lastMeta: meta }),
   setMemoryUsed: (v)     => set({ memoryUsed: v }),
 
-  initAuth: async () => {
-    const { getCurrentUser } = await import('../services/authService')
-    const user = await getCurrentUser()
-    if (user) set({ userId: user.id })
-  },
   clearChat: () => {
-    const { sessionId, userId } = get()
-    // End current session before clearing
-    if (sessionId) {
-      fetch(`${API_BASE}/chat/end-session`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
-        body:    JSON.stringify({ session_id: sessionId, user_id: userId }),
-      }).catch(() => {})
-    }
+    const { sessionId, userId, endSession } = get()
+    if (sessionId) endSession()
     set({ messages: [], lastMeta: null, sessionId: null, memoryUsed: false })
   },
 
@@ -74,13 +62,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { sessionId, userId } = get()
     if (!sessionId) return
     try {
+      const { API_BASE, API_KEY } = require('../constants')
       await fetch(`${API_BASE}/chat/end-session`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
         body:    JSON.stringify({ session_id: sessionId, user_id: userId }),
       })
       set({ sessionId: null })
-      console.log('[Session] Ended:', sessionId)
     } catch (e) {
       console.log('[Session] End failed:', e)
     }
