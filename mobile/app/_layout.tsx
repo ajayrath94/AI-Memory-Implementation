@@ -49,10 +49,10 @@ export default function RootLayout() {
   }, [])
 
   const { setUserId } = useAppStore()
-
-  if (!authChecked) return null
   const anim      = useRef(new Animated.Value(COLLAPSED_W)).current
   const fadeAnim  = useRef(new Animated.Value(0)).current
+
+  if (!authChecked) return null
 
   const isHidden  = pathname.startsWith('/caregiver') || pathname === '/persona-setup'
 
