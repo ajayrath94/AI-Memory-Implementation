@@ -111,8 +111,8 @@ export default function SettingsScreen() {
             </Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.personaName}>{persona?.bot_name || 'Nancy'}</Text>
-            <Text style={styles.personaRole}>
+            <Text style={[styles.personaName, { color: theme.text }]}>{persona?.bot_name || 'Nancy'}</Text>
+            <Text style={[styles.personaRole, { color: theme.textMuted }]}>
               {persona?.relationship || 'companion'} · {persona?.voice_id || 'warm_female'}
             </Text>
             {persona?.slangs?.length > 0 && (
@@ -140,7 +140,7 @@ export default function SettingsScreen() {
                   <Text style={[styles.modelName, { color: Colors.textMuted }, model === m.value && styles.modelNameActive]}>
                     {m.label}
                   </Text>
-                  <Text style={styles.modelProvider}>{m.provider}</Text>
+                  <Text style={[styles.modelProvider, { color: theme.textMuted }]}>{m.provider}</Text>
                 </View>
               </View>
               {model === m.value && (

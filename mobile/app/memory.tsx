@@ -99,7 +99,7 @@ export default function MemoryScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} size="large" />
           <Text style={styles.loadingText}>Loading memory...</Text>
@@ -113,10 +113,10 @@ export default function MemoryScreen() {
   const alerts      = fingerprint?.alerts || []
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       <StatusBar style="light" />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
         <Text style={styles.headerTitle}>🧠 Memory Profile</Text>
         <TouchableOpacity onPress={onRefresh}>
           <Ionicons name="refresh-outline" size={20} color={Colors.textMuted} />
@@ -159,7 +159,7 @@ function MemoryTab({ memory, fingerprint, trend, alerts }: any) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyIcon}>🧠</Text>
-        <Text style={styles.emptyText}>No memory yet</Text>
+        <Text style={[styles.emptyText, { color: theme.textMuted }]}>No memory yet</Text>
         <Text style={styles.emptyHint}>Have a few conversations — Nancy will build a memory profile automatically</Text>
       </View>
     )
@@ -242,7 +242,7 @@ function ProfileTab({ profile }: { profile: UserProfile | null }) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyIcon}>👤</Text>
-        <Text style={styles.emptyText}>No profile yet</Text>
+        <Text style={[styles.emptyText, { color: theme.textMuted }]}>No profile yet</Text>
         <Text style={styles.emptyHint}>Nancy builds your profile automatically as you chat</Text>
       </View>
     )
@@ -333,7 +333,7 @@ function ProfileTab({ profile }: { profile: UserProfile | null }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>{title}</Text>
       <View style={styles.sectionContent}>{children}</View>
     </View>
   )

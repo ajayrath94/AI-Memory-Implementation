@@ -152,7 +152,7 @@ export default function SessionsScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} size="large" />
           <Text style={styles.loadingText}>Loading sessions...</Text>
@@ -162,10 +162,10 @@ export default function SessionsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       <StatusBar style="light" />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
         <Text style={styles.headerTitle}>Sessions</Text>
         <TouchableOpacity onPress={onRefresh}>
           <Ionicons name="refresh-outline" size={20} color={Colors.textMuted} />
@@ -187,7 +187,7 @@ export default function SessionsScreen() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="time-outline" size={48} color={Colors.textHint} />
-            <Text style={styles.emptyText}>No sessions yet</Text>
+            <Text style={[styles.emptyText, { color: theme.textMuted }]}>No sessions yet</Text>
             <Text style={styles.emptyHint}>Start a conversation to see it here</Text>
           </View>
         }
