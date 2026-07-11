@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Animated, Dimensions, Pressable,
+  Animated, Dimensions, Pressable, ActivityIndicator,
 } from 'react-native'
 import { Slot, useRouter, usePathname } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
