@@ -138,7 +138,8 @@ SUPPORTED_LANGUAGES = {
 
 # Unicode script ranges for script-based detection
 SCRIPT_RANGES = {
-    "hi": (0x0900, 0x097F),  # Devanagari (Hindi, Marathi)
+    "hi": (0x0900, 0x097F),  # Devanagari (Hindi)
+    "mr": (0x0900, 0x097F),  # Devanagari (Marathi)
     "ta": (0x0B80, 0x0BFF),  # Tamil
     "te": (0x0C00, 0x0C7F),  # Telugu
     "kn": (0x0C80, 0x0CFF),  # Kannada
