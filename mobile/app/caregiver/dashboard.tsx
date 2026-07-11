@@ -64,6 +64,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 
 // ── Main Screen ────────────────────────────────────────────────────────────────
 export default function CaregiverDashboard() {
+  const theme = useTheme()
   const [caregiver,  setCaregiver]  = useState<Caregiver | null>(null)
   const [alerts,     setAlerts]     = useState<Alert[]>([])
   const [loading,    setLoading]    = useState(true)
