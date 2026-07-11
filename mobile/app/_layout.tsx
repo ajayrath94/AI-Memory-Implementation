@@ -6,6 +6,7 @@ import {
 import { Slot, useRouter, usePathname } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { Colors, Spacing, Radius } from '../constants'
+import { useAppStore } from '../store/appStore'
 import { isLoggedIn, getCurrentUser } from '../services/authService'
 import { useEffect } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -25,7 +26,31 @@ const NAV_ITEMS = [
 export default function RootLayout() {
   const router    = useRouter()
   const pathname  = usePathname()
-  const [open, setOpen] = useState(false)
+  const [open,        setOpen]        = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const loggedIn = await isLoggedIn()
+        if (loggedIn) {
+          const user = await getCurrentUser()
+          if (user) setUserId(user.id)
+        } else {
+          router.replace('/onboarding')
+        }
+      } catch {
+        router.replace('/onboarding')
+      } finally {
+        setAuthChecked(true)
+      }
+    }
+    checkAuth()
+  }, [])
+
+  const { setUserId } = useAppStore()
+
+  if (!authChecked) return null
   const anim      = useRef(new Animated.Value(COLLAPSED_W)).current
   const fadeAnim  = useRef(new Animated.Value(0)).current
 
