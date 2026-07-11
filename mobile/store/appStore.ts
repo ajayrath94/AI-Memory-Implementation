@@ -45,9 +45,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLoading:    (v)     => set({ loading: v }),
   setSessionId:  (id)    => set({ sessionId: id }),
   setUserId:     (id)    => set({ userId: id }),
+  setBgColor:    (color) => set({ bgColor: color }),
   setLastMeta:   (meta)  => set({ lastMeta: meta }),
   setMemoryUsed: (v)     => set({ memoryUsed: v }),
 
+  initAuth: async () => {
+    const { getCurrentUser } = await import('../services/authService')
+    const user = await getCurrentUser()
+    if (user) set({ userId: user.id })
+  },
   clearChat: () => {
     const { sessionId, userId } = get()
     // End current session before clearing

@@ -25,7 +25,8 @@
     "plugins": [
       "expo-router",
       "expo-av",
-      "expo-speech-recognition"
+      "expo-speech-recognition",
+      "expo-secure-store"
     ]
   }
 }
