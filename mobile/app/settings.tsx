@@ -87,13 +87,13 @@ export default function SettingsScreen() {
     { id: 'LOVE',            label: 'Family & Love',     emoji: '❤️',  color: '#D4537E' },
     { id: 'ENTERTAINMENT',   label: 'Entertainment',     emoji: '🎵', color: Colors.accentWarm },
     { id: 'FINANCE',         label: 'Finance',           emoji: '💰', color: Colors.accent },
-    { id: 'GENERAL',         label: 'General',           emoji: '💬', color: theme.textMuted },
+    { id: 'GENERAL',         label: 'General',           emoji: '💬', color: Colors.textMuted },
   ]
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
-      <View style={[styles.header, { backgroundColor: Colors.bg, borderBottomColor: theme.border }]}>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Settings</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: Colors.bg }]}>
+      <View style={[styles.header, { backgroundColor: Colors.bg, borderBottomColor: Colors.border }]}>
+        <Text style={[styles.headerTitle, { color: Colors.text }]}>Settings</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -119,25 +119,25 @@ export default function SettingsScreen() {
               <Text style={styles.personaSlangs}>"{persona.slangs[0]}"</Text>
             )}
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
         </TouchableOpacity>
 
         {/* AI Model */}
         <SectionHeader title="🧠 AI Model" />
-        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
-          <Text style={[styles.cardHint, { color: theme.textMuted }]}>
+        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
+          <Text style={[styles.cardHint, { color: Colors.textMuted }]}>
             Choose which AI model powers your companion. Haiku is fastest, Sonnet is smarter.
           </Text>
           {MODELS.map(m => (
             <TouchableOpacity
               key={m.value}
-              style={[styles.modelRow, { borderColor: theme.border }, model === m.value && styles.modelRowActive]}
+              style={[styles.modelRow, { borderColor: Colors.border }, model === m.value && styles.modelRowActive]}
               onPress={() => setModel(m.value)}
             >
               <View style={styles.modelLeft}>
                 <View style={[styles.modelDot, model === m.value && styles.modelDotActive]} />
                 <View>
-                  <Text style={[styles.modelName, { color: theme.textMuted }, model === m.value && styles.modelNameActive]}>
+                  <Text style={[styles.modelName, { color: Colors.textMuted }, model === m.value && styles.modelNameActive]}>
                     {m.label}
                   </Text>
                   <Text style={styles.modelProvider}>{m.provider}</Text>
@@ -152,7 +152,7 @@ export default function SettingsScreen() {
 
         {/* Background */}
         <SectionHeader title="🎨 Background" />
-        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
+        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
           <View style={styles.bgGrid}>
             {BACKGROUNDS.map(bg => (
               <TouchableOpacity
@@ -176,8 +176,8 @@ export default function SettingsScreen() {
           action={savingW ? undefined : "Reset"}
           onAction={resetWeights}
         />
-        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
-          <Text style={[styles.cardHint, { color: theme.textMuted }]}>
+        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
+          <Text style={[styles.cardHint, { color: Colors.textMuted }]}>
             Control what Nancy pays most attention to. Higher = more focus.
           </Text>
           {loadingW ? (
@@ -196,7 +196,7 @@ export default function SettingsScreen() {
 
         {/* Data & Privacy */}
         <SectionHeader title="🔒 Data & Privacy" />
-        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
+        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
           <SettingRow
             icon="download-outline"
             label="Export my data"
@@ -224,7 +224,7 @@ export default function SettingsScreen() {
 
         {/* Caregiver */}
         <SectionHeader title="👥 Caregiver" />
-        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
+        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
           <SettingRow
             icon="people-outline"
             label="Caregiver dashboard"
@@ -239,8 +239,8 @@ export default function SettingsScreen() {
 
         {/* App info */}
         <View style={styles.appInfo}>
-          <Text style={[styles.appInfoText, { color: theme.textHint }]}>Nancy AI · Built with ❤️</Text>
-          <Text style={[styles.appInfoText, { color: theme.textHint }]}>Memory never forgets</Text>
+          <Text style={[styles.appInfoText, { color: Colors.textHint }]}>Nancy AI · Built with ❤️</Text>
+          <Text style={[styles.appInfoText, { color: Colors.textHint }]}>Memory never forgets</Text>
         </View>
 
       </ScrollView>
@@ -255,7 +255,7 @@ function SectionHeader({ title, action, onAction }: {
 }) {
   return (
     <View style={styles.sectionHeader}>
-      <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>{title}</Text>
+      <Text style={[styles.sectionTitle, { color: Colors.textMuted }]}>{title}</Text>
       {action && (
         <TouchableOpacity onPress={onAction}>
           <Text style={styles.sectionAction}>{action}</Text>
@@ -269,10 +269,10 @@ function SettingRow({ icon, label, onPress, color }: {
   icon: any; label: string; onPress: () => void; color?: string
 }) {
   return (
-    <TouchableOpacity style={[styles.settingRow, { borderBottomColor: theme.border }]} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={[styles.settingRow, { borderBottomColor: Colors.border }]} onPress={onPress} activeOpacity={0.7}>
       <Ionicons name={icon} size={20} color={color || Colors.textMuted} />
       <Text style={[styles.settingLabel, color && { color }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+      <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
     </TouchableOpacity>
   )
 }
@@ -291,14 +291,14 @@ function WeightRow({ pillar, value, onChange }: {
       <Text style={styles.weightEmoji}>{pillar.emoji}</Text>
       <View style={{ flex: 1 }}>
         <View style={styles.weightLabelRow}>
-          <Text style={[styles.weightLabel, { color: theme.text }]}>{pillar.label}</Text>
+          <Text style={[styles.weightLabel, { color: Colors.text }]}>{pillar.label}</Text>
           <Text style={[styles.weightValue, { color: lcolor }]}>{label}</Text>
         </View>
         <View style={styles.weightDots}>
           {steps.map(v => (
             <TouchableOpacity
               key={v}
-              style={[styles.weightDot, { backgroundColor: theme.bgInput },
+              style={[styles.weightDot, { backgroundColor: Colors.bgInput },
                 value >= v && { backgroundColor: pillar.color }]}
               onPress={() => onChange(v)}
             />
@@ -311,9 +311,9 @@ function WeightRow({ pillar, value, onChange }: {
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: theme.bg },
+  safe:   { flex: 1, backgroundColor: Colors.bg },
   header: { padding: Spacing.lg, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
-  headerTitle: { ...Typography.heading, color: theme.text },
+  headerTitle: { ...Typography.heading, color: Colors.text },
   scroll: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: 40 },
 
   sectionHeader: {
@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
     padding: Spacing.lg, borderWidth: 0.5, borderColor: Colors.border,
     gap: Spacing.md,
   },
-  cardHint: { ...Typography.caption, color: theme.textMuted },
+  cardHint: { ...Typography.caption, color: Colors.textMuted },
 
   // Persona
   personaCard: {
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   personaAvatarText: { fontSize: 20, fontWeight: '700', color: Colors.accent },
-  personaName:       { ...Typography.heading, color: theme.text },
+  personaName:       { ...Typography.heading, color: Colors.text },
   personaRole:       { ...Typography.caption, color: Colors.textMuted, marginTop: 2 },
   personaSlangs:     { ...Typography.caption, color: Colors.accent, fontStyle: 'italic', marginTop: 2 },
 
@@ -356,9 +356,9 @@ const styles = StyleSheet.create({
   modelLeft:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   modelDot:       { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.border },
   modelDotActive: { backgroundColor: Colors.accent },
-  modelName:      { ...Typography.label, color: theme.textMuted },
+  modelName:      { ...Typography.label, color: Colors.textMuted },
   modelNameActive:{ color: Colors.text, fontWeight: '600' },
-  modelProvider:  { ...Typography.caption, color: theme.textMuted },
+  modelProvider:  { ...Typography.caption, color: Colors.textMuted },
 
   // Background
   bgGrid:       { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
@@ -374,10 +374,10 @@ const styles = StyleSheet.create({
   weightRow:     { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: 4 },
   weightEmoji:   { fontSize: 20, width: 28 },
   weightLabelRow:{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  weightLabel:   { ...Typography.label, color: theme.text },
+  weightLabel:   { ...Typography.label, color: Colors.text },
   weightValue:   { ...Typography.caption, fontWeight: '600' },
   weightDots:    { flexDirection: 'row', gap: 4 },
-  weightDot:     { flex: 1, height: 6, borderRadius: 3, backgroundColor: theme.bgInput },
+  weightDot:     { flex: 1, height: 6, borderRadius: 3, backgroundColor: Colors.bgInput },
 
   // Settings rows
   settingRow: {
@@ -388,5 +388,5 @@ const styles = StyleSheet.create({
   settingLabel: { ...Typography.body, color: Colors.text, flex: 1 },
 
   appInfo:     { alignItems: 'center', paddingVertical: Spacing.xl, gap: 4 },
-  appInfoText: { ...Typography.caption, color: theme.textHint },
+  appInfoText: { ...Typography.caption, color: Colors.textHint },
 })

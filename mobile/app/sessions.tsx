@@ -138,13 +138,13 @@ export default function SessionsScreen() {
           </Text>
         ) : (
           <View style={styles.noSummaryRow}>
-            <ActivityIndicator size="small" color={theme.textHint} />
+            <ActivityIndicator size="small" color={Colors.textHint} />
             <Text style={styles.cardNoSummary}>Summarizing...</Text>
           </View>
         )}
 
         <View style={styles.cardFooter}>
-          <Ionicons name="arrow-forward" size={14} color={theme.textHint} />
+          <Ionicons name="arrow-forward" size={14} color={Colors.textHint} />
         </View>
       </TouchableOpacity>
     )
@@ -168,7 +168,7 @@ export default function SessionsScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Sessions</Text>
         <TouchableOpacity onPress={onRefresh}>
-          <Ionicons name="refresh-outline" size={20} color={theme.textMuted} />
+          <Ionicons name="refresh-outline" size={20} color={Colors.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -186,7 +186,7 @@ export default function SessionsScreen() {
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="time-outline" size={48} color={theme.textHint} />
+            <Ionicons name="time-outline" size={48} color={Colors.textHint} />
             <Text style={styles.emptyText}>No sessions yet</Text>
             <Text style={styles.emptyHint}>Start a conversation to see it here</Text>
           </View>
@@ -197,7 +197,7 @@ export default function SessionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: theme.bg },
+  safe:   { flex: 1, backgroundColor: Colors.bg },
   header: {
     flexDirection:    'row',
     alignItems:       'center',
