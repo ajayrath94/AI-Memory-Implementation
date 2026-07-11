@@ -203,7 +203,29 @@ def _merge_haiku_output(extracted: dict) -> dict:
 
     interests_list = extracted.get("interests", [])
     if interests_list:
-        updates["interests"] = {"hobbies": interests_list}
+        # Only add to interests after 3+ mentions (threshold check)
+        try:
+            from supabase_store import get_client
+            db = get_client()
+            for interest in interests_list:
+                # Check how many times this interest has been mentioned
+                count = db.table("user_behavioral_events")                    .select("id", count="exact")                    .eq("user_id", user_id)                    .ilike("value", f"%{interest[:20]}%")                    .execute()
+                mention_count = count.count or 0
+                if mention_count >= 3:
+                    # Strong interest — add to profile
+                    existing = updates.get("interests", {})
+                    hobbies = existing.get("hobbies", [])
+                    if interest not in hobbies:
+                        hobbies.append(interest)
+                    updates["interests"] = {"hobbies": hobbies}
+                    print(f"[Enricher] Interest promoted: {interest} ({mention_count} mentions)")
+                else:
+                    print(f"[Enricher] Interest weak ({mention_count}/3): {interest} — not added yet")
+        except Exception as e:
+            print(f"[Enricher] Interest threshold check failed: {e}")
+            # Fallback: still add if extraction is very confident
+            if len(interests_list) > 0:
+                updates["interests"] = {"hobbies": interests_list}
 
     goals = extracted.get("wants_to", [])
     if goals:
