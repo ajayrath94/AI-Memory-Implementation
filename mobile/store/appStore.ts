@@ -16,7 +16,8 @@ interface AppState {
   model:       string
   loading:     boolean
   sessionId:   string | null
-  userId:      string        // real user_id — set after auth, default for now
+  userId:      string
+  bgColor:     string        // real user_id — set after auth, default for now
   lastMeta:    { core: string; emotion: string; functional: string } | null
   memoryUsed:  boolean
 
@@ -25,6 +26,7 @@ interface AppState {
   setLoading:    (v: boolean) => void
   setSessionId:  (id: string | null) => void
   setUserId:     (id: string) => void
+  setBgColor:    (color: string) => void
   setLastMeta:   (meta: any) => void
   setMemoryUsed: (v: boolean) => void
   clearChat:     () => void
@@ -36,7 +38,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   model:      MODELS[0].value,
   loading:    false,
   sessionId:  null,
-  userId:     'default',   // will be replaced with real user_id after auth
+  userId:     'default',
+  bgColor:    '#0a0a0a',   // will be replaced with real user_id after auth
   lastMeta:   null,
   memoryUsed: false,
 
