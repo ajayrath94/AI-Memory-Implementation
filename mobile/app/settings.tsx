@@ -87,7 +87,7 @@ export default function SettingsScreen() {
     { id: 'LOVE',            label: 'Family & Love',     emoji: '❤️',  color: '#D4537E' },
     { id: 'ENTERTAINMENT',   label: 'Entertainment',     emoji: '🎵', color: Colors.accentWarm },
     { id: 'FINANCE',         label: 'Finance',           emoji: '💰', color: Colors.accent },
-    { id: 'GENERAL',         label: 'General',           emoji: '💬', color: Colors.textMuted },
+    { id: 'GENERAL',         label: 'General',           emoji: '💬', color: theme.textMuted },
   ]
 
   return (
@@ -119,7 +119,7 @@ export default function SettingsScreen() {
               <Text style={styles.personaSlangs}>"{persona.slangs[0]}"</Text>
             )}
           </View>
-          <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
         </TouchableOpacity>
 
         {/* AI Model */}
@@ -272,7 +272,7 @@ function SettingRow({ icon, label, onPress, color }: {
     <TouchableOpacity style={styles.settingRow} onPress={onPress} activeOpacity={0.7}>
       <Ionicons name={icon} size={20} color={color || Colors.textMuted} />
       <Text style={[styles.settingLabel, color && { color }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+      <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
     </TouchableOpacity>
   )
 }
@@ -311,9 +311,9 @@ function WeightRow({ pillar, value, onChange }: {
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: Colors.bg },
+  safe:   { flex: 1, backgroundColor: theme.bg },
   header: { padding: Spacing.lg, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
-  headerTitle: { ...Typography.heading, color: Colors.text },
+  headerTitle: { ...Typography.heading, color: theme.text },
   scroll: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: 40 },
 
   sectionHeader: {
@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
     padding: Spacing.lg, borderWidth: 0.5, borderColor: theme.border,
     gap: Spacing.md,
   },
-  cardHint: { ...Typography.caption, color: Colors.textMuted },
+  cardHint: { ...Typography.caption, color: theme.textMuted },
 
   // Persona
   personaCard: {
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   personaAvatarText: { fontSize: 20, fontWeight: '700', color: Colors.accent },
-  personaName:       { ...Typography.heading, color: Colors.text },
+  personaName:       { ...Typography.heading, color: theme.text },
   personaRole:       { ...Typography.caption, color: theme.textMuted, marginTop: 2 },
   personaSlangs:     { ...Typography.caption, color: Colors.accent, fontStyle: 'italic', marginTop: 2 },
 
@@ -356,9 +356,9 @@ const styles = StyleSheet.create({
   modelLeft:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   modelDot:       { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.border },
   modelDotActive: { backgroundColor: Colors.accent },
-  modelName:      { ...Typography.label, color: Colors.textMuted },
+  modelName:      { ...Typography.label, color: theme.textMuted },
   modelNameActive:{ color: theme.text, fontWeight: '600' },
-  modelProvider:  { ...Typography.caption, color: Colors.textMuted },
+  modelProvider:  { ...Typography.caption, color: theme.textMuted },
 
   // Background
   bgGrid:       { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
@@ -374,10 +374,10 @@ const styles = StyleSheet.create({
   weightRow:     { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: 4 },
   weightEmoji:   { fontSize: 20, width: 28 },
   weightLabelRow:{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  weightLabel:   { ...Typography.label, color: Colors.text },
+  weightLabel:   { ...Typography.label, color: theme.text },
   weightValue:   { ...Typography.caption, fontWeight: '600' },
   weightDots:    { flexDirection: 'row', gap: 4 },
-  weightDot:     { flex: 1, height: 6, borderRadius: 3, backgroundColor: Colors.bgInput },
+  weightDot:     { flex: 1, height: 6, borderRadius: 3, backgroundColor: theme.bgInput },
 
   // Settings rows
   settingRow: {
@@ -388,5 +388,5 @@ const styles = StyleSheet.create({
   settingLabel: { ...Typography.body, color: theme.text, flex: 1 },
 
   appInfo:     { alignItems: 'center', paddingVertical: Spacing.xl, gap: 4 },
-  appInfoText: { ...Typography.caption, color: Colors.textHint },
+  appInfoText: { ...Typography.caption, color: theme.textHint },
 })

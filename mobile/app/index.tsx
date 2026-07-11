@@ -79,7 +79,7 @@ export default function ChatScreen() {
           </View>
         </View>
         <TouchableOpacity onPress={clearChat} style={styles.headerBtn}>
-          <Ionicons name="create-outline" size={22} color={Colors.textMuted} />
+          <Ionicons name="create-outline" size={22} color={theme.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -121,7 +121,7 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
+  safe: { flex: 1, backgroundColor: theme.bg },
   header: {
     flexDirection:     'row',
     alignItems:        'center',
@@ -133,10 +133,10 @@ const styles = StyleSheet.create({
   },
   headerLeft:    { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   headerInfo:    { gap: 2 },
-  headerName:    { ...Typography.heading, color: Colors.text },
+  headerName:    { ...Typography.heading, color: theme.text },
   onlineRow:     { flexDirection: 'row', alignItems: 'center', gap: 5 },
   onlineDot:     { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.accentGreen },
-  onlineText:    { ...Typography.caption, color: Colors.textMuted },
+  onlineText:    { ...Typography.caption, color: theme.textMuted },
   headerBtn:     { padding: Spacing.sm },
   avatar: {
     backgroundColor: Colors.accent + '22',

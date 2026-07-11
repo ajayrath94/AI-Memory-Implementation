@@ -138,13 +138,13 @@ export default function SessionsScreen() {
           </Text>
         ) : (
           <View style={styles.noSummaryRow}>
-            <ActivityIndicator size="small" color={Colors.textHint} />
+            <ActivityIndicator size="small" color={theme.textHint} />
             <Text style={styles.cardNoSummary}>Summarizing...</Text>
           </View>
         )}
 
         <View style={styles.cardFooter}>
-          <Ionicons name="arrow-forward" size={14} color={Colors.textHint} />
+          <Ionicons name="arrow-forward" size={14} color={theme.textHint} />
         </View>
       </TouchableOpacity>
     )
@@ -168,7 +168,7 @@ export default function SessionsScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Sessions</Text>
         <TouchableOpacity onPress={onRefresh}>
-          <Ionicons name="refresh-outline" size={20} color={Colors.textMuted} />
+          <Ionicons name="refresh-outline" size={20} color={theme.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -186,7 +186,7 @@ export default function SessionsScreen() {
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="time-outline" size={48} color={Colors.textHint} />
+            <Ionicons name="time-outline" size={48} color={theme.textHint} />
             <Text style={styles.emptyText}>No sessions yet</Text>
             <Text style={styles.emptyHint}>Start a conversation to see it here</Text>
           </View>
@@ -197,7 +197,7 @@ export default function SessionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: Colors.bg },
+  safe:   { flex: 1, backgroundColor: theme.bg },
   header: {
     flexDirection:    'row',
     alignItems:       'center',
@@ -230,11 +230,11 @@ const styles = StyleSheet.create({
   pillarText:   { color: theme.textMuted, fontSize: 10, fontWeight: '600' },
   cardMeta:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
   modelText:    { color: theme.textMuted, fontSize: 11 },
-  dateText:     { color: Colors.textHint,  fontSize: 11 },
+  dateText:     { color: theme.textHint,  fontSize: 11 },
   cardTitle:    { color: theme.text, fontSize: 15, fontWeight: '600' },
   cardSummary:  { color: theme.textMuted, fontSize: 13, lineHeight: 18 },
   noSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  cardNoSummary: { color: Colors.textHint, fontSize: 12, fontStyle: 'italic' },
+  cardNoSummary: { color: theme.textHint, fontSize: 12, fontStyle: 'italic' },
   cardFooter:   { alignItems: 'flex-end', marginTop: 4 },
   center: {
     flex: 1, alignItems: 'center',
@@ -246,5 +246,5 @@ const styles = StyleSheet.create({
     paddingTop: 100, gap: 10,
   },
   emptyText:  { color: theme.textMuted, fontSize: 16 },
-  emptyHint:  { color: Colors.textHint,  fontSize: 13 },
+  emptyHint:  { color: theme.textHint,  fontSize: 13 },
 })

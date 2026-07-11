@@ -165,7 +165,7 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Your Profile</Text>
         <TouchableOpacity onPress={onRefresh} style={styles.headerBtn}>
-          <Ionicons name="refresh-outline" size={20} color={Colors.textMuted} />
+          <Ionicons name="refresh-outline" size={20} color={theme.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -501,7 +501,7 @@ function EditableRow({ label, value, placeholder, onEdit, icon }: {
         <Text style={[styles.editableValue, !value && styles.editablePlaceholder]}>
           {value || placeholder || 'Tap to add'}
         </Text>
-        <Ionicons name="pencil-outline" size={14} color={Colors.textHint} />
+        <Ionicons name="pencil-outline" size={14} color={theme.textHint} />
       </View>
     </TouchableOpacity>
   )
@@ -516,7 +516,7 @@ function TagRow({ label, color, onRemove }: {
       <Text style={styles.tagLabel}>{label}</Text>
       {onRemove && (
         <TouchableOpacity onPress={onRemove} style={styles.tagRemove}>
-          <Ionicons name="close" size={14} color={Colors.textMuted} />
+          <Ionicons name="close" size={14} color={theme.textMuted} />
         </TouchableOpacity>
       )}
     </View>
@@ -546,7 +546,7 @@ function InterestChip({ interest, isObserved, onRemove, onConfirm }: {
         // Remove button for confirmed interests
         onRemove && (
           <TouchableOpacity onPress={onRemove} style={styles.chipRemove}>
-            <Ionicons name="close" size={12} color={Colors.textMuted} />
+            <Ionicons name="close" size={12} color={theme.textMuted} />
           </TouchableOpacity>
         )
       )}
@@ -557,9 +557,9 @@ function InterestChip({ interest, isObserved, onRemove, onConfirm }: {
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:        { flex: 1, backgroundColor: Colors.bg },
+  safe:        { flex: 1, backgroundColor: theme.bg },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
-  loadingText: { ...Typography.body, color: Colors.textMuted },
+  loadingText: { ...Typography.body, color: theme.textMuted },
 
   header: {
     flexDirection:     'row',
@@ -570,7 +570,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: Colors.border,
   },
-  headerTitle: { ...Typography.heading, color: Colors.text },
+  headerTitle: { ...Typography.heading, color: theme.text },
   headerBtn:   { padding: Spacing.sm },
 
   scroll: { padding: Spacing.lg, gap: Spacing.md },
@@ -609,7 +609,7 @@ const styles = StyleSheet.create({
   editableLabel:       { ...Typography.caption, color: theme.textMuted, width: 70 },
   editableRight:       { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, justifyContent: 'flex-end' },
   editableValue:       { ...Typography.label, color: theme.text, textAlign: 'right' },
-  editablePlaceholder: { color: Colors.textHint },
+  editablePlaceholder: { color: theme.textHint },
 
   // Emotion card
   emotionCard: {
@@ -621,9 +621,9 @@ const styles = StyleSheet.create({
     alignItems:      'center',
     gap:             Spacing.xs,
   },
-  emotionLabel: { ...Typography.caption, color: Colors.textMuted },
+  emotionLabel: { ...Typography.caption, color: theme.textMuted },
   emotionValue: { ...Typography.heading, color: Colors.accentGreen },
-  emotionHint:  { ...Typography.caption, color: Colors.textMuted },
+  emotionHint:  { ...Typography.caption, color: theme.textMuted },
 
   // Sections
   section: {
@@ -667,7 +667,7 @@ const styles = StyleSheet.create({
   // Interests
   interestEmpty:       { gap: Spacing.md },
   interestGroup:       { gap: Spacing.sm },
-  interestGroupLabel:  { ...Typography.caption, color: Colors.textMuted },
+  interestGroupLabel:  { ...Typography.caption, color: theme.textMuted },
   chipRow:             { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
 
   interestChip: {
@@ -685,7 +685,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accentWarm + '12',
     borderColor:     Colors.accentWarm + '30',
   },
-  interestChipText: { ...Typography.label, color: Colors.text },
+  interestChipText: { ...Typography.label, color: theme.text },
   strengthDot: { width: 5, height: 5, borderRadius: 3 },
   confirmBtn:  { padding: 2 },
   chipRemove:  { padding: 2 },
@@ -735,8 +735,8 @@ const styles = StyleSheet.create({
     borderWidth:     0.5,
     borderColor:     Colors.border,
   },
-  modalTitle:       { ...Typography.heading, color: Colors.text },
-  modalLabel:       { ...Typography.label, color: Colors.textMuted },
+  modalTitle:       { ...Typography.heading, color: theme.text },
+  modalLabel:       { ...Typography.label, color: theme.textMuted },
   modalInput: {
     backgroundColor:   Colors.bgInput,
     color:             Colors.text,
@@ -756,7 +756,7 @@ const styles = StyleSheet.create({
     borderWidth:    0.5,
     borderColor:    Colors.border,
   },
-  modalCancelText:  { ...Typography.label, color: Colors.textMuted },
+  modalCancelText:  { ...Typography.label, color: theme.textMuted },
   modalSave: {
     flex:            1,
     paddingVertical: Spacing.md,
@@ -779,6 +779,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accent + '20',
     borderColor:     Colors.accent,
   },
-  catChipText:       { ...Typography.label, color: Colors.textMuted },
+  catChipText:       { ...Typography.label, color: theme.textMuted },
   catChipTextActive: { color: Colors.accent },
 })

@@ -119,7 +119,7 @@ export default function MemoryScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🧠 Memory Profile</Text>
         <TouchableOpacity onPress={onRefresh}>
-          <Ionicons name="refresh-outline" size={20} color={Colors.textMuted} />
+          <Ionicons name="refresh-outline" size={20} color={theme.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -369,7 +369,7 @@ function ProfileRow({ icon, label, value, color }: { icon: any; label: string; v
 }
 
 const styles = StyleSheet.create({
-  safe:        { flex: 1, backgroundColor: Colors.bg },
+  safe:        { flex: 1, backgroundColor: theme.bg },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 14,
@@ -386,10 +386,10 @@ const styles = StyleSheet.create({
   alertTitle:      { color: '#e05555', fontSize: 13, fontWeight: '600' },
   alertText:       { color: '#e88', fontSize: 13 },
   statsRow:        { flexDirection: 'row', gap: 10 },
-  statCard:        { flex: 1, backgroundColor: theme.bgCard, borderRadius: 12, padding: 14, alignItems: 'center', gap: 4, borderWidth: 1, borderColor: Colors.border },
+  statCard:        { flex: 1, backgroundColor: theme.bgCard, borderRadius: 12, padding: 14, alignItems: 'center', gap: 4, borderWidth: 1, borderColor: theme.border },
   statValue:       { color: theme.text, fontSize: 22, fontWeight: '700' },
   statLabel:       { color: theme.textMuted, fontSize: 11 },
-  section:         { backgroundColor: theme.bgCard, borderRadius: 12, padding: 14, gap: 10, borderWidth: 1, borderColor: Colors.border },
+  section:         { backgroundColor: theme.bgCard, borderRadius: 12, padding: 14, gap: 10, borderWidth: 1, borderColor: theme.border },
   sectionTitle:    { color: theme.textMuted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
   sectionContent:  { gap: 8 },
   summaryText:     { color: theme.text, fontSize: 14, lineHeight: 22 },
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
   emptyIcon:       { fontSize: 48 },
   emptyText:       { color: theme.textMuted, fontSize: 16, fontWeight: '600' },
   emptyHint:       { color: theme.textMuted, fontSize: 13, textAlign: 'center', lineHeight: 20 },
-  identityCard:    { backgroundColor: theme.bgCard, borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1, borderColor: Colors.border },
+  identityCard:    { backgroundColor: theme.bgCard, borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1, borderColor: theme.border },
   avatarCircle:    { width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.accent + '22', alignItems: 'center', justifyContent: 'center' },
   avatarText:      { color: Colors.accent, fontSize: 24, fontWeight: '700' },
   profileName:     { color: theme.text, fontSize: 17, fontWeight: '600' },
