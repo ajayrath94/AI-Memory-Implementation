@@ -52,7 +52,11 @@ export default function RootLayout() {
   const anim      = useRef(new Animated.Value(COLLAPSED_W)).current
   const fadeAnim  = useRef(new Animated.Value(0)).current
 
-  if (!authChecked) return null
+  if (!authChecked) return (
+    <View style={{ flex: 1, backgroundColor: '#0a0a0a', alignItems: 'center', justifyContent: 'center' }}>
+      <ActivityIndicator color="#4a90d9" size="large" />
+    </View>
+  )
 
   const isHidden  = pathname.startsWith('/caregiver') || pathname === '/persona-setup'
 
