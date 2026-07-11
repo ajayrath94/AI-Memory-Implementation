@@ -63,7 +63,7 @@ export default function ChatScreen() {
   }, [sessionId])
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: Colors.bg }]}>
       <StatusBar style="light" />
 
       {/* Header */}
@@ -89,10 +89,10 @@ export default function ChatScreen() {
         data={messages}
         keyExtractor={(m, i) => m.id || String(i)}
         renderItem={({ item }) => <MessageBubble message={item} onResend={resend} />}
-        contentContainerStyle={[styles.list, { backgroundColor: theme.bg }]}
+        contentContainerStyle={[styles.list, { backgroundColor: Colors.bg }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <View style={[styles.empty, { backgroundColor: theme.bg }]}>
+          <View style={[styles.empty, { backgroundColor: Colors.bg }]}>
             <NancyAvatar size={72} />
             <Text style={[styles.emptyTitle, { color: theme.text }]}>Hi, I'm Nancy</Text>
             <Text style={[styles.emptySubtitle, { color: theme.textMuted }]}>
@@ -121,7 +121,7 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.bg },
+  safe: { flex: 1, backgroundColor: Colors.bg },
   header: {
     flexDirection:     'row',
     alignItems:        'center',
@@ -133,10 +133,10 @@ const styles = StyleSheet.create({
   },
   headerLeft:    { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   headerInfo:    { gap: 2 },
-  headerName:    { ...Typography.heading, color: theme.text },
+  headerName:    { ...Typography.heading, color: Colors.text },
   onlineRow:     { flexDirection: 'row', alignItems: 'center', gap: 5 },
   onlineDot:     { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.accentGreen },
-  onlineText:    { ...Typography.caption, color: theme.textMuted },
+  onlineText:    { ...Typography.caption, color: Colors.textMuted },
   headerBtn:     { padding: Spacing.sm },
   avatar: {
     backgroundColor: Colors.accent + '22',
@@ -179,6 +179,6 @@ const styles = StyleSheet.create({
     width:           7,
     height:          7,
     borderRadius:    4,
-    backgroundColor: theme.textMuted,
+    backgroundColor: Colors.textMuted,
   },
 })
