@@ -63,18 +63,18 @@ export default function ChatScreen() {
   }, [sessionId])
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       <StatusBar style="light" />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
         <View style={styles.headerLeft}>
           <NancyAvatar size={38} />
           <View style={styles.headerInfo}>
-            <Text style={styles.headerName}>Nancy</Text>
+            <Text style={[styles.headerName, { color: theme.text }]}>Nancy</Text>
             <View style={styles.onlineRow}>
               <View style={styles.onlineDot} />
-              <Text style={styles.onlineText}>Your companion</Text>
+              <Text style={[styles.onlineText, { color: theme.textMuted }]}>Your companion</Text>
             </View>
           </View>
         </View>
@@ -94,8 +94,8 @@ export default function ChatScreen() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <NancyAvatar size={72} />
-            <Text style={styles.emptyTitle}>Hi, I'm Nancy</Text>
-            <Text style={styles.emptySubtitle}>
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>Hi, I'm Nancy</Text>
+            <Text style={[styles.emptySubtitle, { color: theme.textMuted }]}>
               I'm here to listen, remember, and care.{'\n'}
               Tell me how you're feeling today.
             </Text>
