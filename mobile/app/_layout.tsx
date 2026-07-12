@@ -21,11 +21,19 @@ const NAV_ITEMS = [
   { path: '/settings', icon: 'settings-outline',      label: 'Settings' },
 ]
 
+function isLightHex(hex: string): boolean {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16)
+  const g = parseInt(h.substring(2, 4), 16)
+  const b = parseInt(h.substring(4, 6), 16)
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5
+}
+
 export default function RootLayout() {
   // ── All hooks at top, no conditionals before them ──
   const router   = useRouter()
   const pathname = usePathname()
-  const { bgColor, setUserId } = useAppStore()
+  const bgColor  = useAppStore(s => s.bgColor)
   const [open, setOpen] = useState(false)
   const anim     = useRef(new Animated.Value(COLLAPSED_W)).current
   const fadeAnim = useRef(new Animated.Value(0)).current
@@ -49,17 +57,20 @@ export default function RootLayout() {
     if (open) toggle()
   }, [router, open, toggle])
 
+  const resolvedBg   = bgColor || Colors.bg
+  const isSidebarLight = isLightHex(resolvedBg)
+
   // ── Full screen for hidden routes ──
   if (isHidden) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: bgColor || Colors.bg }]} edges={['top', 'bottom']}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: resolvedBg }]} edges={['top', 'bottom']}>
         <Slot />
       </SafeAreaView>
     )
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: bgColor || Colors.bg }]} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: resolvedBg }]} edges={['top', 'bottom']}>
       <View style={styles.root}>
 
         {/* Overlay */}
@@ -68,7 +79,7 @@ export default function RootLayout() {
         )}
 
         {/* Sidebar */}
-        <Animated.View style={[styles.sidebar, { width: anim, backgroundColor: bgColor ? (bgColor > '#888888' ? '#f0f0f0' : '#0d0d0d') : '#0d0d0d' }]}>
+        <Animated.View style={[styles.sidebar, { width: anim, backgroundColor: isSidebarLight ? '#f0f0f0' : '#0d0d0d' }]}>
 
           {/* Logo */}
           <TouchableOpacity style={styles.logoBtn} onPress={toggle} activeOpacity={0.8}>
@@ -121,7 +132,7 @@ export default function RootLayout() {
         </Animated.View>
 
         {/* Main content */}
-        <View style={[styles.content, { backgroundColor: bgColor || Colors.bg }]}>
+        <View style={[styles.content, { backgroundColor: resolvedBg }]}>
           <Slot />
         </View>
 

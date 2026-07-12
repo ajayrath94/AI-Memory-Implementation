@@ -28,7 +28,10 @@ const BACKGROUNDS = [
 
 export default function SettingsScreen() {
   const theme = useTheme()
-  const { model, setModel, userId, setBgColor } = useAppStore()
+  const model      = useAppStore(s => s.model)
+  const setModel   = useAppStore(s => s.setModel)
+  const userId     = useAppStore(s => s.userId)
+  const setBgColor = useAppStore(s => s.setBgColor)
   const [weights,    setWeights]    = useState<Record<string, number>>({})
   const [loadingW,   setLoadingW]   = useState(true)
   const [savingW,    setSavingW]    = useState(false)
