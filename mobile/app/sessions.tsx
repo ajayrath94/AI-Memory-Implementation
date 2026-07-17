@@ -177,13 +177,6 @@ export default function SessionsScreen() {
         keyExtractor={s => s.id}
         renderItem={renderSession}
         contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={Colors.accent}
-          />
-        }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="time-outline" size={48} color={Colors.textHint} />

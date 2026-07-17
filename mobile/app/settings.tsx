@@ -90,19 +90,19 @@ export default function SettingsScreen() {
     { id: 'LOVE',            label: 'Family & Love',     emoji: '❤️',  color: '#D4537E' },
     { id: 'ENTERTAINMENT',   label: 'Entertainment',     emoji: '🎵', color: Colors.accentWarm },
     { id: 'FINANCE',         label: 'Finance',           emoji: '💰', color: Colors.accent },
-    { id: 'GENERAL',         label: 'General',           emoji: '💬', color: Colors.textMuted },
+    { id: 'GENERAL',         label: 'General',           emoji: '💬', color: theme.textMuted },
   ]
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: Colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: Colors.bg, borderBottomColor: Colors.border }]}>
-        <Text style={[styles.headerTitle, { color: Colors.text }]}>Settings</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
+      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Settings</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Companion Persona */}
-        <SectionHeader title="🤖 Companion" />
+        <SectionHeader title="🤖 Companion" theme={theme} />
         <TouchableOpacity
           style={styles.personaCard}
           onPress={() => router.push('/persona-setup')}
@@ -122,25 +122,25 @@ export default function SettingsScreen() {
               <Text style={styles.personaSlangs}>"{persona.slangs[0]}"</Text>
             )}
           </View>
-          <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
         </TouchableOpacity>
 
         {/* AI Model */}
-        <SectionHeader title="🧠 AI Model" />
-        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
-          <Text style={[styles.cardHint, { color: Colors.textMuted }]}>
+        <SectionHeader title="🧠 AI Model" theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+          <Text style={[styles.cardHint, { color: theme.textMuted }]}>
             Choose which AI model powers your companion. Haiku is fastest, Sonnet is smarter.
           </Text>
           {MODELS.map(m => (
             <TouchableOpacity
               key={m.value}
-              style={[styles.modelRow, { borderColor: Colors.border }, model === m.value && styles.modelRowActive]}
+              style={[styles.modelRow, { borderColor: theme.border }, model === m.value && styles.modelRowActive]}
               onPress={() => setModel(m.value)}
             >
               <View style={styles.modelLeft}>
                 <View style={[styles.modelDot, model === m.value && styles.modelDotActive]} />
                 <View>
-                  <Text style={[styles.modelName, { color: Colors.textMuted }, model === m.value && styles.modelNameActive]}>
+                  <Text style={[styles.modelName, { color: theme.textMuted }, model === m.value && styles.modelNameActive]}>
                     {m.label}
                   </Text>
                   <Text style={[styles.modelProvider, { color: theme.textMuted }]}>{m.provider}</Text>
@@ -154,8 +154,8 @@ export default function SettingsScreen() {
         </View>
 
         {/* Background */}
-        <SectionHeader title="🎨 Background" />
-        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
+        <SectionHeader title="🎨 Background" theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
           <View style={styles.bgGrid}>
             {BACKGROUNDS.map(bg => {
               const r = parseInt(bg.color.replace('#','').substring(0,2),16)
@@ -186,9 +186,10 @@ export default function SettingsScreen() {
           title="⚖️ Focus Areas"
           action={savingW ? undefined : "Reset"}
           onAction={resetWeights}
+          theme={theme}
         />
-        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
-          <Text style={[styles.cardHint, { color: Colors.textMuted }]}>
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+          <Text style={[styles.cardHint, { color: theme.textMuted }]}>
             Control what Nancy pays most attention to. Higher = more focus.
           </Text>
           {loadingW ? (
@@ -206,17 +207,19 @@ export default function SettingsScreen() {
         </View>
 
         {/* Data & Privacy */}
-        <SectionHeader title="🔒 Data & Privacy" />
-        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
+        <SectionHeader title="🔒 Data & Privacy" theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
           <SettingRow
             icon="download-outline"
             label="Export my data"
             onPress={() => Alert.alert('Coming Soon', 'Data export will be available soon')}
+          theme={theme}
           />
           <SettingRow
             icon="eye-off-outline"
             label="What Nancy knows about me"
             onPress={() => router.push('/profile')}
+          theme={theme}
           />
           <SettingRow
             icon="trash-outline"
@@ -230,28 +233,31 @@ export default function SettingsScreen() {
                 { text: 'Delete', style: 'destructive', onPress: () => {} }
               ]
             )}
+          theme={theme}
           />
         </View>
 
         {/* Caregiver */}
-        <SectionHeader title="👥 Caregiver" />
-        <View style={[styles.card, { backgroundColor: Colors.bgCard, borderColor: Colors.border }]}>
+        <SectionHeader title="👥 Caregiver" theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
           <SettingRow
             icon="people-outline"
             label="Caregiver dashboard"
             onPress={() => router.push('/caregiver/login')}
+          theme={theme}
           />
           <SettingRow
             icon="notifications-outline"
             label="Alert preferences"
             onPress={() => Alert.alert('Coming Soon', 'Alert preferences coming soon')}
+          theme={theme}
           />
         </View>
 
         {/* App info */}
         <View style={styles.appInfo}>
-          <Text style={[styles.appInfoText, { color: Colors.textHint }]}>Nancy AI · Built with ❤️</Text>
-          <Text style={[styles.appInfoText, { color: Colors.textHint }]}>Memory never forgets</Text>
+          <Text style={[styles.appInfoText, { color: theme.textHint }]}>Nancy AI · Built with ❤️</Text>
+          <Text style={[styles.appInfoText, { color: theme.textHint }]}>Memory never forgets</Text>
         </View>
 
       </ScrollView>
@@ -261,12 +267,12 @@ export default function SettingsScreen() {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function SectionHeader({ title, action, onAction }: {
-  title: string; action?: string; onAction?: () => void
+function SectionHeader({ title, action, onAction, theme }: {
+  title: string; action?: string; onAction?: () => void; theme: any
 }) {
   return (
     <View style={styles.sectionHeader}>
-      <Text style={[styles.sectionTitle, { color: Colors.textMuted }]}>{title}</Text>
+      <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>{title}</Text>
       {action && (
         <TouchableOpacity onPress={onAction}>
           <Text style={styles.sectionAction}>{action}</Text>
@@ -276,40 +282,41 @@ function SectionHeader({ title, action, onAction }: {
   )
 }
 
-function SettingRow({ icon, label, onPress, color }: {
-  icon: any; label: string; onPress: () => void; color?: string
+function SettingRow({ icon, label, onPress, color, theme }: {
+  icon: any; label: string; onPress: () => void; color?: string; theme: any
 }) {
   return (
-    <TouchableOpacity style={[styles.settingRow, { borderBottomColor: Colors.border }]} onPress={onPress} activeOpacity={0.7}>
-      <Ionicons name={icon} size={20} color={color || Colors.textMuted} />
+    <TouchableOpacity style={[styles.settingRow, { borderBottomColor: theme.border }]} onPress={onPress} activeOpacity={0.7}>
+      <Ionicons name={icon} size={20} color={color || theme.textMuted} />
       <Text style={[styles.settingLabel, color && { color }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+      <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
     </TouchableOpacity>
   )
 }
 
-function WeightRow({ pillar, value, onChange }: {
+function WeightRow({ pillar, value, onChange, theme }: {
   pillar: { id: string; label: string; emoji: string; color: string }
   value:  number
   onChange: (v: number) => void
+  theme: any
 }) {
   const steps  = [0.1, 0.3, 0.5, 0.7, 1.0, 1.3, 1.5, 1.8, 2.0]
   const label  = value < 0.5 ? 'Low' : value < 1.2 ? 'Normal' : value < 1.6 ? 'High' : 'Max'
-  const lcolor = value < 0.5 ? Colors.textMuted : value < 1.2 ? Colors.accentGreen : value < 1.6 ? Colors.accentWarm : Colors.accentRed
+  const lcolor = value < 0.5 ? theme.textMuted : value < 1.2 ? Colors.accentGreen : value < 1.6 ? Colors.accentWarm : Colors.accentRed
 
   return (
     <View style={styles.weightRow}>
       <Text style={styles.weightEmoji}>{pillar.emoji}</Text>
       <View style={{ flex: 1 }}>
         <View style={styles.weightLabelRow}>
-          <Text style={[styles.weightLabel, { color: Colors.text }]}>{pillar.label}</Text>
+          <Text style={[styles.weightLabel, { color: theme.text }]}>{pillar.label}</Text>
           <Text style={[styles.weightValue, { color: lcolor }]}>{label}</Text>
         </View>
         <View style={styles.weightDots}>
           {steps.map(v => (
             <TouchableOpacity
               key={v}
-              style={[styles.weightDot, { backgroundColor: Colors.bgInput },
+              style={[styles.weightDot, { backgroundColor: theme.bgInput },
                 value >= v && { backgroundColor: pillar.color }]}
               onPress={() => onChange(v)}
             />

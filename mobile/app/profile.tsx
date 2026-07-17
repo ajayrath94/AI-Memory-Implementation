@@ -171,9 +171,6 @@ export default function ProfileScreen() {
 
       <ScrollView
         contentContainerStyle={styles.scroll}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
-        }
         showsVerticalScrollIndicator={false}
       >
 

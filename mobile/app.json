@@ -27,6 +27,7 @@
       "expo-av",
       "expo-speech-recognition",
       "expo-secure-store"
-    ]
+    ],
+    "newArchEnabled": false
   }
 }

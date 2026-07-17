@@ -140,9 +140,6 @@ export default function MemoryScreen() {
 
       <ScrollView
         contentContainerStyle={styles.scroll}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
-        }
       >
         {tab === 'memory' ? (
           <MemoryTab memory={memory} fingerprint={fingerprint} trend={trend} alerts={alerts} />
