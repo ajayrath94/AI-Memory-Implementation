@@ -42,18 +42,17 @@ Use empty string/list if not found. Do NOT infer or guess.
 Return ONLY the JSON."""
 
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        resp   = client.messages.create(
-            model      = "claude-haiku-4-5",
-            max_tokens = 200,
-            messages   = [{"role": "user", "content": prompt}]
+        from google import genai
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        resp   = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
         )
-        raw  = resp.content[0].text.strip()
+        raw  = (resp.text or "").strip()
         raw  = raw.replace("```json", "").replace("```", "").strip()
-        return json.loads(raw)
+        return json.loads(raw) if raw else {}
     except Exception as e:
-        print(f"[ProfileEnricher] Haiku extraction failed: {e}")
+        print(f"[ProfileEnricher] Extraction failed: {e}")
         return {}
 
 
@@ -168,7 +167,7 @@ def _living_situation_from_classification(classified) -> dict:
 
 # ── Merge Haiku output into profile structure ──────────────────────────────────
 
-def _merge_haiku_output(extracted: dict) -> dict:
+def _merge_haiku_output(extracted: dict, user_id: str) -> dict:
     """Convert Haiku extraction into profile field structure."""
     updates = {}
 
@@ -285,7 +284,7 @@ def enrich_profile_from_message(text: str, classified, user_id: str):
     if should_run:
         extracted = _haiku_extract(text, context_hint)
         if extracted:
-            haiku_updates = _merge_haiku_output(extracted)
+            haiku_updates = _merge_haiku_output(extracted, user_id)
             # Deep merge haiku updates into updates
             for key, val in haiku_updates.items():
                 if key in updates and isinstance(updates[key], dict) and isinstance(val, dict):
