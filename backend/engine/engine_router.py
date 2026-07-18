@@ -446,6 +446,7 @@ def _route(model, system, messages, user_id="default"):
         )
         msg = response.choices[0].message
         tool_calls = getattr(msg, "tool_calls", None)
+        print(f"[ToolDebug] model={litellm_model} tool_calls={tool_calls} content_preview={(msg.content or \'\')[:100]}")
 
         if not tool_calls:
             return msg.content or ""
