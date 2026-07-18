@@ -142,16 +142,16 @@ export default function MemoryScreen() {
         contentContainerStyle={styles.scroll}
       >
         {tab === 'memory' ? (
-          <MemoryTab memory={memory} fingerprint={fingerprint} trend={trend} alerts={alerts} />
+          <MemoryTab memory={memory} fingerprint={fingerprint} trend={trend} alerts={alerts} theme={theme} />
         ) : (
-          <ProfileTab profile={profile} />
+          <ProfileTab profile={profile} theme={theme} />
         )}
       </ScrollView>
     </SafeAreaView>
   )
 }
 
-function MemoryTab({ memory, fingerprint, trend, alerts }: any) {
+function MemoryTab({ memory, fingerprint, trend, alerts, theme }: any) {
   if (!memory?.summary) {
     return (
       <View style={styles.empty}>
@@ -177,7 +177,7 @@ function MemoryTab({ memory, fingerprint, trend, alerts }: any) {
         <StatCard icon="analytics-outline" value={String(memory.dominant_pillars?.length || 0)} label="Pillars" />
       </View>
       {fingerprint && (
-        <Section title="Behavioural Pattern">
+        <Section title="Behavioural Pattern" theme={theme}>
           <FPRow label="Dominant pattern" value={fingerprint.dominant_pattern || 'Building...'} />
           {fingerprint.emerging_interests?.length > 0 && <FPRow label="📈 Emerging" value={fingerprint.emerging_interests.join(', ')} />}
           {fingerprint.fading_interests?.length > 0 && <FPRow label="📉 Fading" value={fingerprint.fading_interests.join(', ')} />}
@@ -185,11 +185,11 @@ function MemoryTab({ memory, fingerprint, trend, alerts }: any) {
           <FPRow label="Consistency" value={`${Math.round((fingerprint.session_consistency || 0) * 100)}%`} />
         </Section>
       )}
-      <Section title="What Nancy knows about you">
+      <Section title="What Nancy knows about you" theme={theme}>
         <Text style={styles.summaryText}>{memory.summary}</Text>
       </Section>
       {memory.key_facts?.length > 0 && (
-        <Section title="Key Facts">
+        <Section title="Key Facts" theme={theme}>
           {memory.key_facts.map((fact: string, i: number) => (
             <View key={i} style={styles.factRow}>
               <View style={styles.factDot} />
@@ -199,7 +199,7 @@ function MemoryTab({ memory, fingerprint, trend, alerts }: any) {
         </Section>
       )}
       {memory.dominant_pillars?.length > 0 && (
-        <Section title="Your Main Topics">
+        <Section title="Your Main Topics" theme={theme}>
           <View style={styles.pillarsRow}>
             {memory.dominant_pillars.map((pillar: string, i: number) => (
               <View key={i} style={[styles.pillarChip,
@@ -214,7 +214,7 @@ function MemoryTab({ memory, fingerprint, trend, alerts }: any) {
         </Section>
       )}
       {trend?.pillar_trends && Object.keys(trend.pillar_trends).length > 0 && (
-        <Section title="Topic Trends">
+        <Section title="Topic Trends" theme={theme}>
           {Object.entries(trend.pillar_trends)
             .filter(([_, t]) => t !== 'stable')
             .map(([pillar, t], i) => (
@@ -234,7 +234,7 @@ function MemoryTab({ memory, fingerprint, trend, alerts }: any) {
   )
 }
 
-function ProfileTab({ profile }: { profile: UserProfile | null }) {
+function ProfileTab({ profile, theme }: { profile: UserProfile | null; theme: any }) {
   if (!profile) {
     return (
       <View style={styles.empty}>
@@ -268,7 +268,7 @@ function ProfileTab({ profile }: { profile: UserProfile | null }) {
         </View>
       )}
       {hasFamily && (
-        <Section title="👨‍👩‍👧 Family">
+        <Section title="👨‍👩‍👧 Family" theme={theme}>
           {profile.family.spouse && <ProfileRow icon="heart-outline" label="Spouse" value={profile.family.spouse} />}
           {profile.family.children?.map((c, i) => <ProfileRow key={i} icon="people-outline" label="Child" value={c} />)}
           {profile.family.grandchildren?.map((g, i) => <ProfileRow key={i} icon="happy-outline" label="Grandchild" value={g} />)}
@@ -283,14 +283,14 @@ function ProfileTab({ profile }: { profile: UserProfile | null }) {
         </Section>
       )}
       {hasHealth && (
-        <Section title="🏥 Health">
+        <Section title="🏥 Health" theme={theme}>
           {profile.health.conditions?.map((c, i) => <ProfileRow key={i} icon="medkit-outline" label="Condition" value={c} color="#e05555" />)}
           {profile.health.concerns?.map((c, i)   => <ProfileRow key={i} icon="warning-outline" label="Concern" value={c} color="#ff8c42" />)}
           {profile.health.medications?.map((m, i) => <ProfileRow key={i} icon="flask-outline" label="Medication" value={m} color="#3a9bd5" />)}
         </Section>
       )}
       {hasInterests && (
-        <Section title="⭐ Interests">
+        <Section title="⭐ Interests" theme={theme}>
           {Object.entries(profile.interests).map(([cat, items]) =>
             Array.isArray(items) && items.length > 0 ? (
               <View key={cat} style={styles.interestRow}>
@@ -308,14 +308,14 @@ function ProfileTab({ profile }: { profile: UserProfile | null }) {
         </Section>
       )}
       {hasLife && (
-        <Section title="📖 Life Context">
+        <Section title="📖 Life Context" theme={theme}>
           {profile.life_context.occupation     && <ProfileRow icon="briefcase-outline" label="Occupation" value={profile.life_context.occupation} />}
           {profile.life_context.living_situation && <ProfileRow icon="home-outline" label="Living" value={profile.life_context.living_situation} />}
           {profile.life_context.notable_events?.map((e, i) => <ProfileRow key={i} icon="flag-outline" label="Goal" value={e} />)}
         </Section>
       )}
       {profile.personality?.communication_style && (
-        <Section title="💬 Communication">
+        <Section title="💬 Communication" theme={theme}>
           <ProfileRow icon="chatbubble-outline" label="Style" value={profile.personality.communication_style} />
           {profile.personality.traits?.map((t, i) => <ProfileRow key={i} icon="sparkles-outline" label="Trait" value={t} />)}
         </Section>
@@ -327,7 +327,7 @@ function ProfileTab({ profile }: { profile: UserProfile | null }) {
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, theme }: { title: string; children: React.ReactNode; theme: any }) {
   return (
     <View style={styles.section}>
       <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>{title}</Text>

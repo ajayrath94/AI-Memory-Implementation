@@ -1,3 +1,4 @@
+import './_errorHandler'
 import React, { useState, useRef, useCallback } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet,

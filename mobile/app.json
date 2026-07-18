@@ -28,6 +28,6 @@
       "expo-speech-recognition",
       "expo-secure-store"
     ],
-    "newArchEnabled": false
+    "newArchEnabled": true
   }
 }

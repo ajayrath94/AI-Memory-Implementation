@@ -201,6 +201,7 @@ export default function SettingsScreen() {
                 pillar={pillar}
                 value={weights[pillar.id] || 1.0}
                 onChange={(v) => saveWeight(pillar.id, v)}
+                theme={theme}
               />
             ))
           )}

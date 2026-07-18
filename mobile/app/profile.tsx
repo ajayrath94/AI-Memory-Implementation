@@ -8,9 +8,8 @@ import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../hooks/useTheme'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY } from '../constants'
+import { useAppStore } from '../store/appStore'
 
-const theme = useTheme()
-  const { userId: USER_ID } = require('../store/appStore').useAppStore.getState() // Replace with auth context later
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -50,6 +49,8 @@ const api = async (path: string, method = 'GET', body?: any) => {
 // ── Main Screen ────────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
+  const theme = useTheme()
+  const USER_ID = useAppStore(s => s.userId)
   const [profile,    setProfile]    = useState<UserProfile | null>(null)
   const [interests,  setInterests]  = useState<{ profile_interests: Interest[], ltm_interests: Interest[] } | null>(null)
   const [loading,    setLoading]    = useState(true)
@@ -187,6 +188,7 @@ export default function ProfileScreen() {
               value={profile?.name || ''}
               placeholder="Not set yet"
               onEdit={() => startEdit('name', profile?.name || '')}
+            theme={theme}
             />
             <EditableRow
               label="Location"
@@ -194,6 +196,7 @@ export default function ProfileScreen() {
               placeholder="Not set"
               onEdit={() => startEdit('location', profile?.location || '')}
               icon="📍"
+            theme={theme}
             />
             <EditableRow
               label="Language"
@@ -201,6 +204,7 @@ export default function ProfileScreen() {
               placeholder="Auto-detected"
               onEdit={() => startEdit('language_pref', profile?.language_pref || '')}
               icon="💬"
+            theme={theme}
             />
           </View>
         </View>
@@ -231,6 +235,7 @@ export default function ProfileScreen() {
                 label={c}
                 color={Colors.accentRed}
                 onRemove={() => {/* remove health condition */}}
+              theme={theme}
               />
             ))
           )}
@@ -245,10 +250,10 @@ export default function ProfileScreen() {
           ) : (
             <>
               {profile?.family?.spouse && (
-                <TagRow label={`Spouse: ${profile.family.spouse}`} color={Colors.accentWarm} />
+                <TagRow label={`Spouse: ${profile.family.spouse}`} color={Colors.accentWarm} theme={theme} />
               )}
               {profile?.family?.children?.map((c, i) => (
-                <TagRow key={i} label={`Child: ${c}`} color={Colors.accent} />
+                <TagRow key={i} label={`Child: ${c}`} color={Colors.accent} theme={theme} />
               ))}
             </>
           )}
@@ -292,6 +297,7 @@ export default function ProfileScreen() {
                         key={`p-${i}`}
                         interest={interest}
                         onRemove={() => removeInterest(interest.category, interest.label)}
+                        theme={theme}
                       />
                     ))}
                   </View>
@@ -314,6 +320,7 @@ export default function ProfileScreen() {
                             category: 'observed', label: interest.label
                           }).then(fetchAll)
                         }}
+                        theme={theme}
                       />
                     ))}
                   </View>
@@ -330,10 +337,11 @@ export default function ProfileScreen() {
               label="Occupation"
               value={profile.life_context.occupation}
               onEdit={() => startEdit('life_context.occupation', profile?.life_context?.occupation || '')}
+            theme={theme}
             />
           )}
           {profile?.life_context?.living_situation && (
-            <TagRow label={profile.life_context.living_situation} color={Colors.accent} />
+            <TagRow label={profile.life_context.living_situation} color={Colors.accent} theme={theme} />
           )}
           {!profile?.life_context?.occupation && !profile?.life_context?.living_situation && (
             <Text style={styles.emptySection}>
@@ -488,8 +496,8 @@ function Section({ title, children, onAdd, addLabel }: {
   )
 }
 
-function EditableRow({ label, value, placeholder, onEdit, icon }: {
-  label: string; value: string; placeholder?: string; onEdit: () => void; icon?: string
+function EditableRow({ label, value, placeholder, onEdit, icon, theme }: {
+  label: string; value: string; placeholder?: string; onEdit: () => void; icon?: string; theme: any
 }) {
   return (
     <TouchableOpacity style={styles.editableRow} onPress={onEdit} activeOpacity={0.7}>
@@ -504,8 +512,8 @@ function EditableRow({ label, value, placeholder, onEdit, icon }: {
   )
 }
 
-function TagRow({ label, color, onRemove }: {
-  label: string; color: string; onRemove?: () => void
+function TagRow({ label, color, onRemove, theme }: {
+  label: string; color: string; onRemove?: () => void; theme: any
 }) {
   return (
     <View style={styles.tagRow}>
@@ -520,8 +528,8 @@ function TagRow({ label, color, onRemove }: {
   )
 }
 
-function InterestChip({ interest, isObserved, onRemove, onConfirm }: {
-  interest: Interest; isObserved?: boolean; onRemove?: () => void; onConfirm?: () => void
+function InterestChip({ interest, isObserved, onRemove, onConfirm, theme }: {
+  interest: Interest; isObserved?: boolean; onRemove?: () => void; onConfirm?: () => void; theme: any
 }) {
   const strengthColor = interest.strength > 0.8 ? Colors.accentGreen
     : interest.strength > 0.5 ? Colors.accentWarm
@@ -554,9 +562,9 @@ function InterestChip({ interest, isObserved, onRemove, onConfirm }: {
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:        { flex: 1, backgroundColor: theme.bg },
+  safe:        { flex: 1, backgroundColor: Colors.bg },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
-  loadingText: { ...Typography.body, color: theme.textMuted },
+  loadingText: { ...Typography.body, color: Colors.textMuted },
 
   header: {
     flexDirection:     'row',
@@ -567,14 +575,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: Colors.border,
   },
-  headerTitle: { ...Typography.heading, color: theme.text },
+  headerTitle: { ...Typography.heading, color: Colors.text },
   headerBtn:   { padding: Spacing.sm },
 
   scroll: { padding: Spacing.lg, gap: Spacing.md },
 
   // Identity card
   identityCard: {
-    backgroundColor: theme.bgCard,
+    backgroundColor: Colors.bgCard,
     borderRadius:    Radius.xl,
     padding:         Spacing.lg,
     flexDirection:   'row',
@@ -603,10 +611,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
     gap:             Spacing.sm,
   },
-  editableLabel:       { ...Typography.caption, color: theme.textMuted, width: 70 },
+  editableLabel:       { ...Typography.caption, color: Colors.textMuted, width: 70 },
   editableRight:       { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, justifyContent: 'flex-end' },
-  editableValue:       { ...Typography.label, color: theme.text, textAlign: 'right' },
-  editablePlaceholder: { color: theme.textHint },
+  editableValue:       { ...Typography.label, color: Colors.text, textAlign: 'right' },
+  editablePlaceholder: { color: Colors.textHint },
 
   // Emotion card
   emotionCard: {
@@ -618,13 +626,13 @@ const styles = StyleSheet.create({
     alignItems:      'center',
     gap:             Spacing.xs,
   },
-  emotionLabel: { ...Typography.caption, color: theme.textMuted },
+  emotionLabel: { ...Typography.caption, color: Colors.textMuted },
   emotionValue: { ...Typography.heading, color: Colors.accentGreen },
-  emotionHint:  { ...Typography.caption, color: theme.textMuted },
+  emotionHint:  { ...Typography.caption, color: Colors.textMuted },
 
   // Sections
   section: {
-    backgroundColor: theme.bgCard,
+    backgroundColor: Colors.bgCard,
     borderRadius:    Radius.lg,
     padding:         Spacing.lg,
     borderWidth:     0.5,
@@ -653,18 +661,18 @@ const styles = StyleSheet.create({
     borderRadius:   Radius.full,
   },
   addBtnText: { ...Typography.caption, color: Colors.accent, fontWeight: '600' },
-  emptySection: { ...Typography.body, color: theme.textMuted, lineHeight: 22 },
+  emptySection: { ...Typography.body, color: Colors.textMuted, lineHeight: 22 },
 
   // Tag rows
   tagRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 4 },
   tagDot: { width: 8, height: 8, borderRadius: 4 },
-  tagLabel: { ...Typography.body, color: theme.text, flex: 1 },
+  tagLabel: { ...Typography.body, color: Colors.text, flex: 1 },
   tagRemove: { padding: 4 },
 
   // Interests
   interestEmpty:       { gap: Spacing.md },
   interestGroup:       { gap: Spacing.sm },
-  interestGroupLabel:  { ...Typography.caption, color: theme.textMuted },
+  interestGroupLabel:  { ...Typography.caption, color: Colors.textMuted },
   chipRow:             { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
 
   interestChip: {
@@ -682,7 +690,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accentWarm + '12',
     borderColor:     Colors.accentWarm + '30',
   },
-  interestChipText: { ...Typography.label, color: theme.text },
+  interestChipText: { ...Typography.label, color: Colors.text },
   strengthDot: { width: 5, height: 5, borderRadius: 3 },
   confirmBtn:  { padding: 2 },
   chipRemove:  { padding: 2 },
@@ -724,7 +732,7 @@ const styles = StyleSheet.create({
     justifyContent:  'flex-end',
   },
   modalCard: {
-    backgroundColor: theme.bgCard,
+    backgroundColor: Colors.bgCard,
     borderRadius:    Radius.xl,
     padding:         Spacing.xl,
     margin:          Spacing.lg,
@@ -732,8 +740,8 @@ const styles = StyleSheet.create({
     borderWidth:     0.5,
     borderColor:     Colors.border,
   },
-  modalTitle:       { ...Typography.heading, color: theme.text },
-  modalLabel:       { ...Typography.label, color: theme.textMuted },
+  modalTitle:       { ...Typography.heading, color: Colors.text },
+  modalLabel:       { ...Typography.label, color: Colors.textMuted },
   modalInput: {
     backgroundColor:   Colors.bgInput,
     color:             Colors.text,
@@ -753,7 +761,7 @@ const styles = StyleSheet.create({
     borderWidth:    0.5,
     borderColor:    Colors.border,
   },
-  modalCancelText:  { ...Typography.label, color: theme.textMuted },
+  modalCancelText:  { ...Typography.label, color: Colors.textMuted },
   modalSave: {
     flex:            1,
     paddingVertical: Spacing.md,
@@ -776,6 +784,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accent + '20',
     borderColor:     Colors.accent,
   },
-  catChipText:       { ...Typography.label, color: theme.textMuted },
+  catChipText:       { ...Typography.label, color: Colors.textMuted },
   catChipTextActive: { color: Colors.accent },
 })
