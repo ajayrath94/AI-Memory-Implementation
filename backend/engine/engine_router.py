@@ -387,38 +387,85 @@ def _call_mistral(model, system, messages):
     )
     return r.choices[0].message.content
 
-def _route(model, system, messages):
+def _to_litellm_model(model: str) -> tuple:
+    """
+    Map our existing model-name conventions to LiteLLM's provider-prefixed
+    model strings. Returns (litellm_model, extra_kwargs) where extra_kwargs
+    carries an explicit api_key/api_base for providers LiteLLM doesn\'t have
+    a named integration for (same passthrough trick as the old _call_oc).
+    """
     if model.startswith("claude"):
-        return _call_anthropic(model, system, messages)
+        return f"anthropic/{model}", {}
     elif model.startswith("gemini"):
-        return _call_gemini(model, system, messages)
+        return f"gemini/{model}", {}
     elif model.startswith("grok"):
-        return _call_oc(model, system, messages, os.getenv("XAI_API_KEY"), "https://api.x.ai/v1")
+        return f"openai/{model}", {"api_key": os.getenv("XAI_API_KEY"), "api_base": "https://api.x.ai/v1"}
     elif model.startswith("mistral") or model.startswith("codestral"):
-        return _call_mistral(model, system, messages)
+        return f"mistral/{model}", {}
     elif model.startswith("gpt") or model.startswith("o1") or model.startswith("o3"):
-        return _call_oc(model, system, messages, os.getenv("OPENAI_API_KEY"))
+        return f"openai/{model}", {"api_key": os.getenv("OPENAI_API_KEY")}
     elif model.startswith("llama") or model.startswith("deepseek-r1-distill") or model.startswith("mixtral"):
-        return _call_oc(model, system, messages, os.getenv("GROQ_API_KEY"), "https://api.groq.com/openai/v1")
+        return f"groq/{model}", {}
     elif "sonar" in model:
-        return _call_oc(model, system, messages, os.getenv("PERPLEXITY_API_KEY"), "https://api.perplexity.ai")
+        return f"perplexity/{model}", {}
     elif model.startswith("deepseek"):
-        return _call_oc(model, system, messages, os.getenv("DEEPSEEK_API_KEY"), "https://api.deepseek.com/v1")
+        return f"deepseek/{model}", {}
     elif model.startswith("qwen"):
-        return _call_oc(model, system, messages, os.getenv("QWEN_API_KEY"), "https://dashscope.aliyuncs.com/compatible-mode/v1")
+        return f"openai/{model}", {"api_key": os.getenv("QWEN_API_KEY"), "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1"}
     elif model.startswith("glm"):
-        return _call_oc(model, system, messages, os.getenv("ZHIPU_API_KEY"), "https://open.bigmodel.cn/api/paas/v4")
+        return f"openai/{model}", {"api_key": os.getenv("ZHIPU_API_KEY"), "api_base": "https://open.bigmodel.cn/api/paas/v4"}
     elif model.startswith("moonshot"):
-        return _call_oc(model, system, messages, os.getenv("MOONSHOT_API_KEY"), "https://api.moonshot.cn/v1")
+        return f"openai/{model}", {"api_key": os.getenv("MOONSHOT_API_KEY"), "api_base": "https://api.moonshot.cn/v1"}
     elif model.startswith("command"):
-        import cohere
-        c = cohere.Client(api_key=os.getenv("COHERE_API_KEY"))
-        h = [{"role": "USER" if m["role"] == "user" else "CHATBOT", "message": m["content"]} for m in messages[:-1]]
-        return c.chat(model=model, preamble=system, chat_history=h, message=messages[-1]["content"]).text
+        return f"cohere/{model}", {}
     elif "/" in model:
-        return _call_oc(model, system, messages, os.getenv("TOGETHER_API_KEY"), "https://api.together.xyz/v1")
+        return f"openai/{model}", {"api_key": os.getenv("TOGETHER_API_KEY"), "api_base": "https://api.together.xyz/v1"}
     else:
-        return _call_anthropic("claude-sonnet-4-20250514", system, messages)
+        return "anthropic/claude-sonnet-4-20250514", {}
+
+
+def _route(model, system, messages, user_id="default"):
+    """
+    Universal LLM call with tool-calling, working across every provider
+    via LiteLLM. Runs an agentic loop: if the model requests one or more
+    tools, we execute them and feed results back until we get a final
+    plain-text answer.
+    """
+    import litellm
+    from engine.tools import get_tool_schemas, execute_tool
+
+    litellm_model, extra_kwargs = _to_litellm_model(model)
+    full_messages = [{"role": "system", "content": system}] + messages
+
+    for _ in range(5):  # hard cap so a misbehaving loop can\'t run forever
+        response = litellm.completion(
+            model=litellm_model,
+            messages=full_messages,
+            tools=get_tool_schemas(),
+            **extra_kwargs,
+        )
+        msg = response.choices[0].message
+        tool_calls = getattr(msg, "tool_calls", None)
+
+        if not tool_calls:
+            return msg.content or ""
+
+        full_messages.append(msg.model_dump())
+
+        for call in tool_calls:
+            import json as _json
+            try:
+                args = _json.loads(call.function.arguments or "{}")
+            except Exception:
+                args = {}
+            result = execute_tool(call.function.name, args, user_id=user_id)
+            full_messages.append({
+                "role":         "tool",
+                "tool_call_id": call.id,
+                "content":      _json.dumps(result),
+            })
+
+    return "Sorry, I got stuck trying to look that up — can you ask again?"
 
 
 # ── Main pipeline ──────────────────────────────────────────────────────────────
@@ -497,7 +544,7 @@ async def process_input(text: str, model: str,
     system_prompt = _build_system_prompt(classified, user_memory, session_memory)
 
     # 13. Call AI
-    reply = _route(model, system_prompt, context_messages)
+    reply = _route(model, system_prompt, context_messages, user_id=user_id)
 
     # 14. Save assistant message with embedding
     save_message(

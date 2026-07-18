@@ -57,17 +57,18 @@ def get_user_interests(user_id: str) -> dict:
 # ── Weather ────────────────────────────────────────────────────────────────────
 
 @router.get("/weather/{user_id}")
-def get_weather(user_id: str):
+def get_weather(user_id: str, location: str = None):
     """
-    Get current weather for user's location.
-    Used by schedule engine for daily check-ins.
+    Get current weather for user's location (or an explicit override).
+    Used by schedule engine for daily check-ins and by the chat tool-calling layer.
     e.g. "Aaj Delhi mein bahut garmi hai — paani peete rehna"
     """
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key:
         return {"error": "OPENWEATHER_API_KEY not set"}
 
-    location, _, _ = get_user_location(user_id)
+    if not location:
+        location, _, _ = get_user_location(user_id)
 
     try:
         encoded  = urllib.parse.quote(location)
@@ -222,29 +223,30 @@ def get_nearby_places(user_id: str, place_type: str = "hospital"):
 # ── YouTube Music ──────────────────────────────────────────────────────────────
 
 @router.get("/music/{user_id}")
-def get_music_recommendations(user_id: str):
+def get_music_recommendations(user_id: str, query: str = None):
     """
-    Get YouTube music recommendations based on user interests.
-    Kishore Kumar fan → Kishore Kumar songs on YouTube.
+    Get YouTube music/video recommendations. If a query is given (from chat
+    tool-calling, e.g. "Bhag Milkha Bhag songs"), search that directly.
+    Otherwise fall back to inferring from user interests.
     """
     api_key   = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         return {"error": "GOOGLE_API_KEY not set", "videos": []}
 
-    interests = get_user_interests(user_id)
-    music     = interests.get("music", [])
-    religion  = interests.get("religion", "")
-    language  = interests.get("language", "hinglish")
+    if not query:
+        interests = get_user_interests(user_id)
+        music     = interests.get("music", [])
+        religion  = interests.get("religion", "")
+        language  = interests.get("language", "hinglish")
 
-    # Build search query from interests
-    if music:
-        query = music[0]  # e.g. "Kishore Kumar songs"
-    elif religion == "Hindu":
-        query = "bhajan Hindi devotional songs"
-    elif "hi" in language or "hinglish" in language:
-        query = "Bollywood old Hindi songs"
-    else:
-        query = "Indian classical music"
+        if music:
+            query = music[0]  # e.g. "Kishore Kumar songs"
+        elif religion == "Hindu":
+            query = "bhajan Hindi devotional songs"
+        elif "hi" in language or "hinglish" in language:
+            query = "Bollywood old Hindi songs"
+        else:
+            query = "Indian classical music"
 
     try:
         encoded = urllib.parse.quote(query)
