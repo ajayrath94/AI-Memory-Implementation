@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from memory.cache.cache_memory import get_active_slots
 from memory.decay.decay_memory import system_entropy
 from store.pillar_vector_store import get_dominant_pillars, get_correlations
-from supabase_store import get_stats, get_stm_clusters, get_ltm_patterns, get_all_sessions
+from supabase_store import get_stats, get_stm_clusters, get_ltm_patterns, get_all_sessions, get_session_messages
 from memory.user_memory_store import get_user_memory, process_session_end
 
 router = APIRouter()
@@ -34,6 +34,28 @@ def sessions():
 @router.get("/sessions/list")
 def sessions_list():
     return {"sessions": get_all_sessions()}
+
+@router.get("/sessions/{session_id}/messages")
+def session_messages(session_id: str):
+    """Get all messages for a specific session, for resuming/viewing past chats."""
+    raw = get_session_messages(session_id)
+    messages = [
+        {
+            "id":         m.get("id"),
+            "role":       m.get("role"),
+            "content":    m.get("content"),
+            "model":      m.get("model"),
+            "timestamp":  m.get("timestamp"),
+            "pillar": {
+                "core":       m.get("pillar_core", ""),
+                "emotion":    m.get("pillar_emotion", ""),
+                "functional": m.get("pillar_functional", ""),
+            } if m.get("pillar_core") else None,
+        }
+        for m in raw
+        if not m.get("is_summary")
+    ]
+    return {"messages": messages}
 
 @router.get("/user/{user_id}")
 def user_memory(user_id: str = "default"):

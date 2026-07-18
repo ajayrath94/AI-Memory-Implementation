@@ -31,6 +31,7 @@ interface AppState {
   setMemoryUsed: (v: boolean) => void
   clearChat:     () => void
   endSession:    () => Promise<void>
+  loadSession:   (id: string) => Promise<void>
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -71,6 +72,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ sessionId: null })
     } catch (e) {
       console.log('[Session] End failed:', e)
+    }
+  },
+  loadSession: async (id: string) => {
+    try {
+      const { API_BASE, API_KEY } = require('../constants')
+      const res  = await fetch(`${API_BASE}/memory/sessions/${id}/messages`, {
+        headers: { 'X-API-Key': API_KEY },
+      })
+      const data = await res.json()
+      const loaded: Message[] = (data.messages || []).map((m: any) => ({
+        id:         m.id,
+        role:       m.role,
+        content:    m.content,
+        model:      m.model,
+        timestamp:  m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
+        pillar:     m.pillar || undefined,
+      }))
+      set({ messages: loaded, sessionId: id })
+    } catch (e) {
+      console.log('[Session] Load failed:', e)
     }
   },
 }))

@@ -34,7 +34,7 @@ export default function SessionsScreen() {
   const [loading,    setLoading]    = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const theme = useTheme()
-  const { setSessionId } = useAppStore()
+  const { loadSession } = useAppStore()
   const router = useRouter()
 
   const fetchSessions = async () => {
@@ -69,8 +69,8 @@ export default function SessionsScreen() {
     fetchSessions()
   }
 
-  const openSession = (session: Session) => {
-    setSessionId(session.id)
+  const openSession = async (session: Session) => {
+    await loadSession(session.id)
     router.push('/')
   }
 
