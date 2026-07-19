@@ -192,7 +192,12 @@ def get_nearby_places(user_id: str, place_type: str = "hospital", location: str 
             geo_data = http_get(geo_url)
 
             if not geo_data.get("results"):
-                return {"error": "Location not found", "location": location}
+                return {
+                    "error":          "Location not found",
+                    "location":       location,
+                    "google_status":  geo_data.get("status"),
+                    "google_message": geo_data.get("error_message"),
+                }
 
             loc_data = geo_data["results"][0]["geometry"]["location"]
             lat, lng = loc_data["lat"], loc_data["lng"]
