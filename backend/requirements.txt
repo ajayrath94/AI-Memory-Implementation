@@ -21,4 +21,4 @@ langdetect
 langdetect
 PyJWT
 PyJWT>=2.8.0
-litellm
+litellm>=1.90.0
