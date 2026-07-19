@@ -440,6 +440,7 @@ def _route(model, system, messages, user_id="default"):
 
     litellm_model, extra_kwargs = _to_litellm_model(model)
     full_messages = [{"role": "system", "content": system}] + messages
+    collected_tool_results = []  # raw structured data (real URLs etc) for the frontend
 
     for _ in range(5):  # hard cap so a misbehaving loop can\'t run forever
         response = litellm.completion(
@@ -450,11 +451,9 @@ def _route(model, system, messages, user_id="default"):
         )
         msg = response.choices[0].message
         tool_calls = getattr(msg, "tool_calls", None)
-        _content_preview = (msg.content or "")[:100]
-        print(f"[ToolDebug] model={litellm_model} tool_calls={tool_calls} content_preview={_content_preview}")
 
         if not tool_calls:
-            return msg.content or ""
+            return msg.content or "", collected_tool_results
 
         full_messages.append(msg.model_dump())
 
@@ -465,13 +464,14 @@ def _route(model, system, messages, user_id="default"):
             except Exception:
                 args = {}
             result = execute_tool(call.function.name, args, user_id=user_id)
+            collected_tool_results.append({"tool": call.function.name, "data": result})
             full_messages.append({
                 "role":         "tool",
                 "tool_call_id": call.id,
                 "content":      _json.dumps(result),
             })
 
-    return "Sorry, I got stuck trying to look that up — can you ask again?"
+    return "Sorry, I got stuck trying to look that up — can you ask again?", collected_tool_results
 
 
 # ── Main pipeline ──────────────────────────────────────────────────────────────
@@ -550,7 +550,7 @@ async def process_input(text: str, model: str,
     system_prompt = _build_system_prompt(classified, user_memory, session_memory)
 
     # 13. Call AI
-    reply = _route(model, system_prompt, context_messages, user_id=user_id)
+    reply, tool_results = _route(model, system_prompt, context_messages, user_id=user_id)
 
     # 14. Save assistant message with embedding
     save_message(
@@ -572,6 +572,7 @@ async def process_input(text: str, model: str,
         "model":         model,
         "api_triggers":  classified.api_triggers,
         "language":      classified.language,
+        "tool_results":  tool_results,
     }
 
 
