@@ -10,7 +10,7 @@ Each entry needs:
   - handler: the real Python function to call when the LLM requests this tool
 """
 
-from routes.integrations import get_weather, get_music_recommendations
+from routes.integrations import get_weather, get_music_recommendations, get_news, get_nearby_places
 
 
 # ── Tool schemas (OpenAI format — universal across all LiteLLM providers) ──────
@@ -74,6 +74,64 @@ MUSIC_SCHEMA = {
 # To add a new tool: write its schema above, write its handler in
 # routes/integrations.py (or anywhere), add one entry here. Done.
 
+NEWS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "get_news",
+        "description": (
+            "Get current real news articles. Use this whenever the user asks "
+            "what's happening, wants news on a topic, or asks about recent "
+            "events — do not answer from memory, fetch real articles."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": (
+                        "What to search news for, e.g. 'cricket India' or "
+                        "'Mumbai weather alert'. Omit for general India news."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+PLACES_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "get_places",
+        "description": (
+            "Find real nearby places — hospitals, pharmacies, clinics, "
+            "doctors, restaurants, parks. Use whenever the user asks where "
+            "something is near them or needs to find a place."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "place_type": {
+                    "type": "string",
+                    "description": (
+                        "Kind of place: hospital, pharmacy, doctor, clinic, "
+                        "restaurant, park, etc."
+                    ),
+                },
+                "location": {
+                    "type": "string",
+                    "description": (
+                        "City or area to search near. Omit to use the "
+                        "person's saved location."
+                    ),
+                },
+            },
+            "required": ["place_type"],
+        },
+    },
+}
+
+
 TOOL_REGISTRY = {
     "get_weather": {
         "schema":  WEATHER_SCHEMA,
@@ -82,6 +140,18 @@ TOOL_REGISTRY = {
     "get_music": {
         "schema":  MUSIC_SCHEMA,
         "handler": lambda args, user_id: get_music_recommendations(user_id, args.get("query")),
+    },
+    "get_news": {
+        "schema":  NEWS_SCHEMA,
+        "handler": lambda args, user_id: get_news(user_id, args.get("topic")),
+    },
+    "get_places": {
+        "schema":  PLACES_SCHEMA,
+        "handler": lambda args, user_id: get_nearby_places(
+            user_id,
+            args.get("place_type") or "hospital",
+            args.get("location"),
+        ),
     },
 }
 

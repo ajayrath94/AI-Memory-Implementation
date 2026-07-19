@@ -111,7 +111,7 @@ def _weather_advice(data: dict) -> str:
 # ── News ───────────────────────────────────────────────────────────────────────
 
 @router.get("/news/{user_id}")
-def get_news(user_id: str, category: str = None):
+def get_news(user_id: str, topic: str = None):
     """
     Get personalized news based on user interests.
     Cricket fan → sports news. Religious → India spiritual news.
@@ -136,6 +136,8 @@ def get_news(user_id: str, category: str = None):
         queries.append(f"{region} India news")
 
     # Default to India news
+    if topic:
+        queries = [topic]
     if not queries:
         queries.append("India news today")
 
@@ -166,7 +168,7 @@ def get_news(user_id: str, category: str = None):
 # ── Places ─────────────────────────────────────────────────────────────────────
 
 @router.get("/places/{user_id}")
-def get_nearby_places(user_id: str, place_type: str = "hospital"):
+def get_nearby_places(user_id: str, place_type: str = "hospital", location: str = None):
     """
     Find nearby hospitals, pharmacies, clinics.
     Used when health alerts fire.
@@ -176,7 +178,10 @@ def get_nearby_places(user_id: str, place_type: str = "hospital"):
     if not api_key:
         return {"error": "GOOGLE_API_KEY not set"}
 
-    location, _, _ = get_user_location(user_id)
+    if location:
+        lat, lng = None, None          # explicit place given, geocode it below
+    else:
+        location, lat, lng = get_user_location(user_id)
 
     try:
         # Use stored lat/lng if available, otherwise geocode
