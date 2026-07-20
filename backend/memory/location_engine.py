@@ -274,3 +274,93 @@ def process_location_from_message(text: str, classified, user_id: str):
 
     update_user_location(user_id, location or "", loc_type)
     print(f"[LocationEngine] Processed: {location} ({loc_type}) for {user_id}")
+
+
+# ── GPS (live location from device) ────────────────────────────────────────────
+
+def reverse_geocode(lat: float, lng: float) -> Optional[str]:
+    """
+    Convert GPS coordinates to a human-readable place name (city level).
+    Returns None if lookup fails — callers should keep coords regardless.
+    """
+    import os, json, urllib.request, urllib.parse
+
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        print("[LocationEngine] reverse_geocode: GOOGLE_API_KEY not set")
+        return None
+
+    try:
+        url = (
+            "https://maps.googleapis.com/maps/api/geocode/json"
+            f"?latlng={lat},{lng}&result_type=locality|administrative_area_level_2"
+            f"&key={api_key}"
+        )
+        with urllib.request.urlopen(url, timeout=5) as res:
+            data = json.loads(res.read())
+
+        if data.get("status") != "OK" or not data.get("results"):
+            print(f"[LocationEngine] reverse_geocode status={data.get('status')} "
+                  f"msg={data.get('error_message')}")
+            return None
+
+        # Prefer the locality (city) component
+        for result in data["results"]:
+            for comp in result.get("address_components", []):
+                if "locality" in comp.get("types", []):
+                    return comp.get("long_name")
+        return data["results"][0].get("formatted_address")
+
+    except Exception as e:
+        print(f"[LocationEngine] reverse_geocode failed: {e}")
+        return None
+
+
+def update_location_from_gps(user_id: str, lat: float, lng: float) -> dict:
+    """
+    Store live device coordinates as the user's current location.
+
+    Coordinates are always saved (they're what the places API actually needs).
+    The human-readable name is best-effort — if reverse geocoding fails we keep
+    the previous name rather than wiping it, so weather lookups still work.
+    """
+    if lat is None or lng is None:
+        return {"ok": False, "error": "lat and lng are required"}
+    if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+        return {"ok": False, "error": "coordinates out of range"}
+
+    canonical = reverse_geocode(lat, lng)
+
+    try:
+        from supabase_store import get_client
+        from memory.profile_store import get_user_profile
+
+        db      = get_client()
+        profile = get_user_profile(user_id) or {}
+
+        updates = {
+            "current_lat":         lat,
+            "current_lng":         lng,
+            "location_updated_at": "now()",
+        }
+        if canonical:
+            updates["current_location"] = canonical
+
+        db.table("user_profile").update(updates).eq("user_id", user_id).execute()
+
+        resolved = canonical or profile.get("current_location")
+        print(f"[LocationEngine] GPS update for {user_id}: {resolved} ({lat}, {lng})")
+
+        # Reuse existing travel-detection / caregiver notification
+        home = profile.get("home_location") or profile.get("location")
+        if home and canonical and home.lower() not in canonical.lower():
+            try:
+                _notify_caregiver_travel(user_id, canonical, home, profile)
+            except Exception as e:
+                print(f"[LocationEngine] caregiver notify failed: {e}")
+
+        return {"ok": True, "location": resolved, "lat": lat, "lng": lng}
+
+    except Exception as e:
+        print(f"[LocationEngine] GPS update failed: {e}")
+        return {"ok": False, "error": str(e)}
