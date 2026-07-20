@@ -202,8 +202,14 @@ def build_profile_prompt(user_id: str) -> Optional[str]:
         lines.append(f"- Name: {profile['name']}")
     if profile.get("age_group"):
         lines.append(f"- Age group: {profile['age_group']}")
-    if profile.get("location"):
-        lines.append(f"- Location: {profile['location']}")
+    current = profile.get("current_location")
+    home    = profile.get("home_location") or profile.get("location")
+    if current and home and current.lower() != home.lower():
+        lines.append(f"- Currently in: {current} (home: {home})")
+    elif current:
+        lines.append(f"- Location: {current}")
+    elif home:
+        lines.append(f"- Location: {home}")
     if profile.get("language_pref"):
         lines.append(f"- Preferred language: {profile['language_pref']}")
 

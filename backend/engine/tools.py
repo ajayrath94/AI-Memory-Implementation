@@ -30,9 +30,11 @@ WEATHER_SCHEMA = {
                 "location": {
                     "type": "string",
                     "description": (
-                        "City name, e.g. 'Bangalore'. If the user doesn't "
-                        "specify a city, omit this and their saved location "
-                        "will be used instead."
+                        "ONLY set this if the user explicitly names a place in "
+                        "their message (e.g. 'weather in Mumbai'). If they say "
+                        "'here', 'outside', or name no place at all, OMIT this "
+                        "parameter entirely so their live GPS location is used. "
+                        "Never copy a location from the profile into this field."
                     ),
                 },
             },
