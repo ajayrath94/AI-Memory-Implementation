@@ -26,7 +26,13 @@
       "expo-router",
       "expo-av",
       "expo-speech-recognition",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Nancy uses your location to give you accurate local weather and find nearby places like pharmacies and hospitals."
+        }
+      ]
     ],
     "newArchEnabled": true
   }

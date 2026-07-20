@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../hooks/useTheme'
 import { Colors, Typography, Spacing, Radius } from '../constants'
 import { useAppStore } from '../store/appStore'
+import { syncLocation } from '../services/locationService'
 import { useChat } from '../hooks/useChat'
 import { MessageBubble } from '../components/chat/MessageBubble'
 import { ChatInput } from '../components/chat/ChatInput'
@@ -23,7 +24,7 @@ function NancyAvatar({ size = 36 }: { size?: number }) {
 
 export default function ChatScreen() {
   const theme = useTheme()
-  const { messages, loading, sessionId, endSession, clearChat } = useAppStore()
+  const { messages, loading, sessionId, endSession, clearChat, userId } = useAppStore()
   const { send, resend } = useChat()
   const listRef   = useRef<FlatList>(null)
   const appState  = useRef(AppState.currentState)
@@ -56,6 +57,9 @@ export default function ChatScreen() {
     const sub = AppState.addEventListener('change', next => {
       if (appState.current.match(/active/) && next.match(/inactive|background/)) {
         endSession()
+      }
+      if (appState.current.match(/inactive|background/) && next === 'active') {
+        syncLocation(userId)
       }
       appState.current = next
     })

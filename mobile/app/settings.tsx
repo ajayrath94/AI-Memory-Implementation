@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useTheme } from '../hooks/useTheme'
+import { isLocationEnabled, setLocationEnabled, requestLocationPermission, syncLocation } from '../services/locationService'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY, MODELS } from '../constants'
 import { useAppStore } from '../store/appStore'
 
@@ -28,6 +29,31 @@ const BACKGROUNDS = [
 
 export default function SettingsScreen() {
   const theme = useTheme()
+  const [locEnabled, setLocEnabled] = useState(false)
+
+  useEffect(() => {
+    isLocationEnabled().then(setLocEnabled)
+  }, [])
+
+  const toggleLocation = async (next: boolean) => {
+    if (!next) {
+      await setLocationEnabled(false)
+      setLocEnabled(false)
+      return
+    }
+    const granted = await requestLocationPermission()
+    if (!granted) {
+      Alert.alert(
+        'Location permission needed',
+        'Enable location for AI Memory in iOS Settings to get local weather and nearby places.'
+      )
+      return
+    }
+    await setLocationEnabled(true)
+    setLocEnabled(true)
+    syncLocation(userId, { force: true })
+  }
+
   const model      = useAppStore(s => s.model)
   const setModel   = useAppStore(s => s.setModel)
   const userId     = useAppStore(s => s.userId)
@@ -210,6 +236,11 @@ export default function SettingsScreen() {
         {/* Data & Privacy */}
         <SectionHeader title="🔒 Data & Privacy" theme={theme} />
         <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+          <View style={styles.settingRow}>
+            <Ionicons name="location-outline" size={20} color={theme.textMuted} />
+            <Text style={[styles.settingLabel, { color: theme.text }]}>Use my live location</Text>
+            <Switch value={locEnabled} onValueChange={toggleLocation} />
+          </View>
           <SettingRow
             icon="download-outline"
             label="Export my data"
