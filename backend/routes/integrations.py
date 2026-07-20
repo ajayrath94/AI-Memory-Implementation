@@ -67,12 +67,21 @@ def get_weather(user_id: str, location: str = None):
     if not api_key:
         return {"error": "OPENWEATHER_API_KEY not set"}
 
+    lat = lng = None
     if not location:
-        location, _, _ = get_user_location(user_id)
+        location, lat, lng = get_user_location(user_id)
 
     try:
-        encoded  = urllib.parse.quote(location)
-        url      = f"https://api.openweathermap.org/data/2.5/weather?q={encoded}&appid={api_key}&units=metric"
+        # Coordinates are more precise than a city-name lookup, and let the
+        # stored location name be as granular as we like (e.g. "Vesu, Surat")
+        # without breaking the weather query.
+        if lat is not None and lng is not None:
+            url = (f"https://api.openweathermap.org/data/2.5/weather"
+                   f"?lat={lat}&lon={lng}&appid={api_key}&units=metric")
+        else:
+            encoded = urllib.parse.quote(location)
+            url = (f"https://api.openweathermap.org/data/2.5/weather"
+                   f"?q={encoded}&appid={api_key}&units=metric")
         data     = http_get(url)
 
         return {

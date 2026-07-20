@@ -293,8 +293,7 @@ def reverse_geocode(lat: float, lng: float) -> Optional[str]:
     try:
         url = (
             "https://maps.googleapis.com/maps/api/geocode/json"
-            f"?latlng={lat},{lng}&result_type=locality|administrative_area_level_2"
-            f"&key={api_key}"
+            f"?latlng={lat},{lng}&key={api_key}"
         )
         with urllib.request.urlopen(url, timeout=5) as res:
             data = json.loads(res.read())
@@ -304,12 +303,27 @@ def reverse_geocode(lat: float, lng: float) -> Optional[str]:
                   f"msg={data.get('error_message')}")
             return None
 
-        # Prefer the locality (city) component
+        # Collect the most useful components across all returned results.
+        # Indian addresses often expose the neighbourhood as sublocality_level_1
+        # (e.g. "Vesu"), with the city as locality (e.g. "Surat").
+        area = city = None
         for result in data["results"]:
             for comp in result.get("address_components", []):
-                if "locality" in comp.get("types", []):
-                    return comp.get("long_name")
-        return data["results"][0].get("formatted_address")
+                types = comp.get("types", [])
+                if not area and (
+                    "sublocality_level_1" in types
+                    or "sublocality" in types
+                    or "neighborhood" in types
+                ):
+                    area = comp.get("long_name")
+                if not city and "locality" in types:
+                    city = comp.get("long_name")
+            if area and city:
+                break
+
+        if area and city and area.lower() != city.lower():
+            return f"{area}, {city}"
+        return city or area or data["results"][0].get("formatted_address")
 
     except Exception as e:
         print(f"[LocationEngine] reverse_geocode failed: {e}")
