@@ -58,6 +58,15 @@ def _retrieve_memory(
         return None
 
     results = []
+    # User pillar priorities bias what gets recalled: a pillar marked
+    # important surfaces more readily, a de-prioritised one is suppressed.
+    try:
+        from memory.pillar_weights import get_pillar_weights
+        pillar_weights = get_pillar_weights(user_id)
+    except Exception as e:
+        print(f"[Retrieve] weights unavailable: {e}")
+        pillar_weights = {}
+
     for entry, tier in all_entries:
         # Use stored embedding if available
         stored_emb = entry.get("embedding", [])
@@ -67,6 +76,9 @@ def _retrieve_memory(
             # Fallback: simple word overlap for old entries
             q_words = set(entry.get("text", "").lower().split())
             score   = 0.1 if q_words else 0.0
+
+        weight = pillar_weights.get(entry.get("pillar"), 1.0)
+        score  = min(1.0, score * weight)
 
         if score >= RECALL_THRESHOLD:
             new_strength = min(1.0, entry["strength"] + 0.05)
