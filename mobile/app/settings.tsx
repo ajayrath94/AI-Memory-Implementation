@@ -111,11 +111,11 @@ export default function SettingsScreen() {
 
   const CORE_PILLARS = [
     { id: 'HEALTH_WELLNESS', label: 'Health & Wellness', emoji: '🏥', color: Colors.accentRed },
-    { id: 'SADNESS',         label: 'Emotional Support', emoji: '💙', color: '#534AB7' },
-    { id: 'STRESS',          label: 'Stress',            emoji: '😰', color: Colors.accentWarm },
-    { id: 'LOVE',            label: 'Family & Love',     emoji: '❤️',  color: '#D4537E' },
-    { id: 'ENTERTAINMENT',   label: 'Entertainment',     emoji: '🎵', color: Colors.accentWarm },
     { id: 'FINANCE',         label: 'Finance',           emoji: '💰', color: Colors.accent },
+    { id: 'CAREER_GOAL',     label: 'Career',            emoji: '💼', color: '#3A7BD5' },
+    { id: 'ASPIRATIONS',     label: 'Aspirations',       emoji: '🎯', color: '#7B5AB7' },
+    { id: 'ENTERTAINMENT',   label: 'Entertainment',     emoji: '🎵', color: Colors.accentWarm },
+    { id: 'LOVE',            label: 'Family & Love',     emoji: '❤️',  color: '#D4537E' },
     { id: 'GENERAL',         label: 'General',           emoji: '💬', color: theme.textMuted },
   ]
 
