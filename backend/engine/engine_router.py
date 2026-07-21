@@ -34,6 +34,7 @@ from memory.user_memory_store import (
 )
 
 RECALL_THRESHOLD    = 0.65   # higher threshold for embedding similarity
+MUTE_THRESHOLD      = 0.5    # below this, a pillar is muted entirely
 PROMOTION_THRESHOLD = 3
 VERBATIM_COUNT      = 4
 
@@ -77,8 +78,12 @@ def _retrieve_memory(
             q_words = set(entry.get("text", "").lower().split())
             score   = 0.1 if q_words else 0.0
 
+        # Two-stage scoring. Relevance (cosine) decides what is eligible;
+        # user priority only decides ordering. This stops a high weight from
+        # dragging in memories that are not actually relevant.
         weight = pillar_weights.get(entry.get("pillar"), 1.0)
-        score  = min(1.0, score * weight)
+        if weight < MUTE_THRESHOLD:
+            continue
 
         if score >= RECALL_THRESHOLD:
             new_strength = min(1.0, entry["strength"] + 0.05)
@@ -93,13 +98,14 @@ def _retrieve_memory(
             results.append({
                 "text":  entry["text"],
                 "score": score,
+                "rank":  score * weight,
                 "tier":  tier,
             })
 
     if not results:
         return None
 
-    results.sort(key=lambda x: x["score"], reverse=True)
+    results.sort(key=lambda x: x["rank"], reverse=True)
     return "\n".join(
         f"[{r['tier'].upper()} {round(r['score']*100)}%] {r['text']}"
         for r in results[:top_k]
