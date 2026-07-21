@@ -262,3 +262,26 @@ def build_weights_prompt(user_id: str) -> Optional[str]:
         lines.append(f"Pay LESS attention to: {', '.join(reduced)}")
 
     return "\n".join(lines)
+
+
+def get_pillar_shares(user_id: str, pillars: list = None) -> dict:
+    """
+    Normalized share of attention per pillar, summing to 1.0.
+
+    Weights are stored as absolute values (0.1–2.0) because retrieval needs
+    them that way — each pillar is judged on its own. But proactive nudges
+    are genuinely zero-sum: only one gets sent, so "how often should this
+    pillar be chosen" is a share, not a level.
+
+    Muted pillars (below MUTE_THRESHOLD) are excluded entirely.
+    Pass `pillars` to restrict to a group, e.g. CORE_PILLARS.
+    """
+    weights = get_pillar_weights(user_id)
+    if pillars:
+        weights = {p: w for p, w in weights.items() if p in pillars}
+
+    eligible = {p: w for p, w in weights.items() if w >= 0.5}
+    total    = sum(eligible.values())
+    if not total:
+        return {}
+    return {p: round(w / total, 4) for p, w in eligible.items()}

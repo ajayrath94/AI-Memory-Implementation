@@ -216,7 +216,8 @@ export default function SettingsScreen() {
         />
         <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
           <Text style={[styles.cardHint, { color: theme.textMuted }]}>
-            Control what Nancy pays most attention to. Higher = more focus.
+            Control what Nancy pays most attention to. Higher means she brings
+            it up more often. Set to Low and she won't raise it at all.
           </Text>
           {loadingW ? (
             <ActivityIndicator color={Colors.accent} style={{ padding: Spacing.lg }} />
