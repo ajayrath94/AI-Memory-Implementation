@@ -53,14 +53,18 @@ Return ONLY the JSON."""
         from google import genai
         client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         resp   = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
+            model="gemini-flash-lite-latest",
             contents=prompt,
         )
         raw  = (resp.text or "").strip()
         raw  = raw.replace("```json", "").replace("```", "").strip()
         return json.loads(raw) if raw else {}
     except Exception as e:
-        print(f"[ProfileEnricher] Extraction failed: {e}")
+        # Loud on purpose. This returning {} silently made a total extraction
+        # outage look like "nothing found" — the model had been retired for
+        # over a week before anyone noticed.
+        print(f"!!! [ProfileEnricher] EXTRACTION FAILED — no entities, no profile "
+              f"enrichment will happen. Error: {e}")
         return {}
 
 
