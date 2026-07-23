@@ -16,12 +16,41 @@ from typing import Optional
 
 # ── Haiku micro-extractor ──────────────────────────────────────────────────────
 
+def _pillar_guide() -> str:
+    """
+    Build the pillar definitions for the extraction prompt from pillars.xml —
+    the same source the embedding classifier uses. Hardcoding the list here
+    would silently drift the moment a pillar is added or renamed.
+    """
+    try:
+        from classifier.pillar_classifier import CORE_PILLARS, _get_matrix
+        lines = []
+        for name in CORE_PILLARS:
+            m = _get_matrix(name) or {}
+            subject = (m.get("SUBJECT", {}) or {}).get("primary", "")
+            action  = (m.get("ACTION",  {}) or {}).get("primary", "")
+            lines.append(f"- {name}: about {subject or 'general topics'}; "
+                         f"typically {action or 'anything else'}")
+        return "\n".join(lines), CORE_PILLARS
+    except Exception as e:
+        print(f"[ProfileEnricher] pillar guide unavailable: {e}")
+        fallback = ["HEALTH_WELLNESS", "FINANCE", "CAREER_GOAL",
+                    "ASPIRATIONS", "ENTERTAINMENT", "GENERAL"]
+        return "\n".join(f"- {p}" for p in fallback), fallback
+
+
 def _haiku_extract(text: str, context: str) -> dict:
     """
     Single focused Haiku call to extract named entities.
     Returns only what's confidently found — no guessing.
     """
+    guide, pillar_names = _pillar_guide()
+    pillar_options = "|".join(pillar_names)
+
     prompt = f"""Extract factual information from this message. Context: {context}
+
+Pillar definitions (assign each entity to exactly one):
+{guide}
 
 Message: "{text}"
 
@@ -38,13 +67,14 @@ Use empty string/list if not found. Do NOT infer or guess.
   "interests": ["specific interest/hobby mentioned"],
   "wants_to": ["specific goal/aspiration mentioned"],
   "entities": [
-    {{"name": "the specific thing mentioned, e.g. Kishore Kumar / cricket / knee pain / Shubham", "type": "person|artist|hobby|health|place|food|media|other"}}
+    {{"name": "the specific thing mentioned, e.g. Kishore Kumar / cricket / knee pain / Shubham", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}"}}
   ]
 }}
 
 For "entities": extract the THING itself, never the whole sentence.
-"I watched an old Kishore Kumar concert" -> [{{"name": "Kishore Kumar", "type": "artist"}}]
-"My knee has been hurting" -> [{{"name": "knee pain", "type": "health"}}]
+"I watched an old Kishore Kumar concert" -> [{{"name": "Kishore Kumar", "type": "artist", "pillar": "ENTERTAINMENT"}}]
+"My knee has been hurting" -> [{{"name": "knee pain", "type": "health", "pillar": "HEALTH_WELLNESS"}}]
+Each entity gets its OWN pillar. One message can contain entities from different pillars.
 Return an empty list if the message mentions nothing specific.
 
 Return ONLY the JSON."""
@@ -469,7 +499,7 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
             rows.append({
                 "user_id":    user_id,
                 "session_id": session_id or None,
-                "pillar":     classified.core,
+                "pillar":     (ent.get("pillar") or classified.core),
                 "sub_pillar": (ent.get("type") or "other")[:40],
                 "event_type": "mentioned",
                 "value":      name,
