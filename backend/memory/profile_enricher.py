@@ -122,6 +122,18 @@ def _should_run_haiku(classified) -> tuple:
     if core == "ENTERTAINMENT" and cp in ("HIGH", "MEDIUM"):
         return True, "user talking about hobbies or entertainment interests"
 
+    if core == "HEALTH_WELLNESS" and cp in ("HIGH", "MEDIUM"):
+        return True, "user talking about their health, symptoms or treatment"
+
+    if core == "FINANCE" and cp in ("HIGH", "MEDIUM"):
+        return True, "user talking about money, expenses or financial worries"
+
+    # Anything the classifier rated HIGH is worth extracting from, whatever the
+    # pillar. Extraction runs on the free tier now, so a narrow gate costs more
+    # in missed signal than it saves in calls.
+    if cp == "HIGH" or ep == "HIGH":
+        return True, "high-signal message"
+
     return False, ""
 
 
