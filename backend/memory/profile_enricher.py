@@ -36,8 +36,16 @@ Use empty string/list if not found. Do NOT infer or guess.
   "location": "city/place user mentioned as their own location",
   "occupation": "past or current job if explicitly mentioned",
   "interests": ["specific interest/hobby mentioned"],
-  "wants_to": ["specific goal/aspiration mentioned"]
+  "wants_to": ["specific goal/aspiration mentioned"],
+  "entities": [
+    {{"name": "the specific thing mentioned, e.g. Kishore Kumar / cricket / knee pain / Shubham", "type": "person|artist|hobby|health|place|food|media|other"}}
+  ]
 }}
+
+For "entities": extract the THING itself, never the whole sentence.
+"I watched an old Kishore Kumar concert" -> [{{"name": "Kishore Kumar", "type": "artist"}}]
+"My knee has been hurting" -> [{{"name": "knee pain", "type": "health"}}]
+Return an empty list if the message mentions nothing specific.
 
 Return ONLY the JSON."""
 
@@ -284,6 +292,8 @@ def enrich_profile_from_message(text: str, classified, user_id: str):
     if should_run:
         extracted = _haiku_extract(text, context_hint)
         if extracted:
+            # Raw interest signal for the recommendation engine
+            record_entity_events(extracted.get("entities", []), classified, user_id)
             haiku_updates = _merge_haiku_output(extracted, user_id)
             # Deep merge haiku updates into updates
             for key, val in haiku_updates.items():
@@ -427,3 +437,45 @@ def _should_extract_cultural(classified, text: str) -> bool:
                         "hindu", "muslim", "sikh", "christian", "jain",
                         "pandit", "maulvi", "granthi"]
     return any(s in t for s in religion_signals)
+
+
+# ── Behavioural events (interest signal for recommendations) ───────────────────
+
+def record_entity_events(entities: list, classified, user_id: str, session_id: str = ""):
+    """
+    Write one row per extracted entity to user_behavioral_events.
+
+    This is the raw signal the recommendation engine ranks on. We store the
+    entity itself ("Kishore Kumar"), never the whole sentence, so rows are
+    countable. Scoring — frequency, recency decay — happens at read time, so
+    the decay curve can be retuned later without losing history.
+    """
+    if not entities or not user_id:
+        return
+
+    try:
+        from supabase_store import get_client
+        db = get_client()
+
+        rows = []
+        for ent in entities:
+            name = (ent.get("name") or "").strip()
+            if not name or len(name) > 100:
+                continue
+            rows.append({
+                "user_id":    user_id,
+                "session_id": session_id or None,
+                "pillar":     classified.core,
+                "sub_pillar": (ent.get("type") or "other")[:40],
+                "event_type": "mentioned",
+                "value":      name,
+                "strength":   round(float(classified.core_score or 0.5), 4),
+            })
+
+        if rows:
+            db.table("user_behavioral_events").insert(rows).execute()
+            print(f"[Events] {len(rows)} entity events for {user_id}: "
+                  f"{[r['value'] for r in rows]}")
+
+    except Exception as e:
+        print(f"[Events] Failed to record entities: {e}")
