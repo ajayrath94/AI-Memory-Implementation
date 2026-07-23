@@ -134,10 +134,15 @@ def update_cache(classified: ClassifiedInput, session_id: str = "",
     kwargs = dict(session_id=session_id, model=model, session_count=session_count,
                   core=classified.core, emotion=classified.emotion,
                   functional=classified.functional)
-    _update_slot("core",       classified.core,       "CORE",       **kwargs)
-    _update_slot("emotion",    classified.emotion,    "EMOTION",    **kwargs)
-    _update_slot("functional", classified.functional, "FUNCTIONAL", **kwargs)
-    _update_slot("last_input", classified.text[:200], "RAW",        **kwargs)
+    # Slots are tagged with the ACTUAL classified pillar (e.g. HEALTH_WELLNESS),
+    # not the dimension group name. Downstream weighting, muting and ranking all
+    # key off this field, so a literal "CORE" here silently disables all of it.
+    _update_slot("emotion",    classified.emotion,    "EMOTION",       **kwargs)
+    _update_slot("functional", classified.functional, "FUNCTIONAL",    **kwargs)
+
+    # What the person actually said, tagged with its core pillar, so memories
+    # contain real content rather than classification labels.
+    _update_slot("last_input", classified.text[:200], classified.core, **kwargs)
     for mod in classified.modifiers:
         _update_slot(f"mod_{mod}", mod, "MODIFIER", **kwargs)
 

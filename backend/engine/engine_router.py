@@ -188,7 +188,11 @@ def _compress_cache_to_stm(session_id: str, query_embedding: List[float]):
     import hashlib
 
     slots = get_active_slots(session_id=session_id)
-    meaningful = [s for s in slots if s["strength"] > 0.3 and s["pillar"] != "RAW"]
+    # Only real content becomes a memory. EMOTION / FUNCTIONAL / MODIFIER slots
+    # are classification metadata, not things the person said — keeping them out
+    # stops rows like "MODIFIER: URGENCY" diluting retrieval.
+    _NOT_MEMORIES = {"RAW", "EMOTION", "FUNCTIONAL", "MODIFIER"}
+    meaningful = [s for s in slots if s["strength"] > 0.3 and s["pillar"] not in _NOT_MEMORIES]
     if not meaningful:
         return
 
