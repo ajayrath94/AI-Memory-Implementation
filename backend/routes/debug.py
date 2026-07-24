@@ -102,3 +102,9 @@ def debug_similarity(req: SimilarityRequest):
 
     pairs.sort(key=lambda x: x["cosine"], reverse=True)
     return {"task_type": req.task_type, "failed": failed, "pairs": pairs}
+
+@router.get("/interests/{user_id}")
+def debug_interests(user_id: str, pillar: str = ""):
+    """Decay-weighted interest ranking — the recommendation engine's input."""
+    from memory.interest_scores import get_interest_scores
+    return {"interests": get_interest_scores(user_id, pillar)}
