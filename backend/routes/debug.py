@@ -54,3 +54,51 @@ def debug_extract(req: ExtractRequest):
         out.append(row)
 
     return {"results": out}
+
+class SimilarityRequest(BaseModel):
+    names: List[str]
+    task_type: str = "SEMANTIC_SIMILARITY"
+    context_tag: bool = False    # embed "knee pain (health)" instead of "knee pain"
+
+
+@router.post("/similarity")
+def debug_similarity(req: SimilarityRequest):
+    """
+    Pairwise cosine similarity between entity names.
+
+    Exists to CALIBRATE the merge threshold rather than guess it: run it on
+    real entities plus deliberate near-miss pairs and look at where true
+    matches separate from true non-matches.
+    """
+    from google import genai
+    from google.genai import types
+    from classifier.pillar_classifier import cosine_similarity
+
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    vectors, failed = [], []
+
+    for n in req.names[:40]:
+        text = n
+        try:
+            resp = client.models.embed_content(
+                model="models/gemini-embedding-001",
+                contents=text,
+                config=types.EmbedContentConfig(task_type=req.task_type),
+            )
+            vectors.append(list(resp.embeddings[0].values))
+        except Exception as e:
+            failed.append({"name": n, "error": str(e)[:200]})
+            vectors.append(None)
+
+    pairs = []
+    for i in range(len(req.names[:40])):
+        for j in range(i + 1, len(req.names[:40])):
+            if vectors[i] and vectors[j]:
+                pairs.append({
+                    "a": req.names[i],
+                    "b": req.names[j],
+                    "cosine": cosine_similarity(vectors[i], vectors[j]),
+                })
+
+    pairs.sort(key=lambda x: x["cosine"], reverse=True)
+    return {"task_type": req.task_type, "failed": failed, "pairs": pairs}
