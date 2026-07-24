@@ -552,19 +552,30 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
         db = get_client()
 
         rows = []
+        from memory.entity_resolver import resolve
+
         for ent in entities:
             name = (ent.get("name") or "").strip()
             if not name or len(name) > 100:
                 continue
+
+            ent_type = (ent.get("type") or "other")[:40]
+            pillar   = (ent.get("pillar") or classified.core)
+
+            # Reuse an existing name if this is the same thing said differently,
+            # so repeat mentions accumulate instead of fragmenting.
+            res = resolve(name, ent_type, pillar, user_id)
+
             rows.append({
-                "user_id":    user_id,
-                "session_id": session_id or None,
-                "pillar":     (ent.get("pillar") or classified.core),
-                "sub_pillar": (ent.get("type") or "other")[:40],
-                "event_type": "mentioned",
-                "value":      name,                       # canonical English key
+                "user_id":      user_id,
+                "session_id":   session_id or None,
+                "pillar":       pillar,
+                "sub_pillar":   ent_type,
+                "event_type":   "mentioned",
+                "value":        res["name"],                    # canonical key
                 "surface_form": (ent.get("surface_form") or name)[:200],
-                "strength":   round(float(classified.core_score or 0.5), 4),
+                "strength":     round(float(classified.core_score or 0.5), 4),
+                "embedding":    res.get("embedding"),
             })
 
         if rows:
