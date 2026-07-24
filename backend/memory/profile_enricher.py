@@ -105,7 +105,7 @@ Use empty string/list if not found. Do NOT infer or guess.
   "interests": ["specific interest/hobby mentioned"],
   "wants_to": ["specific goal/aspiration mentioned"],
   "entities": [
-    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}"}}
+    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}", "sentiment": "positive|negative|neutral", "action": "what they did with it or what happened to it, one verb"}}
   ]
 }}
 
@@ -119,6 +119,9 @@ the same string and repeat mentions accumulate:
 - do NOT translate proper nouns or cultural terms — transliterate consistently
   ("Kishore Kumar", "Kedarnath", "puja", "roza", "tiffin")
 "surface_form" keeps their original words verbatim.
+"sentiment" is how THEY feel about it, not the mood of the message. "I don't
+enjoy these songs" is negative about the songs. A complaint about pain is
+negative. Merely mentioning something factually is neutral.
 
 "I watched an old Kishore Kumar concert" -> [{{"name": "Kishore Kumar", "surface_form": "Kishore Kumar", "type": "artist", "pillar": "ENTERTAINMENT"}}]
 "Ghutne mein bahut dard hai" -> [{{"name": "knee pain", "surface_form": "ghutne mein dard", "type": "health", "pillar": "HEALTH_WELLNESS"}}]
@@ -571,10 +574,11 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
                 "session_id":   session_id or None,
                 "pillar":       pillar,
                 "sub_pillar":   ent_type,
-                "event_type":   "mentioned",
                 "value":        res["name"],                    # canonical key
                 "surface_form": (ent.get("surface_form") or name)[:200],
                 "strength":     round(float(classified.core_score or 0.5), 4),
+                "sentiment":    (ent.get("sentiment") or "neutral")[:20],
+                "event_type":   (ent.get("action") or "mentioned")[:40],
                 "embedding":    res.get("embedding"),
             })
 
