@@ -77,7 +77,11 @@ def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400) -> Lis
             continue
 
         strength  = float(r.get("strength") or 0.5)
-        sign      = SENTIMENT_SIGN.get((r.get("sentiment") or "neutral").lower(), 0.5)
+        raw_sent  = r.get("sentiment")
+        try:
+            sign = float(raw_sent) if raw_sent is not None else 0.5
+        except (TypeError, ValueError):
+            sign = SENTIMENT_SIGN.get(str(raw_sent).lower(), 0.5)
         exempt    = bool(r.get("decay_exempt")) or (r.get("source") == "user")
         age       = _age_days(r.get("created_at"))
         decay     = 1.0 if exempt else math.exp(-age / HALF_LIFE_DAYS)

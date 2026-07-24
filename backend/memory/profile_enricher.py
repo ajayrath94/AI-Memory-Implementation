@@ -577,7 +577,11 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
                 "value":        res["name"],                    # canonical key
                 "surface_form": (ent.get("surface_form") or name)[:200],
                 "strength":     round(float(classified.core_score or 0.5), 4),
-                "sentiment":    (ent.get("sentiment") or "neutral")[:20],
+                # Column is numeric — store the signed weight, not the label.
+                # Negative mentions must SUBTRACT from interest or the engine
+                # confidently recommends things people said they dislike.
+                "sentiment":    {"positive": 1.0, "negative": -0.6}.get(
+                                    (ent.get("sentiment") or "").lower(), 0.5),
                 "event_type":   (ent.get("action") or "mentioned")[:40],
                 "embedding":    res.get("embedding"),
             })
