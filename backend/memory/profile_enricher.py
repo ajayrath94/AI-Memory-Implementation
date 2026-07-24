@@ -39,11 +39,49 @@ def _pillar_guide() -> str:
         return "\n".join(f"- {p}" for p in fallback), fallback
 
 
-def _haiku_extract(text: str, context: str) -> dict:
+def _known_entities(user_id: str, limit: int = 60) -> list:
+    """
+    Entity names already tracked for this user, most recent first.
+
+    Passed into the extraction prompt so the model MATCHES an existing name
+    rather than inventing a new one each time. Without this the same knee
+    becomes "knee pain" on Monday and "knee" on Thursday, and the two never
+    accumulate into one interest.
+    """
+    if not user_id:
+        return []
+    try:
+        from supabase_store import get_client
+        rows = (get_client()
+                .table("user_behavioral_events")
+                .select("value")
+                .eq("user_id", user_id)
+                .order("created_at", desc=True)
+                .limit(300)
+                .execute()).data or []
+        seen = []
+        for r in rows:
+            v = (r.get("value") or "").strip()
+            if v and v not in seen:
+                seen.append(v)
+            if len(seen) >= limit:
+                break
+        return seen
+    except Exception as e:
+        print(f"[ProfileEnricher] known entities unavailable: {e}")
+        return []
+
+
+def _haiku_extract(text: str, context: str, user_id: str = "") -> dict:
     """
     Single focused Haiku call to extract named entities.
     Returns only what's confidently found — no guessing.
     """
+    known = _known_entities(user_id)
+    known_block = ("\nAlready tracked for this person — REUSE these exact names "
+                   "if the message refers to the same thing:\n"
+                   + "\n".join(f"- {k}" for k in known)) if known else ""
+
     guide, pillar_names = _pillar_guide()
     pillar_options = "|".join(pillar_names)
 
@@ -67,13 +105,23 @@ Use empty string/list if not found. Do NOT infer or guess.
   "interests": ["specific interest/hobby mentioned"],
   "wants_to": ["specific goal/aspiration mentioned"],
   "entities": [
-    {{"name": "the specific thing mentioned, e.g. Kishore Kumar / cricket / knee pain / Shubham", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}"}}
+    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}"}}
   ]
 }}
 
 For "entities": extract the THING itself, never the whole sentence.
-"I watched an old Kishore Kumar concert" -> [{{"name": "Kishore Kumar", "type": "artist", "pillar": "ENTERTAINMENT"}}]
-"My knee has been hurting" -> [{{"name": "knee pain", "type": "health", "pillar": "HEALTH_WELLNESS"}}]
+{known_block}
+
+"name" MUST be a canonical English key, so the same real thing always produces
+the same string and repeat mentions accumulate:
+- lowercase common nouns, singular, no articles ("knee pain", "bollywood song")
+- translate common nouns to English ("ghutne ka dard" -> "knee pain")
+- do NOT translate proper nouns or cultural terms — transliterate consistently
+  ("Kishore Kumar", "Kedarnath", "puja", "roza", "tiffin")
+"surface_form" keeps their original words verbatim.
+
+"I watched an old Kishore Kumar concert" -> [{{"name": "Kishore Kumar", "surface_form": "Kishore Kumar", "type": "artist", "pillar": "ENTERTAINMENT"}}]
+"Ghutne mein bahut dard hai" -> [{{"name": "knee pain", "surface_form": "ghutne mein dard", "type": "health", "pillar": "HEALTH_WELLNESS"}}]
 Each entity gets its OWN pillar. One message can contain entities from different pillars.
 Return an empty list if the message mentions nothing specific.
 
@@ -336,7 +384,7 @@ def enrich_profile_from_message(text: str, classified, user_id: str):
     # ── Path 2: Haiku micro-extraction ────────────────────────────────────────
     should_run, context_hint = _should_run_haiku(classified)
     if should_run:
-        extracted = _haiku_extract(text, context_hint)
+        extracted = _haiku_extract(text, context_hint, user_id)
         if extracted:
             # Raw interest signal for the recommendation engine
             record_entity_events(extracted.get("entities", []), classified, user_id)
@@ -514,7 +562,8 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
                 "pillar":     (ent.get("pillar") or classified.core),
                 "sub_pillar": (ent.get("type") or "other")[:40],
                 "event_type": "mentioned",
-                "value":      name,
+                "value":      name,                       # canonical English key
+                "surface_form": (ent.get("surface_form") or name)[:200],
                 "strength":   round(float(classified.core_score or 0.5), 4),
             })
 
