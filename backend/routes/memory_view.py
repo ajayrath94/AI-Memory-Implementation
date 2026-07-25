@@ -24,7 +24,8 @@ def memory_view(user_id: str):
 
     clusters = (db.table("interest_clusters").select("*")
                 .eq("user_id", user_id).order("strength", desc=True).execute()).data or []
-    interests = get_interest_scores(user_id)
+    enjoys    = get_interest_scores(user_id, mode="enjoy")
+    attention = get_interest_scores(user_id, mode="attention")
 
     by_pillar = {}
     for cl in clusters:
@@ -53,16 +54,28 @@ def memory_view(user_id: str):
             blocks.append('</div></div>')
         blocks.append('</div>')
 
-    irows = "".join(
-        '<tr><td>' + str(i["entity"]) + '</td><td>' + i["pillar"].replace("_", " ").title()
-        + '</td><td class="' + ("pos" if i["score"] > 0 else "neg") + '">'
-        + format(i["score"], "+.2f") + '</td><td>' + str(i["mentions"]) + '</td></tr>'
-        for i in interests[:15]
-    )
+    def rows_enjoy(items):
+        return "".join(
+            '<tr><td>' + str(i["entity"]) + '</td><td>' + i["pillar"].replace("_", " ").title()
+            + '</td><td class="' + ("pos" if i["score"] > 0 else "neg") + '">'
+            + format(i["score"], "+.2f") + '</td><td>' + str(i["mentions"]) + '</td></tr>'
+            for i in items[:12])
+
+    def rows_attn(items):
+        return "".join(
+            '<tr><td>' + str(i["entity"]) + '</td><td>' + i["pillar"].replace("_", " ").title()
+            + '</td><td class="attn">' + format(i["attention"], ".2f") + '</td><td>'
+            + str(i["mentions"]) + '</td></tr>'
+            for i in items[:12])
+
+    enjoy_rows = rows_enjoy(enjoys)
+    attn_rows  = rows_attn(attention)
 
     body = "".join(blocks) or '<p style="color:#999">No concerns yet.</p>'
-    return _PAGE.replace("{{USER}}", user_id).replace("{{N}}", str(len(clusters))) \
-                .replace("{{BODY}}", body).replace("{{ROWS}}", irows)
+    return (_PAGE.replace("{{USER}}", user_id).replace("{{N}}", str(len(clusters)))
+                 .replace("{{BODY}}", body)
+                 .replace("{{ENJOY}}", enjoy_rows)
+                 .replace("{{ATTN}}", attn_rows))
 
 
 _PAGE = """<!doctype html><html><head><meta charset=utf-8>
@@ -89,11 +102,17 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e3
 th,td{text-align:left;padding:9px 12px;font-size:13px;border-bottom:1px solid #f0efe9}
 th{background:#faf9f5;color:#999;font-size:11px;text-transform:uppercase}
 td.pos{color:#1d7a4d;font-weight:600}td.neg{color:#c0492a;font-weight:600}
+.attn{color:#7a5a1d;font-weight:600}
+.note{color:#aaa;font-size:12px;margin-top:8px}
 .side h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#999;font-weight:600;margin:0 0 10px}
 </style></head><body>
 <h1>What Nancy remembers</h1><div class="sub">{{USER}} · {{N}} concerns tracked</div>
 <div class="cols"><div class="main">{{BODY}}</div>
-<div class="side"><h2>Interests · ranked</h2>
-<table><tr><th>Thing</th><th>Pillar</th><th>Score</th><th>x</th></tr>{{ROWS}}</table>
-<p style="color:#aaa;font-size:12px;margin-top:8px">Positive = enjoys · negative = dislikes or distress</p>
+<div class="side">
+<h2>What she enjoys</h2>
+<table><tr><th>Thing</th><th>Pillar</th><th>Score</th><th>x</th></tr>{{ENJOY}}</table>
+<p class="note">Higher = enjoys more · Nancy draws on these</p>
+<h2 style="margin-top:28px">Needs attention</h2>
+<table><tr><th>Concern</th><th>Pillar</th><th>Weight</th><th>x</th></tr>{{ATTN}}</table>
+<p class="note">Ranked by how much it matters — a trigger for Nancy to act, not to recommend</p>
 </div></div></body></html>"""

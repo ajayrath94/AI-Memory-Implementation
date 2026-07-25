@@ -43,7 +43,11 @@ def _age_days(ts: str) -> float:
         return 0.0
 
 
-def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400) -> List[Dict]:
+ATTENTION_PILLARS = {"HEALTH_WELLNESS", "FINANCE", "CAREER_GOAL", "FAMILY"}
+
+
+def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400,
+                        mode: str = "enjoy") -> List[Dict]:
     """
     Ranked interests for a user, highest first.
 
@@ -58,7 +62,7 @@ def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400) -> Lis
         q = (get_client()
              .table("user_behavioral_events")
              .select("value,surface_form,pillar,sub_pillar,strength,sentiment,"
-                     "created_at,source,decay_exempt,cluster_id")
+                     "created_at,source,decay_exempt,cluster_id,salience")
              .eq("user_id", user_id)
              .order("created_at", desc=True)
              .limit(limit))
@@ -105,13 +109,16 @@ def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400) -> Lis
             "pillar":       r.get("pillar"),
             "type":         r.get("sub_pillar"),
             "score":        0.0,
+            "attention":    0.0,
             "mentions":     0,
             "last_seen":    r.get("created_at"),
             "surface_forms": [],
             "user_declared": False,
         })
 
-        entry["score"]    += strength * sign * decay
+        salience = float(r.get("salience") or 0.5)
+        entry["score"]     += strength * sign * decay          # enjoy: signed
+        entry["attention"] += strength * salience * decay      # attention: magnitude
         entry["mentions"] += 1
         if exempt:
             entry["user_declared"] = True
@@ -122,8 +129,14 @@ def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400) -> Lis
 
     out = list(agg.values())
     for e in out:
-        e["score"] = round(e["score"], 4)
+        e["score"]     = round(e["score"], 4)
+        e["attention"] = round(e["attention"], 4)
         e["surface_forms"] = e["surface_forms"][:5]
 
-    out.sort(key=lambda x: x["score"], reverse=True)
+    if mode == "attention":
+        out = [e for e in out if e["pillar"] in ATTENTION_PILLARS]
+        out.sort(key=lambda x: x["attention"], reverse=True)
+    else:
+        out = [e for e in out if e["pillar"] not in ATTENTION_PILLARS]
+        out.sort(key=lambda x: x["score"], reverse=True)
     return out
