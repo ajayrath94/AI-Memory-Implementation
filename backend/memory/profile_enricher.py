@@ -615,6 +615,15 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
         return None
 
 
+def _safe_salience(v) -> float:
+    """Salience should be 0-1, but the model sometimes returns a word. Coerce."""
+    words = {"high": 0.9, "medium": 0.5, "low": 0.2, "none": 0.1}
+    try:
+        return round(min(1.0, max(0.0, float(v))), 4)
+    except (TypeError, ValueError):
+        return words.get(str(v).strip().lower(), 0.5)
+
+
 def record_entity_events(entities: list, classified, user_id: str, session_id: str = ""):
     """
     Write one row per extracted entity to user_behavioral_events.
