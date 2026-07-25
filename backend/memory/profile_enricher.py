@@ -105,7 +105,7 @@ Use empty string/list if not found. Do NOT infer or guess.
   "interests": ["specific interest/hobby mentioned"],
   "wants_to": ["specific goal/aspiration mentioned"],
   "entities": [
-    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}", "sentiment": "positive|negative|neutral", "action": "what they did with it or what happened to it, one verb"}}
+    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}", "sentiment": "positive|negative|neutral", "salience": "0.0-1.0, how much this matters to them right now — pain and money worries are high, casual mentions low", "action": "what they did with it or what happened to it, one verb"}}
   ]
 }}
 
@@ -663,6 +663,7 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
                 # confidently recommends things people said they dislike.
                 "sentiment":    {"positive": 1.0, "negative": -0.6}.get(
                                     (ent.get("sentiment") or "").lower(), 0.5),
+                "salience":     _safe_salience(ent.get("salience")),
                 "event_type":   (ent.get("action") or "mentioned")[:40],
                 "embedding":    res.get("embedding"),
             })
