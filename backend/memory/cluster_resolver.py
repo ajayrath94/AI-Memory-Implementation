@@ -156,16 +156,25 @@ def merge_clusters(user_id: str, keep_id: str, absorb_id: str):
         db.table("user_behavioral_events").update(
             {"cluster_id": keep_id}).eq("cluster_id", absorb_id).execute()
 
+        db.table("interest_clusters").delete().eq("id", absorb_id).execute()
+
+        # Recompute the count from actual rows rather than summing — the summed
+        # value can drift if any event was pointing at a stale cluster id.
+        real = (db.table("user_behavioral_events")
+                .select("id", count="exact")
+                .eq("cluster_id", keep_id).execute())
+        real_count = real.count if real.count is not None else (kn + an)
+
         db.table("interest_clusters").update({
-            "event_count": kn + an,
+            "event_count": real_count,
             "strength":    round((keep.get("strength") or 0) + (absorb.get("strength") or 0), 4),
             "centroid":    merged_centroid,
         }).eq("id", keep_id).execute()
-
-        db.table("interest_clusters").delete().eq("id", absorb_id).execute()
         print(f"[ClusterResolver] merged {absorb_id} -> {keep_id}")
+        return keep_id
     except Exception as e:
         print(f"[ClusterResolver] merge failed: {e}")
+        return keep_id
 
 
 def reconcile(user_id: str, cluster_id: str, pillar: str):
@@ -211,4 +220,4 @@ def reconcile(user_id: str, cluster_id: str, pillar: str):
                 # Keep the one with more events as the survivor.
                 keep, absorb = (this, r) if (this.get("event_count") or 0) >= (r.get("event_count") or 0) else (r, this)
                 merge_clusters(user_id, keep["id"], absorb["id"])
-                return
+                return keep["id"]     # survivor, so caller can repoint to it

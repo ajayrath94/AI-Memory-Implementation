@@ -588,7 +588,7 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
             db.table("interest_clusters").update(update).eq("id", cluster_id).execute()
             try:
                 from memory.cluster_resolver import reconcile
-                reconcile(user_id, cluster_id, pillar)
+                cluster_id = reconcile(user_id, cluster_id, pillar) or cluster_id
             except Exception as e:
                 print(f"[Cluster] reconcile failed: {e}")
             return cluster_id
@@ -605,7 +605,7 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
         if new_id:
             try:
                 from memory.cluster_resolver import reconcile
-                reconcile(user_id, new_id, pillar)
+                new_id = reconcile(user_id, new_id, pillar) or new_id
             except Exception as e:
                 print(f"[Cluster] reconcile failed: {e}")
         return new_id
