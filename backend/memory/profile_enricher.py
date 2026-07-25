@@ -538,6 +538,50 @@ def _should_extract_cultural(classified, text: str) -> bool:
 
 # ── Behavioural events (interest signal for recommendations) ───────────────────
 
+def _upsert_cluster(user_id: str, label: str, pillar: str, strength: float) -> str:
+    """
+    Ensure a persistent cluster exists for this concern and return its id.
+
+    The cluster is the ONGOING thing ("blood pressure"); the events are its
+    dated timeline. Create on first mention, otherwise bump the running totals.
+    Strength is summed raw here — recency decay is applied at read time so the
+    curve stays retunable without a backfill.
+    """
+    try:
+        from supabase_store import get_client
+        db = get_client()
+
+        existing = (db.table("interest_clusters")
+                    .select("id,event_count,strength")
+                    .eq("user_id", user_id)
+                    .eq("label", label)
+                    .limit(1)
+                    .execute()).data
+
+        if existing:
+            row = existing[0]
+            db.table("interest_clusters").update({
+                "event_count": (row.get("event_count") or 0) + 1,
+                "strength":    round((row.get("strength") or 0) + strength, 4),
+                "last_event":  "now()",
+                "status":      "active",   # any fresh mention reactivates it
+            }).eq("id", row["id"]).execute()
+            return row["id"]
+
+        created = (db.table("interest_clusters").insert({
+            "user_id":     user_id,
+            "label":       label,
+            "pillar":      pillar,
+            "strength":    round(strength, 4),
+            "event_count": 1,
+        }).execute()).data
+        return created[0]["id"] if created else None
+
+    except Exception as e:
+        print(f"[Cluster] upsert failed for {label!r}: {e}")
+        return None
+
+
 def record_entity_events(entities: list, classified, user_id: str, session_id: str = ""):
     """
     Write one row per extracted entity to user_behavioral_events.
@@ -569,8 +613,12 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
             # so repeat mentions accumulate instead of fragmenting.
             res = resolve(name, ent_type, pillar, user_id)
 
+            ev_strength = round(float(classified.core_score or 0.5), 4)
+            cluster_id  = _upsert_cluster(user_id, res["name"], pillar, ev_strength)
+
             rows.append({
                 "user_id":      user_id,
+                "cluster_id":   cluster_id,
                 "session_id":   session_id or None,
                 "pillar":       pillar,
                 "sub_pillar":   ent_type,
