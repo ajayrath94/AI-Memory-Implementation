@@ -538,35 +538,55 @@ def _should_extract_cultural(classified, text: str) -> bool:
 
 # ── Behavioural events (interest signal for recommendations) ───────────────────
 
-def _upsert_cluster(user_id: str, label: str, pillar: str, strength: float) -> str:
+def _upsert_cluster(user_id: str, label: str, pillar: str,
+                    strength: float, embedding: list = None) -> str:
     """
-    Ensure a persistent cluster exists for this concern and return its id.
+    Attach this event to the ongoing concern it belongs to, or start a new one.
 
-    The cluster is the ONGOING thing ("blood pressure"); the events are its
-    dated timeline. Create on first mention, otherwise bump the running totals.
-    Strength is summed raw here — recency decay is applied at read time so the
-    curve stays retunable without a backfill.
+    Matching is by CENTROID, not label string: "amlodipine", "blood pressure"
+    and "BP medication" are different labels for one concern, so exact-label
+    matching would fragment them. find_cluster embeds-and-adjudicates to pick
+    the right cluster; here we just maintain its running totals and centroid.
+
+    Strength sums raw (decay applied at read time). The centroid is the running
+    mean of its members, so it settles between related labels rather than
+    anchoring on whichever was said first.
     """
     try:
         from supabase_store import get_client
+        from memory.cluster_resolver import find_cluster
         db = get_client()
 
-        existing = (db.table("interest_clusters")
-                    .select("id,event_count,strength")
-                    .eq("user_id", user_id)
-                    .eq("label", label)
-                    .limit(1)
-                    .execute()).data
+        cluster_id = find_cluster(user_id, label, pillar, embedding)
 
-        if existing:
-            row = existing[0]
-            db.table("interest_clusters").update({
-                "event_count": (row.get("event_count") or 0) + 1,
+        if cluster_id:
+            row = (db.table("interest_clusters")
+                   .select("event_count,strength,centroid")
+                   .eq("id", cluster_id).limit(1).execute()).data
+            row = row[0] if row else {}
+            n   = row.get("event_count") or 0
+
+            update = {
+                "event_count": n + 1,
                 "strength":    round((row.get("strength") or 0) + strength, 4),
                 "last_event":  "now()",
-                "status":      "active",   # any fresh mention reactivates it
-            }).eq("id", row["id"]).execute()
-            return row["id"]
+                "status":      "active",
+            }
+
+            # Running-mean centroid: (old*n + new) / (n+1)
+            old_cen = row.get("centroid")
+            if isinstance(old_cen, str):
+                import json as _j
+                try: old_cen = _j.loads(old_cen)
+                except Exception: old_cen = None
+            if embedding and old_cen and len(old_cen) == len(embedding):
+                update["centroid"] = [
+                    round((o * n + e) / (n + 1), 6)
+                    for o, e in zip(old_cen, embedding)
+                ]
+
+            db.table("interest_clusters").update(update).eq("id", cluster_id).execute()
+            return cluster_id
 
         created = (db.table("interest_clusters").insert({
             "user_id":     user_id,
@@ -574,6 +594,7 @@ def _upsert_cluster(user_id: str, label: str, pillar: str, strength: float) -> s
             "pillar":      pillar,
             "strength":    round(strength, 4),
             "event_count": 1,
+            "centroid":    embedding,
         }).execute()).data
         return created[0]["id"] if created else None
 
@@ -614,7 +635,7 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
             res = resolve(name, ent_type, pillar, user_id)
 
             ev_strength = round(float(classified.core_score or 0.5), 4)
-            cluster_id  = _upsert_cluster(user_id, res["name"], pillar, ev_strength)
+            cluster_id  = _upsert_cluster(user_id, res["name"], pillar, ev_strength, res.get("embedding"))
 
             rows.append({
                 "user_id":      user_id,
