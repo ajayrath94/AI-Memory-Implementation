@@ -127,3 +127,88 @@ Reply with exactly one line: the concern name verbatim, or NEW."""
     except Exception as e:
         print(f"[ClusterResolver] adjudication failed: {e}")
         return None
+
+def merge_clusters(user_id: str, keep_id: str, absorb_id: str):
+    """
+    Fold one cluster into another: repoint its events, sum the totals,
+    recompute the centroid as the count-weighted mean, delete the absorbed row.
+    """
+    from supabase_store import get_client
+    db = get_client()
+    try:
+        rows = (db.table("interest_clusters")
+                .select("id,event_count,strength,centroid")
+                .in_("id", [keep_id, absorb_id]).execute()).data or []
+        by_id = {r["id"]: r for r in rows}
+        keep, absorb = by_id.get(keep_id), by_id.get(absorb_id)
+        if not keep or not absorb:
+            return
+
+        kn, an = keep.get("event_count") or 0, absorb.get("event_count") or 0
+        kc, ac = keep.get("centroid"), absorb.get("centroid")
+        merged_centroid = keep.get("centroid")
+        if kc and ac and len(kc) == len(ac) and (kn + an) > 0:
+            merged_centroid = [
+                round((k * kn + a * an) / (kn + an), 6)
+                for k, a in zip(kc, ac)
+            ]
+
+        db.table("user_behavioral_events").update(
+            {"cluster_id": keep_id}).eq("cluster_id", absorb_id).execute()
+
+        db.table("interest_clusters").update({
+            "event_count": kn + an,
+            "strength":    round((keep.get("strength") or 0) + (absorb.get("strength") or 0), 4),
+            "centroid":    merged_centroid,
+        }).eq("id", keep_id).execute()
+
+        db.table("interest_clusters").delete().eq("id", absorb_id).execute()
+        print(f"[ClusterResolver] merged {absorb_id} -> {keep_id}")
+    except Exception as e:
+        print(f"[ClusterResolver] merge failed: {e}")
+
+
+def reconcile(user_id: str, cluster_id: str, pillar: str):
+    """
+    Deferred merge: after a cluster is created/updated, check whether any OTHER
+    cluster in the same pillar is now close enough to be the same concern.
+
+    Fixes the order-of-arrival problem — "amlodipine" arriving before the
+    "blood pressure" cluster exists creates an orphan that this later folds in.
+    """
+    from supabase_store import get_client
+    db = get_client()
+    try:
+        rows = (db.table("interest_clusters")
+                .select("id,label,event_count,centroid")
+                .eq("user_id", user_id).eq("pillar", pillar)
+                .not_.is_("centroid", "null").limit(100).execute()).data or []
+    except Exception as e:
+        print(f"[ClusterResolver] reconcile fetch failed: {e}")
+        return
+
+    this = next((r for r in rows if r["id"] == cluster_id), None)
+    if not this or not this.get("centroid"):
+        return
+    this_cen = this["centroid"]
+    if isinstance(this_cen, str):
+        try: this_cen = json.loads(this_cen)
+        except Exception: return
+
+    for r in rows:
+        if r["id"] == cluster_id:
+            continue
+        cen = r.get("centroid")
+        if isinstance(cen, str):
+            try: cen = json.loads(cen)
+            except Exception: continue
+        if not cen:
+            continue
+        if _cosine(this_cen, cen) >= CLUSTER_FLOOR:
+            # Same "belongs to same concern" judge, applied cluster-to-cluster.
+            verdict = _adjudicate(r["label"], [{"id": this["id"], "label": this["label"]}])
+            if verdict:
+                # Keep the one with more events as the survivor.
+                keep, absorb = (this, r) if (this.get("event_count") or 0) >= (r.get("event_count") or 0) else (r, this)
+                merge_clusters(user_id, keep["id"], absorb["id"])
+                return

@@ -586,6 +586,11 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
                 ]
 
             db.table("interest_clusters").update(update).eq("id", cluster_id).execute()
+            try:
+                from memory.cluster_resolver import reconcile
+                reconcile(user_id, cluster_id, pillar)
+            except Exception as e:
+                print(f"[Cluster] reconcile failed: {e}")
             return cluster_id
 
         created = (db.table("interest_clusters").insert({
@@ -596,7 +601,14 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
             "event_count": 1,
             "centroid":    embedding,
         }).execute()).data
-        return created[0]["id"] if created else None
+        new_id = created[0]["id"] if created else None
+        if new_id:
+            try:
+                from memory.cluster_resolver import reconcile
+                reconcile(user_id, new_id, pillar)
+            except Exception as e:
+                print(f"[Cluster] reconcile failed: {e}")
+        return new_id
 
     except Exception as e:
         print(f"[Cluster] upsert failed for {label!r}: {e}")
