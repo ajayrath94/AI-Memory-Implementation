@@ -128,7 +128,34 @@ Reply with exactly one line: the concern name verbatim, or NEW."""
         print(f"[ClusterResolver] adjudication failed: {e}")
         return None
 
-def merge_clusters(user_id: str, keep_id: str, absorb_id: str):
+def _general_label(a: str, b: str) -> str:
+    """Of two labels for one concern, return the more general (condition over instance)."""
+    if a.strip().lower() == b.strip().lower():
+        return a
+    prompt = f"""Two labels describe the same ongoing concern:
+- "{a}"
+- "{b}"
+
+Which is the more general name for the concern itself — the condition or theme,
+rather than a specific instance, treatment, or detail?
+Examples: between "amlodipine" and "blood pressure", choose "blood pressure".
+Between "India match" and "cricket", choose "cricket".
+Reply with exactly one of the two labels, verbatim. No other text."""
+    try:
+        from google import genai
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        resp = client.models.generate_content(model="gemini-flash-lite-latest", contents=prompt)
+        ans = (resp.text or "").strip().strip('"').strip()
+        for lab in (a, b):
+            if ans.lower() == lab.lower():
+                return lab
+        return a
+    except Exception as e:
+        print(f"[ClusterResolver] general-label pick failed: {e}")
+        return a
+
+
+def merge_clusters(user_id: str, keep_id: str, absorb_id: str, label: str = None):
     """
     Fold one cluster into another: repoint its events, sum the totals,
     recompute the centroid as the count-weighted mean, delete the absorbed row.
@@ -165,11 +192,14 @@ def merge_clusters(user_id: str, keep_id: str, absorb_id: str):
                 .eq("cluster_id", keep_id).execute())
         real_count = real.count if real.count is not None else (kn + an)
 
-        db.table("interest_clusters").update({
+        update = {
             "event_count": real_count,
             "strength":    round((keep.get("strength") or 0) + (absorb.get("strength") or 0), 4),
             "centroid":    merged_centroid,
-        }).eq("id", keep_id).execute()
+        }
+        if label:
+            update["label"] = label
+        db.table("interest_clusters").update(update).eq("id", keep_id).execute()
         print(f"[ClusterResolver] merged {absorb_id} -> {keep_id}")
         return keep_id
     except Exception as e:
@@ -219,5 +249,9 @@ def reconcile(user_id: str, cluster_id: str, pillar: str):
             if verdict:
                 # Keep the one with more events as the survivor.
                 keep, absorb = (this, r) if (this.get("event_count") or 0) >= (r.get("event_count") or 0) else (r, this)
-                merge_clusters(user_id, keep["id"], absorb["id"])
-                return keep["id"]     # survivor, so caller can repoint to it
+                # Survivor id is the bigger cluster (fewer rows to repoint), but
+                # the LABEL should be the more general concern name, not whichever
+                # instance happened to arrive first.
+                label = _general_label(keep["label"], absorb["label"])
+                merge_clusters(user_id, keep["id"], absorb["id"], label)
+                return keep["id"]
