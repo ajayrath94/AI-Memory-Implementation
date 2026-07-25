@@ -58,7 +58,7 @@ def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400) -> Lis
         q = (get_client()
              .table("user_behavioral_events")
              .select("value,surface_form,pillar,sub_pillar,strength,sentiment,"
-                     "created_at,source,decay_exempt")
+                     "created_at,source,decay_exempt,cluster_id")
              .eq("user_id", user_id)
              .order("created_at", desc=True)
              .limit(limit))
@@ -69,12 +69,26 @@ def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400) -> Lis
         print(f"[Interest] fetch failed: {e}")
         return []
 
+    cluster_labels: Dict[str, str] = {}
+    try:
+        cids = list({r.get("cluster_id") for r in rows if r.get("cluster_id")})
+        if cids:
+            from supabase_store import get_client
+            cl = (get_client().table("interest_clusters")
+                  .select("id,label").in_("id", cids).execute()).data or []
+            cluster_labels = {c["id"]: c["label"] for c in cl}
+    except Exception as e:
+        print(f"[Interest] cluster label fetch failed: {e}")
+
     agg: Dict[str, Dict] = {}
 
     for r in rows:
-        name = (r.get("value") or "").strip()
-        if not name:
+        raw_name = (r.get("value") or "").strip()
+        if not raw_name:
             continue
+        cid  = r.get("cluster_id")
+        key  = cid or raw_name
+        name = cluster_labels.get(cid, raw_name)
 
         strength  = float(r.get("strength") or 0.5)
         raw_sent  = r.get("sentiment")
@@ -86,7 +100,7 @@ def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400) -> Lis
         age       = _age_days(r.get("created_at"))
         decay     = 1.0 if exempt else math.exp(-age / HALF_LIFE_DAYS)
 
-        entry = agg.setdefault(name, {
+        entry = agg.setdefault(key, {
             "entity":       name,
             "pillar":       r.get("pillar"),
             "type":         r.get("sub_pillar"),
