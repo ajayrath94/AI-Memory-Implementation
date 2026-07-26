@@ -18,7 +18,7 @@
 
   <pillar name="FINANCE" type="core" classification="embedding">
     <description>Money, expenses, savings, pension, bills, banking, investments</description>
-    <priority_threshold high="0.78" medium="0.65" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / family member</cell>
@@ -69,7 +69,7 @@
 
   <pillar name="ASPIRATIONS" type="core" classification="embedding">
     <description>Dreams, goals, wishes, travel, legacy, personal growth, spiritual journeys</description>
-    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / grandchildren / family</cell>
@@ -114,7 +114,7 @@
 
   <pillar name="CAREER_GOAL" type="core" classification="embedding">
     <description>Past work life, retirement, professional identity, job memories, legacy</description>
-    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user (past professional self)</cell>
@@ -159,7 +159,7 @@
 
   <pillar name="HEALTH_WELLNESS" type="core" classification="embedding">
     <description>Physical pain, illness, medication, doctor visits, mental wellbeing, chronic conditions</description>
-    <priority_threshold high="0.80" medium="0.65" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / body part</cell>
@@ -212,7 +212,7 @@
 
   <pillar name="GENERAL" type="core" classification="embedding">
     <description>Everyday chitchat, greetings, routine observations, nothing specific</description>
-    <priority_threshold high="0.70" medium="0.55" low="0.40"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / day / weather</cell>
@@ -256,7 +256,7 @@
 
   <pillar name="ENTERTAINMENT" type="core" classification="embedding">
     <description>Movies, music, cricket, TV serials, books, hobbies, leisure activities</description>
-    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">movie / match / song / show</cell>
@@ -304,7 +304,7 @@
 
   <pillar name="OPTIMISM" type="emotion" classification="embedding">
     <description>Hope, confidence, positive outlook, excitement about the future</description>
-    <priority_threshold high="0.78" medium="0.63" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / future / family</cell>
@@ -347,7 +347,7 @@
 
   <pillar name="JOY" type="emotion" classification="embedding">
     <description>Happiness, celebration, good news, family togetherness, laughter</description>
-    <priority_threshold high="0.78" medium="0.63" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / grandchildren / family</cell>
@@ -389,7 +389,7 @@
 
   <pillar name="FEAR" type="emotion" classification="embedding">
     <description>Anxiety, worry, nervousness, scared about health or future or being alone</description>
-    <priority_threshold high="0.80" medium="0.65" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / health / future</cell>
@@ -430,7 +430,7 @@
 
   <pillar name="SADNESS" type="emotion" classification="embedding">
     <description>Grief, loneliness, missing loved ones, depression, feeling forgotten</description>
-    <priority_threshold high="0.80" medium="0.65" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / deceased / absent family</cell>
@@ -472,7 +472,7 @@
 
   <pillar name="ANGER" type="emotion" classification="embedding">
     <description>Frustration, upset, disrespect, betrayal, injustice, argument</description>
-    <priority_threshold high="0.78" medium="0.63" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / family / system</cell>
@@ -512,7 +512,7 @@
 
   <pillar name="STRESS" type="emotion" classification="embedding">
     <description>Overwhelm, pressure, exhaustion, too much to handle, caregiver burden</description>
-    <priority_threshold high="0.80" medium="0.65" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / situation / responsibilities</cell>
@@ -557,7 +557,7 @@
 
   <pillar name="PLAN" type="functional" classification="embedding">
     <description>Scheduling, organizing, preparing, making arrangements, creating routines</description>
-    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / family / appointment</cell>
@@ -597,7 +597,7 @@
 
   <pillar name="SEARCH" type="functional" classification="embedding">
     <description>Looking for information, finding doctors, asking for recommendations, researching</description>
-    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user seeking information</cell>
@@ -638,7 +638,7 @@
 
   <pillar name="ORDER" type="functional" classification="embedding">
     <description>Placing orders, booking, purchasing, getting deliveries, making transactions</description>
-    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user placing order</cell>
@@ -677,7 +677,7 @@
 
   <pillar name="TRACK" type="functional" classification="embedding">
     <description>Monitoring, checking status, following up, tracking health metrics or deliveries</description>
-    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user monitoring something</cell>
@@ -717,7 +717,7 @@
 
   <pillar name="NUDGE" type="functional" classification="embedding">
     <description>Reminders, alerts, prompts to not forget something important</description>
-    <priority_threshold high="0.75" medium="0.62" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user wanting a reminder</cell>
@@ -762,7 +762,7 @@
 
   <pillar name="QUANTITY" type="modifier" classification="keyword">
     <description>How many, how much, number, count, amount</description>
-    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">countable item</cell>
@@ -796,7 +796,7 @@
 
   <pillar name="SPECIFICITY" type="modifier" classification="keyword">
     <description>Requesting precise, exact, particular details</description>
-    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">specific detail / exact info</cell>
@@ -828,7 +828,7 @@
 
   <pillar name="FORMAT" type="modifier" classification="keyword">
     <description>Requesting a specific format: list, summary, brief, detailed explanation</description>
-    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">output format</cell>
@@ -862,7 +862,7 @@
 
   <pillar name="LOCATION" type="modifier" classification="keyword">
     <description>Geographic context: where, near me, city, place</description>
-    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">place / area / city</cell>
@@ -896,7 +896,7 @@
 
   <pillar name="EXCLUSION" type="modifier" classification="keyword">
     <description>Excluding something: not, without, avoid, except</description>
-    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">excluded item / avoided thing</cell>
@@ -930,7 +930,7 @@
 
   <pillar name="URGENCY" type="modifier" classification="keyword">
     <description>Time pressure: urgent, now, immediately, asap, jaldi</description>
-    <priority_threshold high="0.95" medium="0.80" low="0.60"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">urgent situation / time-critical need</cell>
@@ -964,7 +964,7 @@
 
   <pillar name="CONDITION" type="modifier" classification="keyword">
     <description>Conditional statements: if, when, unless, depends, only if</description>
-    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">conditional situation</cell>
@@ -997,7 +997,7 @@
 
   <pillar name="PREFERENCE" type="modifier" classification="keyword">
     <description>Expressing likes, wants, favorites, ideal choices</description>
-    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">preferred option / favorite</cell>
@@ -1031,7 +1031,7 @@
 
   <pillar name="TEMPORAL" type="modifier" classification="keyword">
     <description>Time references: yesterday, today, tomorrow, this week, recently</description>
-    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">time period / time reference</cell>
@@ -1066,7 +1066,7 @@
 
   <pillar name="COMPARISON" type="modifier" classification="keyword">
     <description>Comparing options: vs, better, worse, which one, or</description>
-    <priority_threshold high="0.90" medium="0.70" low="0.50"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">two or more options</cell>
@@ -1102,7 +1102,7 @@
   <!-- LOVE / AFFECTION — added for elderly Indian users -->
   <pillar name="LOVE" type="emotion" classification="embedding">
     <description>Affection, love for family, gratitude, warmth, missing a loved one fondly</description>
-    <priority_threshold high="0.78" medium="0.63" low="0.48"/>
+    <priority_threshold high="0.93" medium="0.88" low="0.83"/>
     <matrix>
       <row type="SUBJECT">
         <cell position="primary">user / grandchildren / spouse / family</cell>
