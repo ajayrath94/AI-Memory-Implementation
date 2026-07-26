@@ -250,16 +250,52 @@ def compute_centroid(vectors: List[List[float]]) -> List[float]:
 
 # ── Priority scoring ───────────────────────────────────────────────────────────
 
+# Pillars that can legitimately be HIGH priority — something to act on.
+# A confident greeting is not urgent; a confident health complaint is.
+_HIGH_CAPABLE = {
+    "HEALTH_WELLNESS", "FINANCE", "CAREER_GOAL",
+    "FEAR", "SADNESS", "STRESS", "ANGER",
+}
+# Pillars that top out at MEDIUM no matter how confidently they classify —
+# a clean "good morning" matches GENERAL strongly but is never urgent.
+_MEDIUM_CAPPED = {"GENERAL", "ENTERTAINMENT", "OPTIMISM", "JOY"}
+
+
 def _score_priority(pillar_name: str, score: float) -> str:
-    """Return HIGH / MEDIUM / LOW based on pillar thresholds from XML."""
+    """
+    Priority = how much this matters, NOT how confident we are of the pillar.
+
+    Cosine confidence is anti-correlated with urgency here: the cleanest,
+    most generic messages ("good morning") match their pillar MOST strongly,
+    so thresholding confidence alone ranked trivia above distress. Priority is
+    therefore driven by WHICH pillar first, with the score only modulating
+    within what that pillar can reach.
+
+    (This is the interim, embedding-only version. The fuller fix reads priority
+    from the extractor's per-entity salience once extraction has run — B2.)
+    """
+    if pillar_name in _MEDIUM_CAPPED:
+        # Can reach MEDIUM on a strong match, otherwise LOW. Never HIGH.
+        return "MEDIUM" if score >= 0.90 else "LOW"
+
+    if pillar_name in _HIGH_CAPABLE:
+        # These pillars are messier, so they match at lower cosine — a health
+        # complaint rarely scores as cleanly as a greeting. Reach HIGH earlier.
+        if score >= 0.86:
+            return "HIGH"
+        elif score >= 0.82:
+            return "MEDIUM"
+        return "LOW"
+
+    # Everything else: measured band, no special weighting.
     defs = _load_pillar_defs()
-    thresholds = defs.get(pillar_name, {}).get("thresholds", {"high": 0.78, "medium": 0.63, "low": 0.48})
+    thresholds = defs.get(pillar_name, {}).get("thresholds",
+                                               {"high": 0.93, "medium": 0.88, "low": 0.83})
     if score >= thresholds["high"]:
         return "HIGH"
     elif score >= thresholds["medium"]:
         return "MEDIUM"
-    else:
-        return "LOW"
+    return "LOW"
 
 
 # ── Matrix enrichment ──────────────────────────────────────────────────────────
