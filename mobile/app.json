@@ -7,20 +7,29 @@
     "scheme": "aimemory",
     "userInterfaceStyle": "dark",
     "splash": {
-      "backgroundColor": "#0f0f0f"
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#D46A47"
     },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.aimemory.app",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "AI Memory uses the microphone for voice input."
+        "NSMicrophoneUsageDescription": "AI Memory uses the microphone for voice input.",
+        "NSLocationWhenInUseUsageDescription": "Nancy uses your location to give you accurate local weather and find nearby places like pharmacies and hospitals."
       }
     },
     "android": {
       "package": "com.aimemory.app",
       "permissions": [
-        "RECORD_AUDIO"
-      ]
+        "RECORD_AUDIO",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#D46A47"
+      }
     },
     "plugins": [
       "expo-router",
@@ -34,6 +43,7 @@
         }
       ]
     ],
-    "newArchEnabled": true
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png"
   }
 }
