@@ -45,7 +45,14 @@ def debug_extract(req: ExtractRequest):
             # tool that tests different code than production is worse than none.
             try:
                 res = _haiku_extract(msg, hint, req.user_id)
-                row["entities"] = res.get("entities", [])
+                ents = res.get("entities", [])
+                row["entities"] = ents
+                from memory.profile_enricher import _safe_salience
+                sal = [_safe_salience(e.get("salience")) for e in ents] or [0.0]
+                top = max(sal)
+                row["salience_priority"] = (
+                    "HIGH" if top >= 0.8 else ("MEDIUM" if top >= 0.5 else "LOW"))
+                row["max_salience"] = round(top, 3)
                 row["profile_fields"] = {
                     k: v for k, v in res.items()
                     if k != "entities" and v

@@ -682,5 +682,10 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
             print(f"[Events] {len(rows)} entity events for {user_id}: "
                   f"{[r['value'] for r in rows]}")
 
+        sal = [_safe_salience(e.get("salience")) for e in entities] or [0.0]
+        top = max(sal)
+        salience_priority = "HIGH" if top >= 0.8 else ("MEDIUM" if top >= 0.5 else "LOW")
+        return {"salience_priority": salience_priority, "max_salience": round(top, 3)}
+
     except Exception as e:
         print(f"[Events] Failed to record entities: {e}")
