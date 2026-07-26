@@ -275,15 +275,18 @@ def _score_priority(pillar_name: str, score: float) -> str:
     from the extractor's per-entity salience once extraction has run — B2.)
     """
     if pillar_name in _MEDIUM_CAPPED:
-        # Can reach MEDIUM on a strong match, otherwise LOW. Never HIGH.
-        return "MEDIUM" if score >= 0.90 else "LOW"
+        # Never HIGH. Cutoff set from MEASURED full-message scores (greetings
+        # land ~0.75, casual mentions ~0.75) — these top out at MEDIUM.
+        return "MEDIUM" if score >= 0.74 else "LOW"
 
     if pillar_name in _HIGH_CAPABLE:
-        # These pillars are messier, so they match at lower cosine — a health
-        # complaint rarely scores as cleanly as a greeting. Reach HIGH earlier.
-        if score >= 0.86:
+        # Cutoffs set from MEASURED scores (knee 0.733, savings 0.764). Full
+        # messages score ~0.68-0.77, far below the entity-name band. NOTE: these
+        # are a fragile stopgap — cosine barely separates distress from trivia.
+        # The real fix (B2) reads priority from extractor salience instead.
+        if score >= 0.72:
             return "HIGH"
-        elif score >= 0.82:
+        elif score >= 0.67:
             return "MEDIUM"
         return "LOW"
 
