@@ -33,7 +33,9 @@ def debug_extract(req: ExtractRequest):
         row = {
             "message":  msg,
             "core":     f"{cl.core}/{cl.core_priority}",
+            "core_score": round(getattr(cl, "core_score", 0.0), 4),
             "emotion":  f"{cl.emotion}/{cl.emotion_priority}",
+            "emotion_score": round(getattr(cl, "emotion_score", 0.0), 4),
             "gated_in": run,
             "entities": [],
         }
