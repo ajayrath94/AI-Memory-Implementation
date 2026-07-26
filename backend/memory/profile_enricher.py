@@ -341,7 +341,7 @@ def _merge_haiku_output(extracted: dict, user_id: str) -> dict:
 
 # ── Main enricher ──────────────────────────────────────────────────────────────
 
-def enrich_profile_from_message(text: str, classified, user_id: str):
+def enrich_profile_from_message(text: str, classified, user_id: str, session_id: str = ""):
     """
     Called after every user message. Zero pattern matching.
 
@@ -390,7 +390,7 @@ def enrich_profile_from_message(text: str, classified, user_id: str):
         extracted = _haiku_extract(text, context_hint, user_id)
         if extracted:
             # Raw interest signal for the recommendation engine
-            record_entity_events(extracted.get("entities", []), classified, user_id)
+            record_entity_events(extracted.get("entities", []), classified, user_id, session_id)
             haiku_updates = _merge_haiku_output(extracted, user_id)
             # Deep merge haiku updates into updates
             for key, val in haiku_updates.items():

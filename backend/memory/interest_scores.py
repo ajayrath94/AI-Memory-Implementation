@@ -140,3 +140,40 @@ def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400,
         out = [e for e in out if e["pillar"] not in ATTENTION_PILLARS]
         out.sort(key=lambda x: x["score"], reverse=True)
     return out
+
+def get_recent_priority(user_id: str, hours: int = 24) -> dict:
+    """
+    Decision-engine priority: how much do the user's RECENT events matter?
+
+    Priority is content-driven (salience), not cosine — "missing my son" and
+    "knee killing me" score HIGH because the language is high-salience, even
+    though their pillar cosine is low. Reads the events the engine already
+    queries, so there's nothing separate to keep in sync.
+    """
+    from datetime import datetime, timezone, timedelta
+    try:
+        from supabase_store import get_client
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        rows = (get_client().table("user_behavioral_events")
+                .select("value,salience,pillar,created_at")
+                .eq("user_id", user_id)
+                .gte("created_at", cutoff)
+                .order("salience", desc=True)
+                .limit(50).execute()).data or []
+    except Exception as e:
+        print(f"[Priority] fetch failed: {e}")
+        return {"priority": "LOW", "top": None, "max_salience": 0.0}
+
+    if not rows:
+        return {"priority": "LOW", "top": None, "max_salience": 0.0}
+
+    top = rows[0]
+    ms  = float(top.get("salience") or 0.0)
+    pr  = "HIGH" if ms >= 0.8 else ("MEDIUM" if ms >= 0.5 else "LOW")
+    return {
+        "priority":      pr,
+        "top":           top.get("value"),
+        "top_pillar":    top.get("pillar"),
+        "max_salience":  round(ms, 3),
+    }
+

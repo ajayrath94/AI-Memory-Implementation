@@ -550,7 +550,7 @@ async def process_input(text: str, model: str,
     # 7b. Enrich user profile from this message (pillar-driven, no extra API call)
     try:
         from memory.profile_enricher import enrich_profile_from_message
-        enrich_profile_from_message(text, classified, user_id)
+        enrich_profile_from_message(text, classified, user_id, sid)
     except Exception as e:
         print(f"[ProfileEnricher] {e}")
 
