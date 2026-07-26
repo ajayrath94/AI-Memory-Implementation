@@ -521,7 +521,9 @@ class ClassifiedInput:
     modifiers:     List[str]
 
     # Scores
-    core_score:    float = 0.0
+    core_score:       float = 0.0
+    emotion_score:    float = 0.0
+    functional_score: float = 0.0
     keyword_count: int   = 0
 
     # Priority per pillar type
@@ -625,6 +627,8 @@ def classify_input(text: str) -> ClassifiedInput:
         functional=functional,
         modifiers=modifiers,
         core_score=core_scores[core],
+        emotion_score=emo_scores[emotion],
+        functional_score=func_scores[functional],
         keyword_count=0,
         core_priority=core_priority,
         emotion_priority=emotion_priority,
