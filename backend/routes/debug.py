@@ -117,3 +117,10 @@ def debug_interests(user_id: str, pillar: str = ""):
     """Decay-weighted interest ranking — the recommendation engine's input."""
     from memory.interest_scores import get_interest_scores
     return {"interests": get_interest_scores(user_id, pillar)}
+
+
+@router.get("/time/{user_id}")
+def debug_time_context(user_id: str):
+    """Show the full temporal picture for a user — local time, slot, mode, silence."""
+    from memory.time_context import time_context
+    return time_context(user_id)
