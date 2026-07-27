@@ -172,15 +172,43 @@ def _interest_chat(profile: dict, memory: dict, slot: str) -> str:
     return " ".join(parts)
 
 
-def _medicine_reminder(profile: dict, slot: str) -> str:
-    name  = profile.get("name", "")
-    health = profile.get("health", {})
-    meds  = health.get("medications", [])
-
-    if not meds:
-        return ""
-
+def _medicine_reminder(user_id: str, profile: dict, slot: str, hour: int = None) -> str:
+    """
+    Build a medication reminder from the REAL care_schedule — actual drug,
+    time, dose — instead of a generic "subah ki dawai" guess. Falls back to
+    the old generic string if no schedule exists.
+    """
+    name     = profile.get("name", "")
     name_str = f"{name}," if name else ""
+
+    try:
+        from memory.care_reader import get_due_schedule_items
+        due = get_due_schedule_items(user_id, hour=hour)
+    except Exception as e:
+        print(f"[MedReminder] reader failed: {e}")
+        due = []
+
+    meds_due = [d for d in due if d.get("type") == "medication"]
+    if meds_due:
+        lines = []
+        for m in meds_due:
+            label = m.get("label", "dawai")
+            dose  = m.get("dose")
+            notes = m.get("notes")
+            overdue = m.get("delta_min", 0) < -10
+            piece = label
+            if dose:
+                piece += f" ({dose})"
+            piece += " lena reh toh nahi gaya?" if overdue else " le lena"
+            if notes:
+                piece += f" — {notes}"
+            lines.append(piece)
+        return f"{name_str} ek reminder: {'; '.join(lines)}."
+
+    # Fallback: no schedule entered
+    health = profile.get("health", {})
+    if not health.get("medications", []):
+        return ""
     if slot == "morning":
         return f"Ek reminder {name_str} subah ki dawai leni hai!"
     elif slot == "night":
@@ -268,7 +296,7 @@ def generate_proactive_script(
 
     else:  # low
         if slot in ("morning", "night"):
-            reminder = _medicine_reminder(profile, slot)
+            reminder = _medicine_reminder(user_id, profile, slot, hour)
             general  = _general_checkin(profile, memory, slot)
             script   = f"{reminder} {general}".strip() if reminder else general
         else:
