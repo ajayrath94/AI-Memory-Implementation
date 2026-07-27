@@ -4,6 +4,7 @@ from routes.chat import router as chat_router
 from routes.memory import router as memory_router
 from routes.voice import router as voice_router
 from routes.schedule import router as schedule_router
+from routes.care import router as care_router
 from routes.alerts import router as alerts_router
 from routes.memory_state import router as memory_state_router
 from routes.weights import router as weights_router
@@ -33,6 +34,7 @@ app.include_router(chat_router,     prefix="/chat",     tags=["chat"],     depen
 app.include_router(memory_router,   prefix="/memory",   tags=["memory"],   dependencies=[Depends(require_api_key)])
 app.include_router(voice_router,    prefix="/voice",    tags=["voice"],    dependencies=[Depends(require_api_key)])
 app.include_router(schedule_router, prefix="/schedule", tags=["schedule"], dependencies=[Depends(require_api_key)])
+app.include_router(care_router, prefix="/care", tags=["care"], dependencies=[Depends(require_api_key)])
 app.include_router(alerts_router,   prefix="/alerts",   tags=["alerts"],   dependencies=[Depends(require_api_key)])
 app.include_router(memory_state_router, prefix="/memory", tags=["memory-state"], dependencies=[Depends(require_api_key)])
 app.include_router(weights_router, prefix="/weights", tags=["weights"], dependencies=[Depends(require_api_key)])
