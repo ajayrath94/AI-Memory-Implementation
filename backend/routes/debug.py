@@ -131,3 +131,10 @@ def debug_proactive(user_id: str, hour: int = None):
     """What would the proactive engine decide? Optional ?hour= to simulate time."""
     from memory.proactive_engine import proactive_check
     return proactive_check(user_id, override_hour=hour)
+
+
+@router.get("/scheduler-pass")
+def debug_scheduler_pass(dry_run: bool = True):
+    """Run one scheduler pass. dry_run=true (default) decides but does NOT log."""
+    from memory.scheduler import run_scheduler_pass
+    return run_scheduler_pass(dry_run=dry_run)
