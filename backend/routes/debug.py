@@ -124,3 +124,10 @@ def debug_time_context(user_id: str):
     """Show the full temporal picture for a user — local time, slot, mode, silence."""
     from memory.time_context import time_context
     return time_context(user_id)
+
+
+@router.get("/proactive/{user_id}")
+def debug_proactive(user_id: str):
+    """What would the proactive engine decide for this user right now?"""
+    from memory.proactive_engine import proactive_check
+    return proactive_check(user_id)
