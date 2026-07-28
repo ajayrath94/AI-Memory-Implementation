@@ -11,9 +11,16 @@ from datetime import datetime, timezone
 
 
 def _idem_key(user_id: str, action: str) -> str:
-    """user + day + action — makes a repeat fire on the same day a no-op,
-    so a redeploy or retry can't double-send the same reminder."""
-    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    """user + THEIR-LOCAL-day + action — one fire per user's own day, so a
+    redeploy/retry can't double-send. Uses the user's timezone (not UTC), or a
+    daily reminder near midnight could double-fire across the UTC date boundary."""
+    try:
+        from memory.time_context import get_user_timezone
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(get_user_timezone(user_id))
+        day = datetime.now(tz).strftime("%Y-%m-%d")
+    except Exception:
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return f"{user_id}:{day}:{action}"
 
 
