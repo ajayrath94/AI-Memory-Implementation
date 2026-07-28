@@ -14,11 +14,17 @@ Precedence (first match wins, SILENCE is a valid answer):
 """
 
 
-def proactive_check(user_id: str) -> dict:
-    from memory.time_context import time_context
+def proactive_check(user_id: str, override_hour: int = None) -> dict:
+    from memory.time_context import time_context, _slot, _mode
     from memory.care_reader import get_due_schedule_items
 
     tc = time_context(user_id)
+    if override_hour is not None:
+        # testing: recompute slot/mode as if it were override_hour
+        tc = dict(tc)
+        tc["hour"] = override_hour
+        tc["slot"] = _slot(override_hour)
+        tc["mode"] = _mode(override_hour, 0)
     slot   = tc.get("slot")
     mode   = tc.get("mode")            # explore | safety
     hour   = tc.get("hour")

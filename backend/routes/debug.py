@@ -127,7 +127,7 @@ def debug_time_context(user_id: str):
 
 
 @router.get("/proactive/{user_id}")
-def debug_proactive(user_id: str):
-    """What would the proactive engine decide for this user right now?"""
+def debug_proactive(user_id: str, hour: int = None):
+    """What would the proactive engine decide? Optional ?hour= to simulate time."""
     from memory.proactive_engine import proactive_check
-    return proactive_check(user_id)
+    return proactive_check(user_id, override_hour=hour)
