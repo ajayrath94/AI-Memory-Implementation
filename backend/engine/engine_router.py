@@ -423,19 +423,19 @@ def _to_litellm_model(model: str) -> tuple:
     if model.startswith("claude"):
         return f"anthropic/{model}", {}
     elif model.startswith("gemini"):
-        return f"gemini/{model}", {}
+        return f"gemini/{model}", {"api_key": os.getenv("GEMINI_API_KEY")}
     elif model.startswith("grok"):
         return f"openai/{model}", {"api_key": os.getenv("XAI_API_KEY"), "api_base": "https://api.x.ai/v1"}
     elif model.startswith("mistral") or model.startswith("codestral"):
-        return f"mistral/{model}", {}
+        return f"mistral/{model}", {"api_key": os.getenv("MISTRAL_API_KEY")}
     elif model.startswith("gpt") or model.startswith("o1") or model.startswith("o3"):
         return f"openai/{model}", {"api_key": os.getenv("OPENAI_API_KEY")}
     elif model.startswith("llama") or model.startswith("deepseek-r1-distill") or model.startswith("mixtral"):
-        return f"groq/{model}", {}
+        return f"groq/{model}", {"api_key": os.getenv("GROQ_API_KEY")}
     elif "sonar" in model:
         return f"perplexity/{model}", {}
     elif model.startswith("deepseek"):
-        return f"deepseek/{model}", {}
+        return f"deepseek/{model}", {"api_key": os.getenv("DEEPSEEK_API_KEY")}
     elif model.startswith("qwen"):
         return f"openai/{model}", {"api_key": os.getenv("QWEN_API_KEY"), "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1"}
     elif model.startswith("glm"):
@@ -443,7 +443,7 @@ def _to_litellm_model(model: str) -> tuple:
     elif model.startswith("moonshot"):
         return f"openai/{model}", {"api_key": os.getenv("MOONSHOT_API_KEY"), "api_base": "https://api.moonshot.cn/v1"}
     elif model.startswith("command"):
-        return f"cohere/{model}", {}
+        return f"cohere/{model}", {"api_key": os.getenv("COHERE_API_KEY")}
     elif "/" in model:
         return f"openai/{model}", {"api_key": os.getenv("TOGETHER_API_KEY"), "api_base": "https://api.together.xyz/v1"}
     else:
