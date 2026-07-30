@@ -558,7 +558,7 @@ async def process_input(text: str, model: str,
     _compress_cache_to_stm(sid, embedding)
 
     # 9. Cross-session user memory
-    user_memory = build_memory_prompt(user_id)
+    user_memory = build_memory_prompt(user_id, current_embedding=embedding)
 
     # 10. Within-session memory (EMBEDDING-BASED!)
     session_memory = _retrieve_memory(embedding, sid, user_id)

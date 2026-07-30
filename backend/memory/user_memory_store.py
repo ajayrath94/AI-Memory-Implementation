@@ -465,34 +465,106 @@ def process_session_end(session_id: str, user_id: str = "default"):
 
 # ── On session start ───────────────────────────────────────────────────────────
 
-def build_memory_prompt(user_id: str = "default") -> Optional[str]:
-    memory = get_user_memory(user_id)
-    if not memory or not memory.get("summary"):
+def _parse_centroid(raw):
+    """Centroids stored as stringified float arrays (text col). Parse to list."""
+    if raw is None:
         return None
-
-    parts = [f"What I know about this person:\n{memory['summary']}"]
-
-    if memory.get("key_facts"):
-        facts = "\n".join(f"• {f}" for f in memory["key_facts"])
-        parts.append(f"\nKey facts:\n{facts}")
-
-    # Include alerts in memory prompt
-    fingerprint = memory.get("behavioural_fingerprint") or {}
-    if isinstance(fingerprint, str):
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str):
         try:
-            fingerprint = json.loads(fingerprint)
+            return json.loads(raw)
         except Exception:
-            fingerprint = {}
+            return None
+    return None
 
-    alerts = fingerprint.get("alerts", [])
-    if alerts:
-        alert_text = "\n".join(f"⚠️ {a}" for a in alerts)
-        parts.append(f"\nBehavioural alerts:\n{alert_text}")
 
-    count = memory.get("session_count", 0)
-    if count > 0:
-        parts.append(f"\nThis is conversation #{count + 1} with this person.")
+def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
+    """Reliable recall from interest_clusters (written every message).
+    Blends STRENGTH (top durable facts) + SIMILARITY (clusters close to the
+    current message, via parsed text-centroid cosine)."""
+    try:
+        db = get_client()
+        rows = (db.table("interest_clusters")
+                .select("label,pillar,strength,event_count,centroid")
+                .eq("user_id", user_id).eq("status", "active")
+                .order("strength", desc=True).limit(60).execute()).data or []
+    except Exception as e:
+        print(f"[Recall] cluster read failed: {e}")
+        return ""
+    if not rows:
+        return ""
 
+    always = rows[:8]
+    relevant = []
+    if current_embedding:
+        scored = []
+        for r in rows:
+            cen = _parse_centroid(r.get("centroid"))
+            if not cen:
+                continue
+            try:
+                sim = cosine_similarity(current_embedding, cen)
+            except Exception:
+                continue
+            if sim > 0.35:
+                scored.append((sim, r))
+        scored.sort(key=lambda x: -x[0])
+        relevant = [r for _, r in scored[:5]]
+
+    seen, merged = set(), []
+    for r in always + relevant:
+        if r["label"] not in seen:
+            seen.add(r["label"]); merged.append(r)
+
+    _LABELS = {
+        "HEALTH_WELLNESS": "Health", "ENTERTAINMENT": "Enjoys",
+        "FAMILY": "Family / people", "ASPIRATIONS": "Cares about",
+        "CAREER_GOAL": "Goals", "FINANCE": "Money matters",
+    }
+    by_pillar = {}
+    for r in merged:
+        by_pillar.setdefault(r.get("pillar", "OTHER"), []).append(r)
+    lines = []
+    for pillar, items in by_pillar.items():
+        heading = _LABELS.get(pillar, pillar.replace("_", " ").title())
+        names = [i["label"] for i in sorted(items, key=lambda x: -(x.get("strength") or 0))[:6]]
+        lines.append(f"{heading}: {', '.join(names)}")
+    return "\n".join(lines)
+
+
+def build_memory_prompt(user_id: str = "default", current_embedding=None) -> Optional[str]:
+    memory = get_user_memory(user_id)
+    cluster_recall = _clusters_for_recall(user_id, current_embedding)
+
+    parts = []
+    if cluster_recall:
+        parts.append(f"What I know about this person:\n{cluster_recall}")
+
+    # Summary/facts/alerts depend on the user_memory row, which may be absent
+    # (clusters can be populated while session-end summarization never ran).
+    if memory:
+        if memory.get("summary"):
+            parts.append(f"\nSummary of past conversations:\n{memory['summary']}")
+        if memory.get("key_facts"):
+            facts = "\n".join(f"- {f}" for f in memory["key_facts"])
+            parts.append(f"\nKey facts:\n{facts}")
+        fingerprint = memory.get("behavioural_fingerprint") or {}
+        if isinstance(fingerprint, str):
+            try:
+                fingerprint = json.loads(fingerprint)
+            except Exception:
+                fingerprint = {}
+        alerts = fingerprint.get("alerts", [])
+        if alerts:
+            alert_text = "\n".join(f"[!] {a}" for a in alerts)
+            parts.append(f"\nBehavioural alerts:\n{alert_text}")
+        count = memory.get("session_count", 0)
+        if count > 0:
+            parts.append(f"\nThis is conversation #{count + 1} with this person.")
+
+    if not parts:
+        return None
     return "\n".join(parts)
 
 
