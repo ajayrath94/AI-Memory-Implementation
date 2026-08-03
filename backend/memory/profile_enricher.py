@@ -360,6 +360,12 @@ def enrich_profile_from_message(text: str, classified, user_id: str, session_id:
     if not user_id:
         return
 
+    try:
+        from memory.profile_store import ensure_profile_exists
+        ensure_profile_exists(user_id)
+    except Exception as e:
+        print(f"[ProfileEnricher] ensure_profile: {e}")
+
     priorities = {
         classified.core_priority,
         classified.emotion_priority,

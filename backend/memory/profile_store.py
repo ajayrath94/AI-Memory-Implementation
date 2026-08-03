@@ -30,6 +30,22 @@ def get_user_profile(user_id: str) -> Optional[dict]:
     return result.data[0] if result.data else None
 
 
+def ensure_profile_exists(user_id: str):
+    """Guarantee a user_profile row exists so user_behavioral_events (FK to
+    user_profile) can insert. On a new user the profile is otherwise created only
+    at the END of enrichment, after events already tried to write. Call BEFORE events."""
+    if not user_id:
+        return
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        existing = db.table("user_profile").select("user_id").eq("user_id", user_id).execute()
+        if not existing.data:
+            db.table("user_profile").insert({"user_id": user_id}).execute()
+    except Exception as e:
+        print(f"[Profile] ensure_profile_exists: {e}")
+
+
 def save_user_profile(user_id: str, updates: dict):
     """
     Merge updates into existing profile.
