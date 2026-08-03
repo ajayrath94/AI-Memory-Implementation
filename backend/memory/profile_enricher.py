@@ -181,6 +181,14 @@ def _should_run_haiku(classified) -> tuple:
     if core == "FINANCE" and cp in ("HIGH", "MEDIUM"):
         return True, "user talking about money, expenses or financial worries"
 
+    # SELF-DISCLOSURE — user telling us durable facts about themselves. These
+    # accumulate the person's profile (the core value of a companion), so extract
+    # at ANY priority, including calm/LOW. "My son lives in Delhi" or "I do puja
+    # every morning" are quiet but essential to remember.
+    if core in ("FAMILY", "HEALTH_WELLNESS", "ENTERTAINMENT", "CAREER_GOAL",
+                "ASPIRATIONS", "FINANCE"):
+        return True, "user sharing durable personal information about themselves"
+
     # Anything the classifier rated HIGH is worth extracting from, whatever the
     # pillar. Extraction runs on the free tier now, so a narrow gate costs more
     # in missed signal than it saves in calls.
@@ -371,7 +379,12 @@ def enrich_profile_from_message(text: str, classified, user_id: str, session_id:
         classified.emotion_priority,
         classified.functional_priority,
     }
-    if priorities == {"LOW"}:
+    # Don't bail on all-LOW if the message is self-disclosure — the user calmly
+    # telling us about their family, health, habits or interests is durable info
+    # worth accumulating even when it carries no emotional urgency.
+    _SELF_DISCLOSURE = {"FAMILY", "HEALTH_WELLNESS", "ENTERTAINMENT",
+                        "CAREER_GOAL", "ASPIRATIONS", "FINANCE"}
+    if priorities == {"LOW"} and classified.core not in _SELF_DISCLOSURE:
         return
 
     updates = {}
