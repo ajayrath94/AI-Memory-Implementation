@@ -35,7 +35,7 @@ def _pillar_guide() -> str:
     except Exception as e:
         print(f"[ProfileEnricher] pillar guide unavailable: {e}")
         fallback = ["HEALTH_WELLNESS", "FINANCE", "CAREER_GOAL",
-                    "ASPIRATIONS", "ENTERTAINMENT", "GENERAL"]
+                    "ASPIRATIONS", "ENTERTAINMENT", "FAMILY", "GENERAL"]
         return "\n".join(f"- {p}" for p in fallback), fallback
 
 
@@ -125,6 +125,8 @@ negative. Merely mentioning something factually is neutral.
 
 "I watched an old Kishore Kumar concert" -> [{{"name": "Kishore Kumar", "surface_form": "Kishore Kumar", "type": "artist", "pillar": "ENTERTAINMENT"}}]
 "Ghutne mein bahut dard hai" -> [{{"name": "knee pain", "surface_form": "ghutne mein dard", "type": "health", "pillar": "HEALTH_WELLNESS"}}]
+"My son Rohan lives in Delhi" -> [{{"name": "Rohan", "surface_form": "Rohan", "type": "person", "pillar": "FAMILY", "action": "lives in Delhi"}}]
+FAMILY is for the person's relatives and loved ones — son, daughter, husband, wife, mother, father, beta, beti, brother, sister, grandchildren, and named family members. Use FAMILY (not GENERAL or ASPIRATIONS) whenever a family relationship is mentioned.
 Each entity gets its OWN pillar. One message can contain entities from different pillars.
 Return an empty list if the message mentions nothing specific.
 

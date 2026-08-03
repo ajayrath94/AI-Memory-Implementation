@@ -67,6 +67,35 @@
     </examples>
   </pillar>
 
+  <pillar name="FAMILY" type="core" classification="embedding">
+    <description>The person's relatives and loved ones — son, daughter, spouse, parents, siblings, grandchildren, and named family members; where they live, how they are, missing or visiting them</description>
+    <priority_threshold high="0.90" medium="0.85" low="0.80"/>
+    <matrix>
+      <row type="SUBJECT">
+        <cell position="primary">son / daughter / husband / wife / beta / beti</cell>
+        <cell position="secondary">mother / father / brother / sister / grandchild</cell>
+        <cell position="modifier">named person / relative</cell>
+      </row>
+      <row type="ACTION">
+        <cell position="primary">lives / visits / calls / misses</cell>
+        <cell position="secondary">married / moved / studying / working</cell>
+        <cell position="modifier">far away / abroad / nearby</cell>
+      </row>
+      <row type="CONTEXT">
+        <cell position="primary">loving / worried / proud / missing</cell>
+        <cell position="secondary">close / distant / caring</cell>
+        <cell position="modifier">family / relationship</cell>
+      </row>
+    </matrix>
+    <examples>
+      <example lang="en">My son Rohan lives in Delhi</example>
+      <example lang="en">My daughter called me yesterday</example>
+      <example lang="en">I miss my grandchildren</example>
+      <example lang="hi">Mera beta Bangalore mein rehta hai</example>
+      <example lang="en">My husband and I have been married 40 years</example>
+    </examples>
+  </pillar>
+
   <pillar name="ASPIRATIONS" type="core" classification="embedding">
     <description>Dreams, goals, wishes, travel, legacy, personal growth, spiritual journeys</description>
     <priority_threshold high="0.93" medium="0.88" low="0.83"/>
