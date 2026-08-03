@@ -138,3 +138,88 @@ def debug_scheduler_pass(dry_run: bool = True):
     """Run one scheduler pass. dry_run=true (default) decides but does NOT log."""
     from memory.scheduler import run_scheduler_pass
     return run_scheduler_pass(dry_run=dry_run)
+
+
+@router.get("/memory-trace/{user_id}")
+def memory_trace(user_id: str):
+    """
+    THE MEMORY LENS. One view of everything memory knows about a user, across
+    both tracks, with text + vector status at each tier, plus what recall
+    actually returns. Reads persistent DB state (not ephemeral logs), so you can
+    inspect any user any time. This is the debugging tool for all memory work.
+    """
+    from supabase_store import get_client
+    db = get_client()
+    out = {"user_id": user_id, "track1_conversation": {}, "track2_person": {}, "recall": {}}
+
+    def _vec_status(v):
+        if v is None:
+            return "none"
+        if isinstance(v, str):
+            return f"str[{len(v)} chars]"
+        if isinstance(v, list):
+            return f"list[{len(v)} dims]"
+        return type(v).__name__
+
+    # ── TRACK 1: conversation (cache in-memory can't be read per-user here; STM + LTM from DB) ──
+    try:
+        stm = (db.table("stm_clusters").select("pillar,text,strength,embedding")
+               .order("id", desc=True).limit(200).execute()).data or []
+        # stm is session-keyed today; we can't filter by user yet, so show recent themes
+        out["track1_conversation"]["stm_recent"] = [
+            {"pillar": s.get("pillar"), "text": s.get("text"),
+             "strength": s.get("strength"), "vector": _vec_status(s.get("embedding"))}
+            for s in stm[:15]
+        ]
+        out["track1_conversation"]["stm_note"] = "STM is session-keyed (not user-scoped yet — #2 will fix)"
+    except Exception as e:
+        out["track1_conversation"]["stm_error"] = str(e)
+
+    try:
+        um = (db.table("user_memory").select("summary,key_facts,session_count")
+              .eq("user_id", user_id).execute()).data
+        if um:
+            out["track1_conversation"]["ltm_summary"] = {
+                "summary": um[0].get("summary"),
+                "key_facts": um[0].get("key_facts"),
+                "session_count": um[0].get("session_count"),
+            }
+        else:
+            out["track1_conversation"]["ltm_summary"] = None
+    except Exception as e:
+        out["track1_conversation"]["ltm_error"] = str(e)
+
+    # ── TRACK 2: person (clusters + events) ──
+    try:
+        clusters = (db.table("interest_clusters")
+                    .select("label,pillar,status,strength,event_count,first_seen,last_event,centroid")
+                    .eq("user_id", user_id).order("strength", desc=True).limit(60).execute()).data or []
+        out["track2_person"]["clusters"] = [
+            {"label": c.get("label"), "pillar": c.get("pillar"), "status": c.get("status"),
+             "strength": c.get("strength"), "event_count": c.get("event_count"),
+             "text": c.get("label"), "vector": _vec_status(c.get("centroid"))}
+            for c in clusters
+        ]
+        out["track2_person"]["cluster_count"] = len(clusters)
+    except Exception as e:
+        out["track2_person"]["clusters_error"] = str(e)
+
+    try:
+        events = (db.table("user_behavioral_events")
+                  .select("value,pillar,sentiment,salience,event_type,created_at")
+                  .eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()).data or []
+        out["track2_person"]["recent_events"] = events
+        out["track2_person"]["event_count"] = len(events)
+    except Exception as e:
+        out["track2_person"]["events_error"] = str(e)
+
+    # ── RECALL: what Nancy actually gets ──
+    try:
+        from memory.user_memory_store import build_memory_prompt
+        recalled = build_memory_prompt(user_id)   # no embedding = strength-only view
+        out["recall"]["build_memory_prompt"] = recalled
+        out["recall"]["note"] = "strength-only here; live recall also adds similarity via current message embedding"
+    except Exception as e:
+        out["recall"]["error"] = str(e)
+
+    return out
