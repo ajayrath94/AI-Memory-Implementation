@@ -486,7 +486,7 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
     try:
         db = get_client()
         rows = (db.table("interest_clusters")
-                .select("label,pillar,strength,event_count,centroid")
+                .select("label,pillar,strength,event_count,centroid,trend,last_state,current_state,relationship")
                 .eq("user_id", user_id).eq("status", "active")
                 .order("strength", desc=True).limit(60).execute()).data or []
     except Exception as e:
@@ -525,10 +525,22 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
     by_pillar = {}
     for r in merged:
         by_pillar.setdefault(r.get("pillar", "OTHER"), []).append(r)
+    def _label_with_trend(item):
+        """For health/concern clusters, surface the trajectory so Nancy knows
+        whether something is getting better or worse — not just that it exists."""
+        label = item["label"]
+        trend = item.get("trend")
+        pillar = item.get("pillar", "")
+        # Trend matters most for health & worries; skip it for interests.
+        if pillar in ("HEALTH_WELLNESS", "FINANCE") and trend and trend not in ("new", "stable"):
+            return f"{label} ({trend})"
+        return label
+
     lines = []
     for pillar, items in by_pillar.items():
         heading = _LABELS.get(pillar, pillar.replace("_", " ").title())
-        names = [i["label"] for i in sorted(items, key=lambda x: -(x.get("strength") or 0))[:6]]
+        ordered = sorted(items, key=lambda x: -(x.get("strength") or 0))[:6]
+        names = [_label_with_trend(i) for i in ordered]
         lines.append(f"{heading}: {', '.join(names)}")
     return "\n".join(lines)
 
