@@ -105,7 +105,7 @@ Use empty string/list if not found. Do NOT infer or guess.
   "interests": ["specific interest/hobby mentioned"],
   "wants_to": ["specific goal/aspiration mentioned"],
   "entities": [
-    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}", "sentiment": "positive|negative|neutral", "salience": "0.0-1.0, how much this matters to them right now — pain and money worries are high, casual mentions low", "action": "what they did with it or what happened to it, one verb"}}
+    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}", "sentiment": "positive|negative|neutral", "salience": "0.0-1.0, how much this matters to them right now — pain and money worries are high, casual mentions low", "action": "what they did with it or what happened to it, one verb", "relationship_type": "concern|preference|person|routine|possession|aspiration — what KIND of thing this is to them"}}
   ]
 }}
 
@@ -559,6 +559,57 @@ def _should_extract_cultural(classified, text: str) -> bool:
 
 # ── Behavioural events (interest signal for recommendations) ───────────────────
 
+def derive_trajectory(events: list) -> dict:
+    """Given a cluster's time-ordered events (oldest first), derive its rollup:
+    current_state (recency-weighted sentiment), trend (direction), and the last
+    state/sentiment. This turns a series of revisits into a living trajectory —
+    e.g. BP mentioned as 'swell, swell, improved' -> trend='improving'."""
+    if not events:
+        return {}
+    sents = [float(e.get("sentiment") or 0) for e in events]
+    n = len(sents)
+    weights = [i + 1 for i in range(n)]              # newest weighted highest
+    current = round(sum(s * w for s, w in zip(sents, weights)) / sum(weights), 3)
+    if n >= 2:
+        mid = n // 2
+        earlier = sum(sents[:mid]) / max(mid, 1)
+        recent  = sum(sents[mid:]) / max(n - mid, 1)
+        delta = recent - earlier
+        trend = "improving" if delta > 0.3 else ("worsening" if delta < -0.3 else "stable")
+    else:
+        trend = "new"
+    # dominant relationship_type across events, if present
+    rels = [e.get("relationship_type") for e in events if e.get("relationship_type")]
+    relationship = max(set(rels), key=rels.count) if rels else None
+    return {
+        "current_state":  current,
+        "trend":          trend,
+        "relationship":   relationship,
+        "last_state":     events[-1].get("event_type"),
+        "last_sentiment": sents[-1],
+    }
+
+
+def recompute_cluster_trajectory(user_id: str, cluster_id: str):
+    """Recompute and store a cluster's trajectory rollup from its events.
+    Called after each new event lands, so recall/engine read a current trend
+    cheaply without recomputing."""
+    if not cluster_id:
+        return
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        evs = (db.table("user_behavioral_events")
+               .select("sentiment,event_type,relationship_type,created_at")
+               .eq("cluster_id", cluster_id).order("created_at", desc=False)
+               .execute()).data or []
+        roll = derive_trajectory(evs)
+        if roll:
+            db.table("interest_clusters").update(roll).eq("id", cluster_id).execute()
+    except Exception as e:
+        print(f"[Trajectory] recompute failed for {cluster_id}: {e}")
+
+
 def _upsert_cluster(user_id: str, label: str, pillar: str,
                     strength: float, embedding: list = None) -> str:
     """
@@ -695,6 +746,7 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
                                     (ent.get("sentiment") or "").lower(), 0.5),
                 "salience":     _safe_salience(ent.get("salience")),
                 "event_type":   (ent.get("action") or "mentioned")[:40],
+                "relationship_type": (ent.get("relationship_type") or None),
                 "embedding":    res.get("embedding"),
             })
 
@@ -702,6 +754,9 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
             db.table("user_behavioral_events").insert(rows).execute()
             print(f"[Events] {len(rows)} entity events for {user_id}: "
                   f"{[r['value'] for r in rows]}")
+            # Refresh each affected cluster's trajectory rollup (trend, current_state)
+            for cid in {r.get("cluster_id") for r in rows if r.get("cluster_id")}:
+                recompute_cluster_trajectory(user_id, cid)
 
         sal = [_safe_salience(e.get("salience")) for e in entities] or [0.0]
         top = max(sal)
