@@ -267,8 +267,8 @@ def prop_ingest(payload: dict):
     """TEMP: run the FULL new proposition pipeline (extract -> process -> store)
     on a test user, without touching the live chat path. POST {user_id, text}.
     Lets us validate the new extractor+processor before cutover. Remove after."""
-    from memory.profile_enricher import (_extract_propositions, record_propositions,
-                                          ensure_profile_exists)
+    from memory.profile_enricher import _extract_propositions, record_propositions
+    from memory.profile_store import ensure_profile_exists
     from classifier.pillar_classifier import classify_input
     user_id = payload.get("user_id", "prop_test")
     text = payload.get("text", "")
