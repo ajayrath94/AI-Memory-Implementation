@@ -699,6 +699,152 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
         return None
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# PROPOSITION EXTRACTION (new) — LLM returns subject-relation-object facts with
+# correction-detection and coreference. Processor below turns them into cluster
+# operations: pillar-by-type, weighted corrections, subject-grouped attributes.
+# ══════════════════════════════════════════════════════════════════════════
+
+# entity_type -> pillar, deterministic (don't trust the LLM's pillar field; it
+# leaks context, e.g. tea near health talk -> HEALTH. type is reliable, so map it.)
+_TYPE_TO_PILLAR = {
+    "person": "FAMILY", "food": "GENERAL", "health": "HEALTH_WELLNESS",
+    "hobby": "ASPIRATIONS", "artist": "ENTERTAINMENT", "media": "ENTERTAINMENT",
+    "place": "GENERAL", "belief": "GENERAL", "other": "GENERAL",
+}
+
+def _extract_propositions(text: str, user_id: str = "") -> list:
+    """Extract subject-relation-object propositions. Feeds known entities back in
+    so pronouns/roles ('beta','he') resolve to the named person (coreference)."""
+    known = _known_entities(user_id)
+    known_block = ("\nAlready known about this person (use these exact names when "
+                   "a pronoun or role refers to them):\n"
+                   + "\n".join(f"- {k}" for k in known)) if known else ""
+
+    prompt = f'''You extract PROPOSITIONS (subject-relation-object facts) from an elderly person's message, including Hindi/Hinglish.{known_block}
+
+For EACH fact return an object:
+- subject: canonical name (translate common nouns to English: "ghutne ka dard"->"knee pain"; keep proper nouns transliterated: "Vikram")
+- subject_ref: proper_name | son | daughter | husband | wife | grandchild | mother | father | pronoun | self
+- relation: likes | stopped_liking | lives_in | works_as | is | has_condition | feels | did
+- object: canonical target ("Amreeka"->"America") or null
+- entity_type: person | food | health | hobby | artist | media | place | belief | other
+- sentiment: positive | negative | neutral
+- salience: 0.0-1.0 (pain, money, family worries high; casual mentions low)
+- is_correction: true if the message CHANGES/RETRACTS a prior fact. Triggers: switched, gave up, "no wait", actually, "I meant", "prefer X now", "not X anymore"
+- replaces: the prior thing overridden ("coffee") or null
+- attributes: for people only {{"relationship":"son/daughter/etc","location":"city","occupation":"job"}}
+
+RULES:
+- Different relationships (son AND daughter) are DIFFERENT subjects — NEVER merge them.
+- A role/pronoun ("beta","my boy","he") referring to an already-known person uses that PERSON'S proper name as subject.
+- Do NOT emit a person's location/job as a separate place/thing — put it in their attributes.
+
+Return ONLY a JSON array. Message:
+"{text}"'''
+
+    try:
+        from google import genai
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        resp = client.models.generate_content(
+            model="gemini-flash-lite-latest", contents=prompt)
+        raw = (resp.text or "").strip().replace("```json", "").replace("```", "").strip()
+        props = json.loads(raw) if raw else []
+        return props if isinstance(props, list) else []
+    except Exception as e:
+        print(f"!!! [Propositions] EXTRACTION FAILED: {e}")
+        return []
+
+
+def record_propositions(props: list, classified, user_id: str, session_id: str = "") -> dict:
+    """Turn propositions into cluster operations:
+    - pillar from entity_type (deterministic)
+    - group by subject so one person's facts merge into one cluster + attributes
+    - corrections: fade the replaced cluster (weighted x0.3), let new dominate
+    - reuse _upsert_cluster (anchoring) + recompute trajectory."""
+    if not props or not user_id:
+        return {}
+    try:
+        from supabase_store import get_client
+        from memory.entity_resolver import resolve
+        db = get_client()
+
+        # Group propositions by subject (skip 'self' emotional statements — not clusterable)
+        by_subject = {}
+        for pr in props:
+            subj = (pr.get("subject") or "").strip()
+            if not subj or subj.lower() == "self":
+                continue
+            by_subject.setdefault(subj, []).append(pr)
+
+        affected_clusters = []
+        for subj, subj_props in by_subject.items():
+            first = subj_props[0]
+            etype = (first.get("entity_type") or "other").lower()
+            pillar = _TYPE_TO_PILLAR.get(etype, "GENERAL")
+
+            # merge attributes across all of this subject's props
+            attrs = {}
+            for pr in subj_props:
+                a = pr.get("attributes") or {}
+                if isinstance(a, dict):
+                    attrs.update({k: v for k, v in a.items() if v})
+
+            # sentiment/salience/relation from the strongest prop
+            sent_word = first.get("sentiment", "neutral")
+            sentiment = {"positive": 1.0, "negative": -0.6}.get(sent_word, 0.5)
+            salience = _safe_salience(first.get("salience"))
+            relation = first.get("relation") or "mentioned"
+
+            # CORRECTION: fade whatever this replaces
+            for pr in subj_props:
+                if pr.get("is_correction") and pr.get("replaces"):
+                    repl = pr["replaces"]
+                    try:
+                        old = (db.table("interest_clusters")
+                               .select("id,strength")
+                               .eq("user_id", user_id).ilike("label", f"%{repl}%")
+                               .limit(1).execute()).data
+                        if old:
+                            new_str = round((old[0].get("strength") or 0) * 0.3, 4)
+                            db.table("interest_clusters").update(
+                                {"strength": new_str}).eq("id", old[0]["id"]).execute()
+                            print(f"[Prop] correction: faded '{repl}' -> strength {new_str}")
+                    except Exception as e:
+                        print(f"[Prop] fade failed: {e}")
+
+            # resolve + upsert (reuse anchoring path)
+            res = resolve(subj, etype, pillar, user_id)
+            ev_strength = round(float(classified.core_score or 0.5), 4)
+            cluster_id = _upsert_cluster(user_id, res["name"], pillar, ev_strength,
+                                         res.get("embedding"), attrs or None)
+            if cluster_id:
+                affected_clusters.append(cluster_id)
+                # one event per subject (the relation is the state verb)
+                try:
+                    db.table("user_behavioral_events").insert({
+                        "user_id": user_id, "cluster_id": cluster_id,
+                        "session_id": session_id or None, "pillar": pillar,
+                        "sub_pillar": etype, "value": res["name"],
+                        "surface_form": subj[:200], "strength": ev_strength,
+                        "sentiment": sentiment, "salience": salience,
+                        "event_type": relation[:40],
+                        "relationship_type": first.get("subject_ref"),
+                        "embedding": res.get("embedding"),
+                    }).execute()
+                except Exception as e:
+                    print(f"[Prop] event insert failed: {e}")
+
+        for cid in set(affected_clusters):
+            recompute_cluster_trajectory(user_id, cid)
+
+        print(f"[Prop] recorded {len(by_subject)} subjects: {list(by_subject.keys())}")
+        return {"subjects": list(by_subject.keys())}
+    except Exception as e:
+        print(f"[Prop] record failed: {e}")
+        return {}
+
+
 def _safe_salience(v) -> float:
     """Salience should be 0-1, but the model sometimes returns a word. Coerce."""
     words = {"high": 0.9, "medium": 0.5, "low": 0.2, "none": 0.1}

@@ -260,3 +260,20 @@ Return ONLY a JSON array. Message:
         return {"text": text, "propositions": json.loads(raw) if raw else []}
     except Exception as e:
         return {"text": text, "error": str(e)}
+
+
+@router.post("/prop-ingest")
+def prop_ingest(payload: dict):
+    """TEMP: run the FULL new proposition pipeline (extract -> process -> store)
+    on a test user, without touching the live chat path. POST {user_id, text}.
+    Lets us validate the new extractor+processor before cutover. Remove after."""
+    from memory.profile_enricher import (_extract_propositions, record_propositions,
+                                          ensure_profile_exists)
+    from classifier.pillar_classifier import classify_input
+    user_id = payload.get("user_id", "prop_test")
+    text = payload.get("text", "")
+    ensure_profile_exists(user_id)
+    classified = classify_input(text)
+    props = _extract_propositions(text, user_id)
+    result = record_propositions(props, classified, user_id)
+    return {"text": text, "propositions": props, "stored": result}
