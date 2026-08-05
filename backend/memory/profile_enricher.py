@@ -105,7 +105,7 @@ Use empty string/list if not found. Do NOT infer or guess.
   "interests": ["specific interest/hobby mentioned"],
   "wants_to": ["specific goal/aspiration mentioned"],
   "entities": [
-    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}", "sentiment": "positive|negative|neutral", "salience": "0.0-1.0, how much this matters to them right now — pain and money worries are high, casual mentions low", "action": "what they did with it or what happened to it, one verb", "relationship_type": "concern|preference|person|routine|possession|aspiration — what KIND of thing this is to them"}}
+    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}", "sentiment": "positive|negative|neutral", "salience": "0.0-1.0, how much this matters to them right now — pain and money worries are high, casual mentions low", "action": "what they did with it or what happened to it, one verb", "relationship_type": "concern|preference|person|routine|possession|aspiration — what KIND of thing this is to them", "attributes": {{"relationship": "son/daughter/husband/wife/etc IF a family member", "location": "city/place they live IF mentioned", "occupation": "their job IF mentioned"}} }}
   ]
 }}
 
@@ -125,7 +125,8 @@ negative. Merely mentioning something factually is neutral.
 
 "I watched an old Kishore Kumar concert" -> [{{"name": "Kishore Kumar", "surface_form": "Kishore Kumar", "type": "artist", "pillar": "ENTERTAINMENT"}}]
 "Ghutne mein bahut dard hai" -> [{{"name": "knee pain", "surface_form": "ghutne mein dard", "type": "health", "pillar": "HEALTH_WELLNESS"}}]
-"My son Rohan lives in Delhi" -> [{{"name": "Rohan", "surface_form": "Rohan", "type": "person", "pillar": "FAMILY", "action": "lives in Delhi"}}]
+"My son Rohan lives in Delhi and works as a teacher" -> [{{"name": "Rohan", "surface_form": "Rohan", "type": "person", "pillar": "FAMILY", "relationship_type": "person", "action": "mentioned", "attributes": {{"relationship": "son", "location": "Delhi", "occupation": "teacher"}} }}]
+IMPORTANT: when a PERSON is described with where they live, their job, or their relationship, attach those as "attributes" of that person — do NOT emit the city or job as separate entities. The person is the anchor; their facts hang off them. So "Delhi" here is Rohan's attribute, not its own entity.
 FAMILY is for the person's relatives and loved ones — son, daughter, husband, wife, mother, father, beta, beti, brother, sister, grandchildren, and named family members. Use FAMILY (not GENERAL or ASPIRATIONS) whenever a family relationship is mentioned.
 Each entity gets its OWN pillar. One message can contain entities from different pillars.
 Return an empty list if the message mentions nothing specific.
@@ -611,7 +612,8 @@ def recompute_cluster_trajectory(user_id: str, cluster_id: str):
 
 
 def _upsert_cluster(user_id: str, label: str, pillar: str,
-                    strength: float, embedding: list = None) -> str:
+                    strength: float, embedding: list = None,
+                    attributes: dict = None) -> str:
     """
     Attach this event to the ongoing concern it belongs to, or start a new one.
 
@@ -633,7 +635,7 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
 
         if cluster_id:
             row = (db.table("interest_clusters")
-                   .select("event_count,strength,centroid")
+                   .select("event_count,strength,centroid,attributes")
                    .eq("id", cluster_id).limit(1).execute()).data
             row = row[0] if row else {}
             n   = row.get("event_count") or 0
@@ -657,6 +659,15 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
                     for o, e in zip(old_cen, embedding)
                 ]
 
+            if attributes:
+                existing_attrs = row.get("attributes") or {}
+                if isinstance(existing_attrs, str):
+                    import json as _j2
+                    try: existing_attrs = _j2.loads(existing_attrs)
+                    except Exception: existing_attrs = {}
+                merged = {**existing_attrs, **{k: v for k, v in attributes.items() if v}}
+                if merged:
+                    update["attributes"] = merged
             db.table("interest_clusters").update(update).eq("id", cluster_id).execute()
             try:
                 from memory.cluster_resolver import reconcile
@@ -672,6 +683,7 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
             "strength":    round(strength, 4),
             "event_count": 1,
             "centroid":    embedding,
+            "attributes":  {k: v for k, v in (attributes or {}).items() if v} or {},
         }).execute()).data
         new_id = created[0]["id"] if created else None
         if new_id:
@@ -728,7 +740,8 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
             res = resolve(name, ent_type, pillar, user_id)
 
             ev_strength = round(float(classified.core_score or 0.5), 4)
-            cluster_id  = _upsert_cluster(user_id, res["name"], pillar, ev_strength, res.get("embedding"))
+            cluster_id  = _upsert_cluster(user_id, res["name"], pillar, ev_strength,
+                                          res.get("embedding"), ent.get("attributes"))
 
             rows.append({
                 "user_id":      user_id,

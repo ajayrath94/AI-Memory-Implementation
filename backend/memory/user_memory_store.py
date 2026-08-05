@@ -486,7 +486,7 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
     try:
         db = get_client()
         rows = (db.table("interest_clusters")
-                .select("label,pillar,strength,event_count,centroid,trend,last_state,current_state,relationship")
+                .select("label,pillar,strength,event_count,centroid,trend,last_state,current_state,relationship,attributes")
                 .eq("user_id", user_id).eq("status", "active")
                 .order("strength", desc=True).limit(60).execute()).data or []
     except Exception as e:
@@ -526,12 +526,27 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
     for r in merged:
         by_pillar.setdefault(r.get("pillar", "OTHER"), []).append(r)
     def _label_with_trend(item):
-        """For health/concern clusters, surface the trajectory so Nancy knows
-        whether something is getting better or worse — not just that it exists."""
+        """Render a cluster for recall. People show their linked attributes
+        ("Shubham (her son, in Bangalore)"); health/finance show their trend."""
         label = item["label"]
         trend = item.get("trend")
         pillar = item.get("pillar", "")
-        # Trend matters most for health & worries; skip it for interests.
+        # People / family: surface attributes so the person is a rich anchor.
+        attrs = item.get("attributes") or {}
+        if isinstance(attrs, str):
+            try: attrs = json.loads(attrs)
+            except Exception: attrs = {}
+        if attrs:
+            bits = []
+            rel = attrs.get("relationship")
+            loc = attrs.get("location")
+            occ = attrs.get("occupation")
+            if rel: bits.append(rel)
+            if loc: bits.append(f"in {loc}")
+            if occ: bits.append(occ)
+            if bits:
+                return f"{label} ({', '.join(bits)})"
+        # Health / finance: surface the trajectory.
         if pillar in ("HEALTH_WELLNESS", "FINANCE") and trend and trend not in ("new", "stable"):
             return f"{label} ({trend})"
         return label
