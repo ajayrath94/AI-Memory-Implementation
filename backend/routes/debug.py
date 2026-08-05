@@ -223,3 +223,40 @@ def memory_trace(user_id: str):
         out["recall"]["error"] = str(e)
 
     return out
+
+
+@router.post("/prop-extract")
+def prop_extract(payload: dict):
+    """TEMP: test proposition extraction on the deployed backend (has google-genai).
+    POST {"text": "..."} -> returns the LLM's proposition array. Remove after tuning."""
+    import os, json
+    text = payload.get("text", "")
+    PROMPT = '''You extract PROPOSITIONS (subject-relation-object facts) from an elderly person's message, including Hindi/Hinglish.
+
+For EACH fact return an object:
+- subject: canonical name (translate common nouns to English: "ghutne ka dard"->"knee pain"; keep proper nouns: "Vikram")
+- subject_ref: proper_name | son | daughter | husband | wife | grandchild | pronoun | self
+- relation: likes | stopped_liking | lives_in | works_as | is | has_condition | feels | did
+- object: canonical target ("Amreeka"->"America") or null
+- entity_type: person | food | health | hobby | artist | media | place | belief | other
+- pillar: FAMILY | HEALTH_WELLNESS | ENTERTAINMENT | ASPIRATIONS | FINANCE | GENERAL. Pillar follows entity_type, NOT sentence context.
+- sentiment: positive | negative | neutral
+- is_correction: true if message CHANGES/RETRACTS a prior fact (switched, gave up, "no wait", actually, "I meant", "prefer X now", "not X anymore")
+- replaces: prior thing overridden ("coffee") or null
+- attributes: for people only {relationship, location, occupation}
+
+RULES:
+- Different relationships (son AND daughter) are DIFFERENT subjects — NEVER merge.
+- A role/pronoun ("beta","my boy","he") for an already-named person uses that PERSON'S proper name as subject.
+- "switched to tea, gave up coffee" -> [{"subject":"tea","relation":"likes","is_correction":true,"replaces":"coffee"},{"subject":"coffee","relation":"stopped_liking","is_correction":true,"replaces":null}]
+
+Return ONLY a JSON array. Message:
+"''' + text + '"'
+    try:
+        from google import genai
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        resp = client.models.generate_content(model="gemini-flash-lite-latest", contents=PROMPT)
+        raw = (resp.text or "").strip().replace("```json", "").replace("```", "").strip()
+        return {"text": text, "propositions": json.loads(raw) if raw else []}
+    except Exception as e:
+        return {"text": text, "error": str(e)}
