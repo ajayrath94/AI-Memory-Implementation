@@ -409,10 +409,20 @@ def enrich_profile_from_message(text: str, classified, user_id: str, session_id:
     # ── Path 2: Haiku micro-extraction ────────────────────────────────────────
     should_run, context_hint = _should_run_haiku(classified)
     if should_run:
+        # NEW: proposition-based extraction for clusters/events (subject-relation-
+        # object with correction-detection, coreference, pillar-by-type). Replaces
+        # the old entity path for cluster storage. Old _haiku_extract still runs
+        # below for profile-field merge (name/health/language) until that migrates.
+        try:
+            props = _extract_propositions(text, user_id)
+            if props:
+                record_propositions(props, classified, user_id, session_id)
+        except Exception as e:
+            print(f"[Propositions] live path failed, falling back: {e}")
+
         extracted = _haiku_extract(text, context_hint, user_id)
         if extracted:
-            # Raw interest signal for the recommendation engine
-            record_entity_events(extracted.get("entities", []), classified, user_id, session_id)
+            # (cluster storage now handled by record_propositions above)
             haiku_updates = _merge_haiku_output(extracted, user_id)
             # Deep merge haiku updates into updates
             for key, val in haiku_updates.items():
