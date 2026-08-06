@@ -781,7 +781,6 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
         for subj, subj_props in by_subject.items():
             first = subj_props[0]
             etype = (first.get("entity_type") or "other").lower()
-            pillar = _TYPE_TO_PILLAR.get(etype, "GENERAL")
 
             # merge attributes across all of this subject's props
             attrs = {}
@@ -789,6 +788,16 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                 a = pr.get("attributes") or {}
                 if isinstance(a, dict):
                     attrs.update({k: v for k, v in a.items() if v})
+
+            # A person WITH a family relationship is FAMILY regardless of type
+            # ("Vikram lives_in America" arrives as type=place, but he is her son).
+            if attrs.get("relationship") or any(
+                    pr.get("subject_ref") in ("son","daughter","husband","wife",
+                                              "grandchild","mother","father")
+                    for pr in subj_props):
+                pillar = "FAMILY"
+            else:
+                pillar = _TYPE_TO_PILLAR.get(etype, "GENERAL")
 
             # sentiment/salience/relation from the strongest prop
             sent_word = first.get("sentiment", "neutral")
@@ -812,6 +821,23 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                             print(f"[Prop] correction: faded '{repl}' -> strength {new_str}")
                     except Exception as e:
                         print(f"[Prop] fade failed: {e}")
+
+            # If this subject is itself being GIVEN UP (relation stopped_liking),
+            # don't upsert it as a fresh interest — that would re-add strength and
+            # cancel the fade. The negative signal is already applied above.
+            if any(pr.get("relation") == "stopped_liking" for pr in subj_props):
+                print(f"[Prop] '{subj}' retracted — fading, not re-adding")
+                try:
+                    gone = (db.table("interest_clusters").select("id,strength")
+                            .eq("user_id", user_id).ilike("label", f"%{subj}%")
+                            .limit(1).execute()).data
+                    if gone:
+                        faded = round((gone[0].get("strength") or 0) * 0.3, 4)
+                        db.table("interest_clusters").update(
+                            {"strength": faded}).eq("id", gone[0]["id"]).execute()
+                except Exception as e:
+                    print(f"[Prop] retract-fade failed: {e}")
+                continue
 
             # resolve + upsert (reuse anchoring path)
             res = resolve(subj, etype, pillar, user_id)
