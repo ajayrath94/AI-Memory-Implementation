@@ -676,6 +676,33 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
                 print(f"[Cluster] reconcile failed: {e}")
             return cluster_id
 
+        # Exact-label safety net: find_cluster scopes by pillar + centroid, but the
+        # unique constraint is (user_id, label) across ALL pillars. If a cluster
+        # with this exact label already exists (e.g. stored under a different
+        # pillar earlier), UPDATE it instead of inserting — avoids the dup-key
+        # collision AND heals stale pillars (Vikram GENERAL -> FAMILY on re-mention).
+        try:
+            dupe = (db.table("interest_clusters").select("id,strength,event_count,attributes")
+                    .eq("user_id", user_id).eq("label", label).limit(1).execute()).data
+        except Exception:
+            dupe = None
+        if dupe:
+            d = dupe[0]
+            merged_attrs = d.get("attributes") or {}
+            if isinstance(merged_attrs, str):
+                try: merged_attrs = json.loads(merged_attrs)
+                except Exception: merged_attrs = {}
+            merged_attrs.update({k: v for k, v in (attributes or {}).items() if v})
+            db.table("interest_clusters").update({
+                "strength":    round((d.get("strength") or 0) + strength, 4),
+                "event_count": (d.get("event_count") or 0) + 1,
+                "pillar":      pillar,
+                "last_event":  "now()",
+                "status":      "active",
+                "attributes":  merged_attrs,
+            }).eq("id", d["id"]).execute()
+            return d["id"]
+
         created = (db.table("interest_clusters").insert({
             "user_id":     user_id,
             "label":       label,
@@ -769,13 +796,23 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
         from memory.entity_resolver import resolve
         db = get_client()
 
-        # Group propositions by subject (skip 'self' emotional statements — not clusterable)
+        # Group propositions by the ENTITY TO REMEMBER.
+        # For "I love coffee", subject is "self" but the thing to cluster is the
+        # OBJECT (coffee). For "Vikram lives in America", the subject (Vikram) is
+        # the entity. So: if subject is self/the user, cluster the object; else
+        # cluster the subject. Pure feelings with no object (self feels lonely)
+        # have nothing to cluster and are skipped.
         by_subject = {}
         for pr in props:
             subj = (pr.get("subject") or "").strip()
-            if not subj or subj.lower() == "self":
-                continue
-            by_subject.setdefault(subj, []).append(pr)
+            obj = (pr.get("object") or "").strip()
+            if subj.lower() in ("self", "user", "i", "me", ""):
+                key = obj                      # cluster the thing they mentioned
+            else:
+                key = subj                     # cluster the named entity
+            if not key or key.lower() in ("self", "user"):
+                continue                       # nothing concrete to remember
+            by_subject.setdefault(key, []).append(pr)
 
         affected_clusters = []
         for subj, subj_props in by_subject.items():
