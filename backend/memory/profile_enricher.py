@@ -742,13 +742,13 @@ def _extract_propositions(text: str, user_id: str = "") -> list:
     """Extract subject-relation-object propositions. Feeds known entities back in
     so pronouns/roles ('beta','he') resolve to the named person (coreference)."""
     known = _known_entities(user_id)
-    known_block = ("\nAlready known about this person. Use these exact names when a "
-                   "pronoun or role refers to them (coreference), AND when the "
-                   "message CORRECTS or REPLACES one of these, put that known name "
-                   "in the 'replaces' field (e.g. if they said 'no wait, I prefer X' "
-                   "and a known favourite of the same kind is listed here, that "
-                   "known name is what X replaces):\n"
-                   + "\n".join(f"- {k}" for k in known)) if known else ""
+    known_block = ("\nPeople/things already known about this person:\n"
+                   + "\n".join(f"- {k}" for k in known)
+                   + "\nUse these names ONLY to resolve a pronoun or role that clearly "
+                     "refers to one of them ('he'/'beta' -> the known son). NEVER make "
+                     "a known name the subject of a statement that is not about them. "
+                     "'I love Lata' is about the USER (subject=self), NOT about any "
+                     "known person. When unsure, keep the natural subject.") if known else ""
 
     prompt = f'''You extract PROPOSITIONS (subject-relation-object facts) from an elderly person's message, including Hindi/Hinglish.{known_block}
 
@@ -808,7 +808,13 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
         for pr in props:
             subj = (pr.get("subject") or "").strip()
             obj = (pr.get("object") or "").strip()
-            if subj.lower() in ("self", "user", "i", "me", ""):
+            ref = (pr.get("subject_ref") or "").strip().lower()
+            # Trust subject_ref over subject. The known-entities hint sometimes makes
+            # the LLM wrongly stuff a known name into `subject` while still (correctly)
+            # marking subject_ref="self" — e.g. "I love Lata" -> subject=Arjun,
+            # ref=self, object=Lata. When ref says self, the statement is the USER's
+            # and the thing to remember is the OBJECT, no matter what's in subject.
+            if ref in ("self", "user", "i", "me") or subj.lower() in ("self", "user", "i", "me", ""):
                 key = obj                      # cluster the thing they mentioned
             else:
                 key = subj                     # cluster the named entity
