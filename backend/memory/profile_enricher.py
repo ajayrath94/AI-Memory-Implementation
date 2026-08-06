@@ -316,32 +316,11 @@ def _merge_haiku_output(extracted: dict, user_id: str) -> dict:
 
         updates["family"] = {k: v for k, v in family.items() if v}
 
-    interests_list = extracted.get("interests", [])
-    if interests_list:
-        # Only add to interests after 3+ mentions (threshold check)
-        try:
-            from supabase_store import get_client
-            db = get_client()
-            for interest in interests_list:
-                # Check how many times this interest has been mentioned
-                count = db.table("user_behavioral_events")                    .select("id", count="exact")                    .eq("user_id", user_id)                    .ilike("value", f"%{interest[:20]}%")                    .execute()
-                mention_count = count.count or 0
-                if mention_count >= 3:
-                    # Strong interest — add to profile
-                    existing = updates.get("interests", {})
-                    hobbies = existing.get("hobbies", [])
-                    if interest not in hobbies:
-                        hobbies.append(interest)
-                    updates["interests"] = {"hobbies": hobbies}
-                    print(f"[Enricher] Interest promoted: {interest} ({mention_count} mentions)")
-                else:
-                    print(f"[Enricher] Interest weak ({mention_count}/3): {interest} — not added yet")
-        except Exception as e:
-            print(f"[Enricher] Interest threshold check failed: {e}")
-            # Fallback: still add if extraction is very confident
-            if len(interests_list) > 0:
-                updates["interests"] = {"hobbies": interests_list}
-
+    # Interest storage is now owned by the proposition pipeline
+    # (record_propositions): every interest becomes a cluster with strength
+    # scaled by the LLM's salience classification — a stated passion surfaces
+    # immediately, a passing mention accumulates over time. The old "3 mentions
+    # before adding" gate is removed; it dropped single-mention interests.
     goals = extracted.get("wants_to", [])
     if goals:
         updates["life_context"] = updates.get("life_context", {})
@@ -610,6 +589,15 @@ def recompute_cluster_trajectory(user_id: str, cluster_id: str):
     try:
         from supabase_store import get_client
         db = get_client()
+        # Trend only makes sense for things with a health/finance trajectory —
+        # a person (FAMILY) or an interest doesn't "improve" or "worsen". Check
+        # the cluster's pillar and skip trend for non-trajectory pillars.
+        crow = (db.table("interest_clusters").select("pillar")
+                .eq("id", cluster_id).limit(1).execute()).data
+        pillar = crow[0].get("pillar") if crow else None
+        if pillar not in ("HEALTH_WELLNESS", "FINANCE"):
+            return
+
         evs = (db.table("user_behavioral_events")
                .select("sentiment,event_type,relationship_type,created_at")
                .eq("cluster_id", cluster_id).order("created_at", desc=False)
@@ -901,7 +889,12 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
 
             # resolve + upsert (reuse anchoring path)
             res = resolve(subj, etype, pillar, user_id)
-            ev_strength = round(float(classified.core_score or 0.5), 4)
+            # Strength scales by the LLM's salience classification: a stated
+            # passion ("I love X", salience~0.8) stores strong and surfaces now;
+            # a passing mention ("watched some cricket", ~0.3) stores weak and
+            # only surfaces if it accumulates over repeated mentions. The LLM
+            # judges importance; we just multiply. No thresholds, no verb rules.
+            ev_strength = round(float(classified.core_score or 0.5) * max(0.15, salience), 4)
             cluster_id = _upsert_cluster(user_id, res["name"], pillar, ev_strength,
                                          res.get("embedding"), attrs or None)
             if cluster_id:
