@@ -744,8 +744,12 @@ def _extract_propositions(text: str, user_id: str = "") -> list:
     """Extract subject-relation-object propositions. Feeds known entities back in
     so pronouns/roles ('beta','he') resolve to the named person (coreference)."""
     known = _known_entities(user_id)
-    known_block = ("\nAlready known about this person (use these exact names when "
-                   "a pronoun or role refers to them):\n"
+    known_block = ("\nAlready known about this person. Use these exact names when a "
+                   "pronoun or role refers to them (coreference), AND when the "
+                   "message CORRECTS or REPLACES one of these, put that known name "
+                   "in the 'replaces' field (e.g. if they said 'no wait, I prefer X' "
+                   "and a known favourite of the same kind is listed here, that "
+                   "known name is what X replaces):\n"
                    + "\n".join(f"- {k}" for k in known)) if known else ""
 
     prompt = f'''You extract PROPOSITIONS (subject-relation-object facts) from an elderly person's message, including Hindi/Hinglish.{known_block}
@@ -842,22 +846,31 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             salience = _safe_salience(first.get("salience"))
             relation = first.get("relation") or "mentioned"
 
-            # CORRECTION: fade whatever this replaces
+            # CORRECTION: fade ONLY what the LLM explicitly identified as replaced,
+            # and ONLY if it actually exists. We do NOT guess a target — a
+            # correction that doesn't resolve to a real cluster is left alone
+            # (recency lets the new preference dominate anyway). Failing safe here
+            # means we never fade the wrong memory; the worst case is a stale old
+            # preference lingering slightly, which is recoverable. Guessing is not.
             for pr in subj_props:
-                if pr.get("is_correction") and pr.get("replaces"):
-                    repl = pr["replaces"]
-                    try:
-                        old = (db.table("interest_clusters")
-                               .select("id,strength")
-                               .eq("user_id", user_id).ilike("label", f"%{repl}%")
-                               .limit(1).execute()).data
-                        if old:
-                            new_str = round((old[0].get("strength") or 0) * 0.3, 4)
-                            db.table("interest_clusters").update(
-                                {"strength": new_str}).eq("id", old[0]["id"]).execute()
-                            print(f"[Prop] correction: faded '{repl}' -> strength {new_str}")
-                    except Exception as e:
-                        print(f"[Prop] fade failed: {e}")
+                if not (pr.get("is_correction") and pr.get("replaces")):
+                    continue
+                repl = str(pr["replaces"]).strip()
+                if not repl or repl.lower() == key.lower():
+                    continue
+                try:
+                    old_c = (db.table("interest_clusters").select("id,strength,label")
+                             .eq("user_id", user_id).ilike("label", f"%{repl}%")
+                             .limit(1).execute()).data
+                    if old_c:                       # validated: it exists
+                        new_str = round((old_c[0].get("strength") or 0) * 0.3, 4)
+                        db.table("interest_clusters").update(
+                            {"strength": new_str}).eq("id", old_c[0]["id"]).execute()
+                        print(f"[Prop] correction faded '{old_c[0]['label']}' -> {new_str}")
+                    else:
+                        print(f"[Prop] correction target '{repl}' not found — left alone")
+                except Exception as e:
+                    print(f"[Prop] fade failed: {e}")
 
             # If this subject is itself being GIVEN UP (relation stopped_liking),
             # don't upsert it as a fresh interest — that would re-add strength and
