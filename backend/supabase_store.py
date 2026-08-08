@@ -30,6 +30,48 @@ def get_session(session_id: str) -> Optional[dict]:
     result = db.table("sessions").select("*").eq("id", session_id).execute()
     return result.data[0] if result.data else None
 
+# ── Hybrid session model (continuation window + gap-based rollover) ────────────
+# A session CONTINUES if the user returns within CONTINUATION_WINDOW_HOURS
+# (no fragmentation — coming back soon resumes the same session). After a longer
+# gap, the previous session is considered ended and gets summarized, and a fresh
+# session begins. This is what makes cross-session memory build correctly.
+CONTINUATION_WINDOW_HOURS = 4
+
+def get_latest_session(user_id: str = "default") -> Optional[dict]:
+    """Most recent session for this user (by updated_at)."""
+    db = get_client()
+    result = (db.table("sessions").select("*")
+              .eq("user_id", user_id)
+              .order("updated_at", desc=True).limit(1).execute())
+    return result.data[0] if result.data else None
+
+def _hours_since(ts_str: str) -> float:
+    from datetime import datetime, timezone
+    try:
+        t = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - t).total_seconds() / 3600.0
+    except Exception:
+        return 1e9  # unparseable → treat as very old
+
+def get_previous_unsummarized_session(user_id: str, exclude_id: str = "") -> Optional[dict]:
+    """The user's most recent session that still needs summarizing (summary IS NULL)
+    and has enough messages. Used to summarize the PREVIOUS session when a new one
+    starts. Returns a real session row whose messages actually exist under its id."""
+    db = get_client()
+    result = (db.table("sessions").select("*")
+              .eq("user_id", user_id).is_("summary", "null")
+              .order("updated_at", desc=True).limit(5).execute())
+    for s in (result.data or []):
+        if s["id"] == exclude_id:
+            continue
+        # must have >=2 messages to be worth summarizing
+        msgs = (db.table("messages").select("id", count="exact")
+                .eq("session_id", s["id"]).execute())
+        if (msgs.count or 0) >= 2:
+            return s
+    return None
+
+
 def get_or_create_session(session_id: Optional[str], model: str,
                            user_id: str = "default") -> dict:
     if session_id:

@@ -23,6 +23,7 @@ from memory.decay.decay_memory import track_decay
 from store.pillar_vector_store import register_pillars
 from supabase_store import (
     get_or_create_session, save_message, get_session_messages,
+    create_session, get_client,
     update_session_weight, update_session_title,
     save_stm_cluster, get_stm_clusters,
     update_stm_recall, promote_stm_to_ltm,
@@ -502,17 +503,37 @@ async def process_input(text: str, model: str,
                         session_id: Optional[str],
                         user_id: str = "default") -> dict:
 
-    # 1. Get/create session
-    session = get_or_create_session(session_id, model, user_id)
-    sid     = session["id"]
-    is_new  = session_id != sid
+    # 1. Resolve session with the HYBRID model (continuation window + gap rollover).
+    #    - If the user has a recent session (within CONTINUATION_WINDOW_HOURS),
+    #      continue it — coming back soon resumes, no fragmentation.
+    #    - Otherwise start a fresh session; the previous one has "ended" and will
+    #      be summarized below. We do NOT trust the client-supplied session_id for
+    #      this decision (it was the source of the summary-never-fires bug).
+    from supabase_store import (get_latest_session, _hours_since,
+                                CONTINUATION_WINDOW_HOURS,
+                                get_previous_unsummarized_session)
+    latest = get_latest_session(user_id)
+    if latest and _hours_since(latest.get("updated_at", "")) < CONTINUATION_WINDOW_HOURS:
+        session = latest                      # continuation — reuse recent session
+        is_new  = False
+        db = get_client()
+        db.table("sessions").update({"model": model, "updated_at": "now()"}).eq("id", latest["id"]).execute()
+    else:
+        session = create_session(model, user_id)   # gap or first ever — new session
+        is_new  = True
+    sid = session["id"]
     update_session_weight(sid)
 
-    # 2. Background summarize previous session
-    if is_new and session_id:
+    # 2. On a genuinely new session, summarize the PREVIOUS unsummarized session.
+    #    get_previous_unsummarized_session returns a real session UUID whose
+    #    messages actually exist — so the summarizer finds them (the fix).
+    if is_new:
         def _bg():
             try:
-                process_session_end(session_id, user_id)
+                prev = get_previous_unsummarized_session(user_id, exclude_id=sid)
+                if prev:
+                    process_session_end(prev["id"], user_id)
+                    print(f"[BG] Summarized previous session {prev['id'][:8]}")
             except Exception as e:
                 print(f"[BG] Session end failed: {e}")
         threading.Thread(target=_bg, daemon=True).start()
