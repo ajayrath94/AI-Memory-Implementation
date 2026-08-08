@@ -41,10 +41,21 @@ def decay_stm(user_id: str = "") -> Tuple[int, int]:
     db = get_client()
 
     try:
-        # Get all STM clusters (optionally filter by user via session join)
-        result = db.table("stm_clusters").select(
-            "id, recall_count, timestamp, session_id"
-        ).execute()
+        # Scope to THIS user's STM clusters only. STM links to a user via its
+        # session_id -> sessions.user_id. Without this, forgetting scanned and
+        # deleted every user's stale clusters on any one user's session end.
+        if user_id:
+            sess = (db.table("sessions").select("id")
+                    .eq("user_id", user_id).execute()).data or []
+            sess_ids = [s["id"] for s in sess]
+            if not sess_ids:
+                return 0, 0
+            result = (db.table("stm_clusters")
+                      .select("id, recall_count, timestamp, session_id")
+                      .in_("session_id", sess_ids).execute())
+        else:
+            result = db.table("stm_clusters").select(
+                "id, recall_count, timestamp, session_id").execute()
 
         deleted = 0
         kept    = 0
