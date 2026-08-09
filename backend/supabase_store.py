@@ -64,9 +64,9 @@ def get_previous_unsummarized_session(user_id: str, exclude_id: str = "") -> Opt
     for s in (result.data or []):
         if s["id"] == exclude_id:
             continue
-        # must have >=2 messages to be worth summarizing
+        # must have >=2 non-deleted messages to be worth summarizing
         msgs = (db.table("messages").select("id", count="exact")
-                .eq("session_id", s["id"]).execute())
+                .eq("session_id", s["id"]).not_.is_("is_deleted", "true").execute())
         if (msgs.count or 0) >= 2:
             return s
     return None
@@ -136,13 +136,17 @@ def save_message(session_id: str, role: str, content: str, model: str,
 
 def get_session_messages(session_id: str, limit: int = 100) -> List[dict]:
     db = get_client()
+    # Exclude soft-deleted messages. is_deleted may be null for legacy rows
+    # (predating the column) — null means NOT deleted, so filter on `is not true`.
     result = db.table("messages").select("*").eq("session_id", session_id)\
+               .not_.is_("is_deleted", "true")\
                .order("timestamp", desc=False).limit(limit).execute()
     return result.data
 
 def get_recent_messages(session_id: str, n: int = 4) -> List[dict]:
     db = get_client()
     result = db.table("messages").select("*").eq("session_id", session_id)\
+               .not_.is_("is_deleted", "true")\
                .order("timestamp", desc=True).limit(n).execute()
     return list(reversed(result.data))
 
