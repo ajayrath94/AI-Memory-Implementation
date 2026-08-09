@@ -350,11 +350,16 @@ def summarize_idle_sessions(idle_hours: float = 4.0, limit: int = 50) -> dict:
     from supabase_store import get_client, _hours_since
     db = get_client()
     try:
-        # Order NEWEST-first so recently-idle conversations get summarized
-        # promptly; an ancient backlog of unsummarized test sessions must not
-        # crowd out a user who just went idle. limit caps work per sweep.
+        # Filter by idle-cutoff IN THE QUERY (not in Python after limit) — else a
+        # batch of fresh sessions that fail the idle check consumes the limit and
+        # genuinely-idle sessions never get fetched. Only pull sessions whose
+        # updated_at is older than the cutoff, newest-qualifying first.
+        import datetime
+        cutoff = (datetime.datetime.now(datetime.timezone.utc)
+                  - datetime.timedelta(hours=idle_hours)).isoformat()
         rows = (db.table("sessions").select("id,user_id,updated_at")
                 .is_("summary", "null")
+                .lt("updated_at", cutoff)
                 .order("updated_at", desc=True).limit(limit).execute()).data or []
     except Exception as e:
         print(f"[Backstop] read failed: {e}")
