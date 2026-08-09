@@ -113,3 +113,25 @@ async def edit_message(req: EditRequest):
         session_id = req.session_id,
         user_id    = req.user_id,
     )
+
+
+class DeleteRequest(BaseModel):
+    message_id: str
+    reply_id:   Optional[str] = None
+    user_id:    str = "default"
+
+
+@router.post("/delete")
+async def delete_message(req: DeleteRequest):
+    """Soft-delete a message (and optionally its reply). The row is kept as a
+    trace (content preserved, is_deleted=True) but excluded from all memory
+    operations — recall, summarization, and context all filter is_deleted."""
+    from supabase_store import get_client
+    db = get_client()
+    ids = [req.message_id] + ([req.reply_id] if req.reply_id else [])
+    for mid in ids:
+        try:
+            db.table("messages").update({"is_deleted": True}).eq("id", mid).execute()
+        except Exception as e:
+            print(f"[Delete] Failed to soft-delete {mid}: {e}")
+    return {"status": "deleted", "message_ids": ids}
