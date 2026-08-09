@@ -23,6 +23,16 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
     from memory.proactive_engine import proactive_check
     from memory.proactive_log import log_decision
 
+
+    # Memory backstop: summarize sessions idle past the continuation window that
+    # never got summarized (users who didn't return to trigger it normally).
+    if not dry_run:
+        try:
+            from memory.user_memory_store import summarize_idle_sessions
+            summarize_idle_sessions()
+        except Exception as e:
+            print(f"[Scheduler] backstop failed: {e}")
+
     users = _active_user_ids()
     results = []
 

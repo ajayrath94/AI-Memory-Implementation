@@ -277,3 +277,11 @@ def prop_ingest(payload: dict):
     props = _extract_propositions(text, user_id)
     result = record_propositions(props, classified, user_id)
     return {"text": text, "propositions": props, "stored": result}
+
+
+@router.post("/backstop")
+def run_backstop(payload: dict = None):
+    """Trigger the idle-session summarization backstop."""
+    from memory.user_memory_store import summarize_idle_sessions
+    idle = (payload or {}).get("idle_hours", 4.0)
+    return summarize_idle_sessions(idle_hours=idle)

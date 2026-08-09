@@ -339,6 +339,35 @@ def build_fingerprint(trend: dict, dominant_pillars: List[str],
 
 # ── On session end ─────────────────────────────────────────────────────────────
 
+def summarize_idle_sessions(idle_hours: float = 4.0, limit: int = 50) -> dict:
+    """BACKSTOP for the hybrid session model. The normal path summarizes a
+    previous session when the user STARTS a new one. But a user who has one
+    conversation and never returns would never get summarized. This sweeps
+    sessions that are idle beyond the continuation window and still have no
+    summary, and summarizes them — so cross-session memory is complete even
+    for users who don't come back. Meant to be called periodically (heartbeat).
+    """
+    from supabase_store import get_client, _hours_since
+    db = get_client()
+    try:
+        rows = (db.table("sessions").select("id,user_id,updated_at")
+                .is_("summary", "null")
+                .order("updated_at", desc=False).limit(limit).execute()).data or []
+    except Exception as e:
+        print(f"[Backstop] read failed: {e}")
+        return {"error": str(e)}
+    done = 0
+    for s in rows:
+        if _hours_since(s.get("updated_at", "")) >= idle_hours:
+            try:
+                process_session_end(s["id"], s.get("user_id", "default"))
+                done += 1
+            except Exception as e:
+                print(f"[Backstop] summarize failed for {s['id'][:8]}: {e}")
+    print(f"[Backstop] summarized {done} idle sessions")
+    return {"summarized": done, "scanned": len(rows)}
+
+
 def process_session_end(session_id: str, user_id: str = "default"):
     """
     Called when a session ends:
