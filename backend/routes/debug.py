@@ -281,7 +281,16 @@ def prop_ingest(payload: dict):
 
 @router.post("/backstop")
 def run_backstop(payload: dict = None):
-    """Trigger the idle-session summarization backstop."""
+    """Trigger the idle-session summarization backstop in the BACKGROUND so the
+    HTTP response returns immediately (sweeping many idle sessions can exceed the
+    edge timeout otherwise). Fire-and-forget, like /end-session."""
+    import threading
     from memory.user_memory_store import summarize_idle_sessions
-    idle = (payload or {}).get("idle_hours", 4.0)
-    return summarize_idle_sessions(idle_hours=idle)
+    idle = (payload or {}).get("idle_hours", 4.0) if payload else 4.0
+    def _bg():
+        try:
+            summarize_idle_sessions(idle_hours=idle)
+        except Exception as e:
+            print(f"[Backstop endpoint] failed: {e}")
+    threading.Thread(target=_bg, daemon=True).start()
+    return {"status": "backstop running in background", "idle_hours": idle}
