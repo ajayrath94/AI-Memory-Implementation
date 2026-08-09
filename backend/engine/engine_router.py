@@ -107,10 +107,21 @@ def _retrieve_memory(
         return None
 
     results.sort(key=lambda x: x["rank"], reverse=True)
-    return "\n".join(
-        f"[{r['tier'].upper()} {round(r['score']*100)}%] {r['text']}"
-        for r in results[:top_k]
-    )
+    # Clean what reaches Nancy: strip the internal tier/score tag and the
+    # "PILLAR:" prefix so she sees plain recalled content, not plumbing metadata.
+    def _clean(t: str) -> str:
+        t = t.strip()
+        if ":" in t[:20]:
+            head, _, rest = t.partition(":")
+            if head.isupper() and len(head) <= 16:
+                t = rest.strip()
+        return t
+    lines = []
+    for r in results[:top_k]:
+        cleaned = _clean(r["text"])
+        if cleaned and len(cleaned) > 3:
+            lines.append(cleaned)
+    return "\n".join(lines) if lines else None
 
 
 # ── Context builder ────────────────────────────────────────────────────────────
