@@ -785,6 +785,36 @@ Return ONLY a JSON array. Message:
         return []
 
 
+
+_BARE_EMOTIONS = {
+    "proud", "happy", "sad", "worried", "scared", "angry", "lonely", "anxious",
+    "grateful", "excited", "nervous", "upset", "content", "hopeful", "afraid",
+    "khush", "udaas", "pareshan", "gussa", "akela", "dukhi", "naraz",
+}
+_VAGUE_HEALTH = {
+    "tabiyat theek nahi", "not well", "not feeling well", "feeling unwell",
+    "tabiyat kharab", "unwell", "not good", "bimaar", "theek nahi",
+}
+
+def _is_durable_fact(name: str, ptype: str = "", rel_type: str = "") -> bool:
+    """Gate out things that shouldn't become their own memory cluster:
+    bare emotions ('proud') and vague, non-specific complaints ('tabiyat theek
+    nahi'). Uses the extracted name/type — no extra LLM call. Emotions belong to
+    the summary's texture, not the fact clusters; vague phrases should attach to
+    a concrete condition, not spawn a cluster."""
+    n = (name or "").strip().lower()
+    if not n or len(n) < 2:
+        return False
+    if n in _BARE_EMOTIONS:
+        return False
+    if n in _VAGUE_HEALTH:
+        return False
+    # a single word that is purely an emotion label, even if mispillar'd
+    if rel_type == "emotion" or ptype == "emotion":
+        return False
+    return True
+
+
 def record_propositions(props: list, classified, user_id: str, session_id: str = "") -> dict:
     """Turn propositions into cluster operations:
     - pillar from entity_type (deterministic)
@@ -826,6 +856,12 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
         for subj, subj_props in by_subject.items():
             first = subj_props[0]
             etype = (first.get("entity_type") or "other").lower()
+            # Gate: skip bare emotions ("proud") and vague complaints ("tabiyat
+            # theek nahi") — they belong to the summary's texture, not durable
+            # fact clusters. Uses already-extracted fields, no extra LLM call.
+            _rt = (first.get("relationship_type") or "").lower()
+            if not _is_durable_fact(subj, etype, _rt):
+                continue
 
             # merge attributes across all of this subject's props
             attrs = {}
