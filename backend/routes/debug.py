@@ -294,3 +294,11 @@ def run_backstop(payload: dict = None):
             print(f"[Backstop endpoint] failed: {e}")
     threading.Thread(target=_bg, daemon=True).start()
     return {"status": "backstop running in background", "idle_hours": idle}
+
+
+@router.post("/clean-clusters/{user_id}")
+def clean_clusters_endpoint(user_id: str, dry_run: bool = False):
+    """Run the Track 2 cluster-cleaner (vector-candidate + LLM-confirm merge/
+    rename/drop). Pass ?dry_run=true to preview without applying."""
+    from memory.cluster_cleaner import clean_clusters
+    return clean_clusters(user_id, dry_run=dry_run)
