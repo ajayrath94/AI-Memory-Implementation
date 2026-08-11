@@ -110,6 +110,17 @@ Use empty string/list if not found. Do NOT infer or guess.
 }}
 
 For "entities": extract the THING itself, never the whole sentence.
+
+"name" is ALWAYS a noun — a person, object, place, or activity-as-noun. NEVER a
+verb phrase, action, or feeling. The verb goes in "action", never in "name":
+- "bahut yaad aati hai beti ki" (I miss my daughter) -> name: "daughter", action: "misses"  NOT name: "missing daughter"
+- "doctor ne dawai di" (doctor gave medicine) -> name: "medicine", action: "prescribed"  NOT name: "was given medicine by doctor"
+- "roz gaane sunti hoon" (I listen to songs daily) -> name: "songs" (or the artist), action: "listens daily"  NOT name: "listen to songs daily"
+- "main proud feel karti hoon" (I feel proud) -> emit NOTHING; a bare feeling is not a thing to remember
+If the person CORRECTS themselves or talks ABOUT the conversation ("maine galti
+se kuch aur bola", "let me correct that", "I said the wrong name"), that is meta
+about the chat, NOT a durable fact — emit NOTHING for the correction statement
+itself (but DO emit the corrected fact, e.g. the right name).
 {known_block}
 
 "name" MUST be a canonical English key, so the same real thing always produces
@@ -811,6 +822,16 @@ def _is_durable_fact(name: str, ptype: str = "", rel_type: str = "") -> bool:
         return False
     # a single word that is purely an emotion label, even if mispillar'd
     if rel_type == "emotion" or ptype == "emotion":
+        return False
+    # Reject action-phrase names that slipped past extraction ("was given
+    # medicine by doctor", "missing daughter", "listen to songs daily"). A
+    # durable entity is a short noun, not a clause. Heuristic: multi-word names
+    # led by or containing verb/aux markers are actions, not things.
+    words = n.split()
+    _VERB_LEAD = {"was", "were", "is", "are", "am", "being", "been", "missing",
+                  "listen", "listening", "watching", "feeling", "given", "said",
+                  "told", "went", "going", "trying", "want", "wants", "mistakenly"}
+    if len(words) >= 3 and (words[0] in _VERB_LEAD or any(w in _VERB_LEAD for w in words[:2])):
         return False
     return True
 
