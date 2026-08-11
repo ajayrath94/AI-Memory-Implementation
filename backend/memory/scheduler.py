@@ -34,6 +34,15 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
             print(f"[Scheduler] backstop failed: {e}")
 
     users = _active_user_ids()
+    # Track 2 distillation: clean+merge clusters for active users (vector+LLM
+    # pass), on the heartbeat, off the hot path. Early-outs for <2 clusters.
+    if not dry_run:
+        for _uid in _active_user_ids():
+            try:
+                from memory.cluster_cleaner import clean_clusters
+                clean_clusters(_uid)
+            except Exception as _e:
+                print(f"[Scheduler] cluster clean failed for {_uid}: {_e}")
     results = []
 
     for uid in users:
