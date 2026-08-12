@@ -632,6 +632,16 @@ async def process_input(text: str, model: str,
         embedding=embedding,
     )
 
+    # 14b. Reminder detection — if the user asked to be reminded of something,
+    # store it with an absolute fire_at and surface a structured event the app
+    # renders as a confirmation card. None when no reminder is present.
+    reminder_event = None
+    try:
+        from memory.reminder_engine import detect_and_store_reminder
+        reminder_event = detect_and_store_reminder(user_id, text, sid)
+    except Exception as e:
+        print(f"[Reminder] detect failed: {e}")
+
     return {
         "reply":         reply,
         "session_id":    sid,
@@ -641,6 +651,7 @@ async def process_input(text: str, model: str,
         "api_triggers":  classified.api_triggers,
         "language":      classified.language,
         "tool_results":  tool_results,
+        "reminder":      reminder_event,
     }
 
 
