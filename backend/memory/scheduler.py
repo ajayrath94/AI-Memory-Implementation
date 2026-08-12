@@ -43,6 +43,26 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                 clean_clusters(_uid)
             except Exception as _e:
                 print(f"[Scheduler] cluster clean failed for {_uid}: {_e}")
+    # Fire due reminders — the reactive engine delivering prospective memory.
+    # A reminder becomes a proactive nudge via the existing proactive channel;
+    # mark_fired prevents re-delivery. Reminders are exact + costly-if-missed,
+    # so this runs deterministically every heartbeat.
+    if not dry_run:
+        try:
+            from memory.reminder_engine import get_due_reminders, mark_fired
+            from memory.proactive_log import log_decision
+            for _rem in get_due_reminders():
+                log_decision({
+                    "user_id": _rem["user_id"],
+                    "action":  "REMINDER",
+                    "reason":  "scheduled reminder due",
+                    "detail":  _rem.get("what"),
+                    "priority": "HIGH",
+                })
+                mark_fired(_rem["id"])
+                print(f"[Reminder] fired: {_rem.get('what')} for {_rem['user_id']}")
+        except Exception as _e:
+            print(f"[Scheduler] reminder firing failed: {_e}")
     results = []
 
     for uid in users:
