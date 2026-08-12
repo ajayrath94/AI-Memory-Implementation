@@ -306,6 +306,20 @@ TOOL RESULTS:
     if session_memory:
         nancy_persona += f"\nFROM THIS CONVERSATION:\n{session_memory}\n"
 
+    # ── Temporal awareness: Nancy must know the user's real local time so she
+    # can greet correctly AND resolve relative times ("kal", "12 baje") into
+    # actual dates for reminders. ──────────────────────────────────────────────
+    try:
+        from memory.time_context import time_context as _tctx
+        _tc = _tctx(user_id)
+        nancy_persona += f"""
+RIGHT NOW — the user's local time is {_tc['local_time']} ({_tc['slot']}), timezone {_tc['timezone']}.
+Greet and reference time based on THIS. When the user mentions a relative time
+("kal", "aaj shaam", "parso", "12 baje", "subah"), resolve it against this
+current local time into a concrete date and time.
+"""
+    except Exception:
+        pass
     # ── Current context with priority ────────────────────────────────────────
     nancy_persona += f"""
 CURRENT CONTEXT:
@@ -601,7 +615,7 @@ async def process_input(text: str, model: str,
         context_messages.append({"role": "user", "content": text})
 
     # 12. Nancy system prompt
-    system_prompt = _build_system_prompt(classified, user_memory, session_memory)
+    system_prompt = _build_system_prompt(classified, user_memory, session_memory, user_id)
 
     # 13. Call AI
     reply, tool_results = _route(model, system_prompt, context_messages, user_id=user_id)
