@@ -302,3 +302,27 @@ def clean_clusters_endpoint(user_id: str, dry_run: bool = False):
     rename/drop). Pass ?dry_run=true to preview without applying."""
     from memory.cluster_cleaner import clean_clusters
     return clean_clusters(user_id, dry_run=dry_run)
+
+
+@router.post("/fire-reminders")
+def fire_reminders_endpoint():
+    """Lightweight, fast: check due reminders and fire them. No LLM, no summarize
+    — just a DB query + deliver + mark. Meant for a TIGHT cron (every few min) so
+    reminders fire close to their time, separate from the heavy 15-min memory pass."""
+    from memory.reminder_engine import get_due_reminders, mark_fired
+    from memory.proactive_log import log_decision
+    fired = []
+    for rem in get_due_reminders():
+        try:
+            log_decision({
+                "user_id": rem["user_id"],
+                "action":  "REMINDER",
+                "reason":  "scheduled reminder due",
+                "detail":  rem.get("what"),
+                "priority": "HIGH",
+            })
+            mark_fired(rem["id"])
+            fired.append({"user_id": rem["user_id"], "what": rem.get("what")})
+        except Exception as e:
+            print(f"[FireReminders] failed for {rem.get('id')}: {e}")
+    return {"fired": len(fired), "reminders": fired}
