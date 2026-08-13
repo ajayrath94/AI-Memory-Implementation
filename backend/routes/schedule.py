@@ -57,19 +57,57 @@ def get_proactive_message(req: ProactiveRequest):
     return result
 
 
+def _next_undelivered_reminder(user_id: str):
+    """A fired reminder (proactive_events action=REMINDER) not yet surfaced to the
+    user (delivered_at IS NULL). A due reminder beats a generic check-in."""
+    from supabase_store import get_client
+    db = get_client()
+    try:
+        rows = (db.table("proactive_events").select("id,detail,created_at")
+                .eq("user_id", user_id).eq("action", "REMINDER")
+                .is_("delivered_at", "null")
+                .order("created_at", desc=False).limit(1).execute()).data or []
+        return rows[0] if rows else None
+    except Exception as e:
+        print(f"[Proactive] reminder lookup failed: {e}")
+        return None
+
+
+def _mark_reminder_delivered(event_id: str):
+    from supabase_store import get_client
+    from datetime import datetime, timezone
+    try:
+        get_client().table("proactive_events").update(
+            {"delivered_at": datetime.now(timezone.utc).isoformat(), "outcome": "delivered"}
+        ).eq("id", event_id).execute()
+    except Exception as e:
+        print(f"[Proactive] mark-delivered failed: {e}")
+
+
 @router.get("/proactive/{user_id}")
 def check_proactive(user_id: str, last_seen_hours: float = 8.0, hour: int = None):
-    """Quick GET to check if Nancy should open proactively."""
+    """Nancy's proactive open. A fired reminder is surfaced first (once); else the
+    normal situational script."""
+    rem = _next_undelivered_reminder(user_id)
+    if rem:
+        _mark_reminder_delivered(rem["id"])
+        what = rem.get("detail") or "kuch"
+        return {
+            "should_open": True,
+            "script": f"Arre, aapko yaad dilana tha \u2014 {what}! \U0001f60a Sab theek hai na?",
+            "slot": "reminder",
+            "priority": "high",
+            "reason": "user-set reminder due",
+            "should_call": False,
+            "source": "reminder",
+        }
     from memory.schedule_engine import generate_proactive_script, should_nancy_open
-
     opens = should_nancy_open(user_id, last_seen_hours)
     if not opens:
         return {"should_open": False}
-
     result = generate_proactive_script(user_id, hour=hour)
     result["should_open"] = True
     return result
-
 
 @router.get("/slots")
 def get_time_slots():
