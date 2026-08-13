@@ -183,6 +183,7 @@ No prose, only JSON."""
         "fire_at_local": _fmt(display_at),
         "fire_at_utc": display_at,
         "nudge_count": len(nudges),
+        "nudges": [{"at": n["at"], "message": n["message"]} for n in nudges],
         "status": "pending",
     }
 
