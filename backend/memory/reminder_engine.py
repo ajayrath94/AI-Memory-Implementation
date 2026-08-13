@@ -70,9 +70,12 @@ If it IS, do three things:
      hour" for a far-off event, use judgment — don't spam. EVERY nudge time must
      be at or before the event, never after, and in the future.
 
-3. For EACH nudge, write what Nancy SAYS — warm and informational for early
-   nudges, gently more urgent as the event approaches. Elderly user, natural
-   Hinglish, short and caring. Reference the event.
+3. For EACH nudge, write what Nancy SAYS TO the user — warm and informational
+   for early nudges, gently more urgent as the event approaches. Elderly user,
+   natural Hinglish, short and caring. Reference the event. Nancy is the SPEAKER
+   (the caring companion) — do NOT start the message with "Nancy," and never
+   address the user as "Nancy". Speak directly to the user (e.g. "Aaj doctor
+   appointment hai 3 baje, tayyari kar lena").
 
 Return ONLY JSON:
 {{"is_reminder": true,
