@@ -5,6 +5,7 @@ from routes.memory import router as memory_router
 from routes.voice import router as voice_router
 from routes.schedule import router as schedule_router
 from routes.reminders import router as reminders_router
+from routes.export import router as export_router
 from routes.care import router as care_router
 from routes.context import router as context_router
 from routes.alerts import router as alerts_router
@@ -37,6 +38,7 @@ app.include_router(memory_router,   prefix="/memory",   tags=["memory"],   depen
 app.include_router(voice_router,    prefix="/voice",    tags=["voice"],    dependencies=[Depends(require_api_key)])
 app.include_router(schedule_router, prefix="/schedule", tags=["schedule"], dependencies=[Depends(require_api_key)])
 app.include_router(reminders_router, prefix="/reminders", tags=["reminders"], dependencies=[Depends(require_api_key)])
+app.include_router(export_router, prefix="/export", tags=["export"], dependencies=[Depends(require_api_key)])
 app.include_router(care_router, prefix="/care", tags=["care"], dependencies=[Depends(require_api_key)])
 app.include_router(context_router, prefix="/context", tags=["context"], dependencies=[Depends(require_api_key)])
 app.include_router(alerts_router,   prefix="/alerts",   tags=["alerts"],   dependencies=[Depends(require_api_key)])
