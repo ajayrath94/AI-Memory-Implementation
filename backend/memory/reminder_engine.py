@@ -41,6 +41,11 @@ def detect_and_store_reminder(user_id: str, text: str, session_id: str = "") -> 
 
 User message: "{text}"
 
+NOTE: The assistant's name is Nancy. If the user's message starts with or
+contains "Nancy", they are ADDRESSING the assistant — "Nancy" is NEVER the
+subject, owner, or the user. Strip it. The reminder belongs to the USER, not
+Nancy. Never write "Nancy's appointment" and never address the user as "Nancy".
+
 Is this a request to be REMINDED of something later? (e.g. "kal 12 baje yaad
 dilana", "remind me tomorrow"). Only an explicit ask to be reminded/notified —
 NOT a general mention of a future plan.
