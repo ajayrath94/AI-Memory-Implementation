@@ -49,18 +49,18 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
     # so this runs deterministically every heartbeat.
     if not dry_run:
         try:
-            from memory.reminder_engine import get_due_reminders, mark_fired
+            from memory.reminder_engine import get_due_reminders, mark_nudge_fired
             from memory.proactive_log import log_decision
-            for _rem in get_due_reminders():
+            for _item in get_due_reminders():
+                _rem = _item["reminder"]
                 log_decision({
-                    "user_id": _rem["user_id"],
-                    "action":  "REMINDER",
-                    "reason":  "scheduled reminder due",
-                    "detail":  _rem.get("what"),
+                    "user_id": _rem["user_id"], "action": "REMINDER",
+                    "reason": "scheduled reminder due",
+                    "detail": _item.get("message") or _rem.get("what"),
                     "priority": "HIGH",
                 })
-                mark_fired(_rem["id"])
-                print(f"[Reminder] fired: {_rem.get('what')} for {_rem['user_id']}")
+                mark_nudge_fired(_rem["id"], _item["nudge_index"])
+                print(f"[Reminder] fired nudge for {_rem.get('what')} ({_rem['user_id']})")
         except Exception as _e:
             print(f"[Scheduler] reminder firing failed: {_e}")
     results = []

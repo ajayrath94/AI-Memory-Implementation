@@ -1,26 +1,28 @@
 """
-REMINDER ENGINE — the first module of the reactive engine.
+REMINDER ENGINE — the reactive engine's first module, now with smart nudges.
 
-User says "kal 12 baje doctor yaad dilana" -> we detect the reminder intent,
-resolve the relative time against the user's REAL local clock (time_context),
-store an absolute fire_at, and return a structured event the app shows as a
-card. The heartbeat later fires it deterministically.
+User says "kal 12 baje doctor yaad dilana" -> we detect the intent, and the LLM
+designs a NUDGE SCHEDULE appropriate to what it is: an appointment gets runway
+(morning-of, ~an hour before, just before); medicine gets one nudge at the time.
+If the user EXPLICITLY says how/when ("3 times", "only at 5", "an hour before"),
+that instruction wins. Each nudge carries its own message in Nancy's voice,
+escalating from informational to gently urgent.
 
-Reminders are EXACT and costly-if-wrong (a missed appointment), so this is a
-focused, single-purpose call — not folded into the fuzzy memory extraction.
+Reminders are EXACT and costly-if-wrong, so this is a focused single call.
 """
 import os, json
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 _MODEL = "claude-haiku-4-5-20251001"
+_MAX_NUDGES = 6   # hard safety cap regardless of what the LLM/user asks
 
 
 def detect_and_store_reminder(user_id: str, text: str, session_id: str = "") -> dict | None:
-    """Returns a structured reminder event if the message asked to be reminded
-    of something, else None. Stores it with an absolute UTC fire_at."""
+    """Detect a reminder request, design its nudge schedule, store it. Returns a
+    structured event for the app's confirmation card, or None."""
     try:
-        from memory.time_context import time_context, get_user_timezone
+        from memory.time_context import time_context
     except Exception:
         return None
 
@@ -28,7 +30,6 @@ def detect_and_store_reminder(user_id: str, text: str, session_id: str = "") -> 
     now_local = tc.get("local_time", "")
     tz_name = tc.get("timezone", "Asia/Kolkata")
 
-    # ---- focused extraction: is this a reminder? what + when ----
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -40,22 +41,51 @@ def detect_and_store_reminder(user_id: str, text: str, session_id: str = "") -> 
 
 User message: "{text}"
 
-Does the user ask to be REMINDED of something at a future time (e.g. "kal 12
-baje yaad dilana", "remind me tomorrow", "shaam ko yaad karana")? Only count an
-explicit request to be reminded / notified later — NOT general mentions of
-future plans.
+Is this a request to be REMINDED of something later? (e.g. "kal 12 baje yaad
+dilana", "remind me tomorrow"). Only an explicit ask to be reminded/notified —
+NOT a general mention of a future plan.
 
-If YES, resolve the time to an absolute local datetime based on the current
-local time above. Return ONLY JSON:
-{{"is_reminder": true, "what": "short description of what to remind about", "fire_at_local": "YYYY-MM-DD HH:MM"}}
+If NOT a reminder, return: {{"is_reminder": false}}
 
-If NO reminder request, return ONLY: {{"is_reminder": false}}
+If it IS, do three things:
 
+1. WHAT it is, and the EVENT time (when the thing actually happens), as an
+   absolute local datetime.
+
+2. Design the NUDGE SCHEDULE:
+   - If the user EXPLICITLY specified timing/frequency — specific times ("at 11
+     and 11:45"), a count ("remind me 3 times"), an interval ("every hour"), or
+     a lead ("an hour before") — HONOR IT EXACTLY. The user's instruction always
+     wins over your judgment.
+   - If the user gave NO nudge instruction (just the event), design a sensible
+     schedule for what KIND of thing it is:
+       * appointment / outing (doctor, meeting, travel) needs runway: a heads-up
+         the morning of, one about an hour before (time to get ready + travel),
+         and one just before.
+       * medicine / a quick task: usually ONE nudge at the time.
+       * something casual: one gentle nudge.
+   - If partially specified (e.g. a count but not times), honor what's given and
+     place the rest sensibly.
+   - Never more than {_MAX_NUDGES} nudges. If the user says something like "every
+     hour" for a far-off event, use judgment — don't spam. EVERY nudge time must
+     be at or before the event, never after, and in the future.
+
+3. For EACH nudge, write what Nancy SAYS — warm and informational for early
+   nudges, gently more urgent as the event approaches. Elderly user, natural
+   Hinglish, short and caring. Reference the event.
+
+Return ONLY JSON:
+{{"is_reminder": true,
+  "what": "short description",
+  "event_at_local": "YYYY-MM-DD HH:MM",
+  "nudges": [
+    {{"at_local": "YYYY-MM-DD HH:MM", "message": "Nancy's words for this nudge"}}
+  ]}}
 No prose, only JSON."""
 
     try:
         resp = client.messages.create(
-            model=_MODEL, max_tokens=300,
+            model=_MODEL, max_tokens=900,
             messages=[{"role": "user", "content": prompt}])
         raw = resp.content[0].text.strip()
         if raw.startswith("```"):
@@ -69,37 +99,61 @@ No prose, only JSON."""
         return None
 
     what = (data.get("what") or "").strip()
-    fire_local_str = (data.get("fire_at_local") or "").strip()
-    if not what or not fire_local_str:
+    event_local_str = (data.get("event_at_local") or "").strip()
+    raw_nudges = data.get("nudges") or []
+    if not what or not raw_nudges:
         return None
 
-    # ---- resolve local -> UTC ----
     try:
         tz = ZoneInfo(tz_name)
     except Exception:
         tz = ZoneInfo("Asia/Kolkata")
-    try:
-        # accept "YYYY-MM-DD HH:MM"
-        naive = datetime.strptime(fire_local_str, "%Y-%m-%d %H:%M")
-        fire_local = naive.replace(tzinfo=tz)
-        fire_utc = fire_local.astimezone(timezone.utc)
-    except Exception as e:
-        print(f"[Reminder] time parse failed ({fire_local_str}): {e}")
+
+    def _to_utc(s):
+        return datetime.strptime(s, "%Y-%m-%d %H:%M").replace(tzinfo=tz).astimezone(timezone.utc)
+
+    now_utc = datetime.now(timezone.utc)
+
+    # event time (optional but nice for display)
+    event_utc = None
+    if event_local_str:
+        try:
+            event_utc = _to_utc(event_local_str)
+        except Exception:
+            event_utc = None
+
+    # build the nudge list: convert to UTC, drop past ones, cap, sort
+    nudges = []
+    for n in raw_nudges:
+        at_s = (n.get("at_local") or "").strip()
+        msg = (n.get("message") or "").strip()
+        if not at_s or not msg:
+            continue
+        try:
+            at_utc = _to_utc(at_s)
+        except Exception:
+            continue
+        if at_utc <= now_utc:
+            continue   # skip past nudge times
+        nudges.append({"at": at_utc.isoformat(), "message": msg, "fired": False})
+
+    if not nudges:
+        print(f"[Reminder] all nudge times were in the past, skipping: {what}")
         return None
 
-    # don't store reminders in the past
-    if fire_utc <= datetime.now(timezone.utc):
-        print(f"[Reminder] resolved time is in the past, skipping: {fire_local_str}")
-        return None
+    nudges.sort(key=lambda x: x["at"])
+    nudges = nudges[:_MAX_NUDGES]
+    first_at = nudges[0]["at"]   # earliest nudge -> fire_at (keeps sort/display working)
 
-    # ---- store ----
     try:
         from supabase_store import get_client
         db = get_client()
         row = {
             "user_id": user_id,
             "what": what,
-            "fire_at": fire_utc.isoformat(),
+            "fire_at": first_at,
+            "event_at": event_utc.isoformat() if event_utc else None,
+            "nudges": nudges,
             "status": "pending",
             "source": "user",
             "session_id": session_id or None,
@@ -110,33 +164,75 @@ No prose, only JSON."""
         print(f"[Reminder] store failed: {e}")
         return None
 
-    # nicely formatted local time for the confirmation card
-    fire_at_display = fire_local.strftime("%d %b %Y, %I:%M %p")
-    print(f"[Reminder] stored '{what}' for {fire_at_display} ({user_id})")
+    # confirmation card: show the event (or first nudge) + how many nudges
+    def _fmt(iso):
+        return datetime.fromisoformat(iso).astimezone(tz).strftime("%d %b %Y, %I:%M %p")
+    display_at = event_utc.isoformat() if event_utc else first_at
+    print(f"[Reminder] stored '{what}' with {len(nudges)} nudge(s) ({user_id})")
     return {
         "id": rid,
         "what": what,
-        "fire_at_local": fire_at_display,
-        "fire_at_utc": fire_utc.isoformat(),
+        "fire_at_local": _fmt(display_at),
+        "fire_at_utc": display_at,
+        "nudge_count": len(nudges),
         "status": "pending",
     }
 
 
 def get_due_reminders(limit: int = 50) -> list:
-    """Pending reminders whose fire_at has passed — for the heartbeat."""
+    """Reminders that have at least one nudge due now (at <= now, not fired).
+    Returns each as {reminder, nudge_index, message} so the caller fires the
+    specific nudge with its own words."""
     from supabase_store import get_client
     db = get_client()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
+    out = []
     try:
         rows = (db.table("reminders").select("*")
-                .eq("status", "pending").lte("fire_at", now)
-                .order("fire_at", desc=False).limit(limit).execute()).data or []
-        return rows
+                .eq("status", "pending").order("fire_at", desc=False)
+                .limit(limit).execute()).data or []
     except Exception as e:
         print(f"[Reminder] due-query failed: {e}")
         return []
 
+    for r in rows:
+        nudges = r.get("nudges") or []
+        for i, n in enumerate(nudges):
+            if n.get("fired"):
+                continue
+            try:
+                at = datetime.fromisoformat(str(n.get("at")).replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if at <= now:
+                out.append({"reminder": r, "nudge_index": i, "message": n.get("message")})
+                break   # one due nudge per reminder per pass
+    return out
 
+
+def mark_nudge_fired(reminder_id: str, nudge_index: int):
+    """Mark one nudge fired; if all nudges are now fired, complete the reminder."""
+    from supabase_store import get_client
+    db = get_client()
+    try:
+        rows = (db.table("reminders").select("nudges")
+                .eq("id", reminder_id).limit(1).execute()).data or []
+        if not rows:
+            return
+        nudges = rows[0].get("nudges") or []
+        if 0 <= nudge_index < len(nudges):
+            nudges[nudge_index]["fired"] = True
+        all_fired = all(n.get("fired") for n in nudges)
+        upd = {"nudges": nudges}
+        if all_fired:
+            upd["status"] = "fired"
+            upd["fired_at"] = datetime.now(timezone.utc).isoformat()
+        db.table("reminders").update(upd).eq("id", reminder_id).execute()
+    except Exception as e:
+        print(f"[Reminder] mark-nudge-fired failed: {e}")
+
+
+# backward-compat: some callers may still import mark_fired
 def mark_fired(reminder_id: str):
     from supabase_store import get_client
     db = get_client()

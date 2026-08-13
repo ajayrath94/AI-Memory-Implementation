@@ -306,23 +306,26 @@ def clean_clusters_endpoint(user_id: str, dry_run: bool = False):
 
 @router.post("/fire-reminders")
 def fire_reminders_endpoint():
-    """Lightweight, fast: check due reminders and fire them. No LLM, no summarize
-    — just a DB query + deliver + mark. Meant for a TIGHT cron (every few min) so
-    reminders fire close to their time, separate from the heavy 15-min memory pass."""
-    from memory.reminder_engine import get_due_reminders, mark_fired
+    """Fast, LLM-free: fire any due nudges. Each due nudge delivers its own
+    pre-written message via the proactive channel; mark_nudge_fired advances the
+    reminder and completes it when all nudges have fired."""
+    from memory.reminder_engine import get_due_reminders, mark_nudge_fired
     from memory.proactive_log import log_decision
     fired = []
-    for rem in get_due_reminders():
+    for item in get_due_reminders():
+        rem = item["reminder"]
         try:
             log_decision({
                 "user_id": rem["user_id"],
                 "action":  "REMINDER",
                 "reason":  "scheduled reminder due",
-                "detail":  rem.get("what"),
+                "detail":  item.get("message") or rem.get("what"),
                 "priority": "HIGH",
             })
-            mark_fired(rem["id"])
-            fired.append({"user_id": rem["user_id"], "what": rem.get("what")})
+            mark_nudge_fired(rem["id"], item["nudge_index"])
+            fired.append({"user_id": rem["user_id"], "what": rem.get("what"),
+                          "message": item.get("message")})
         except Exception as e:
             print(f"[FireReminders] failed for {rem.get('id')}: {e}")
     return {"fired": len(fired), "reminders": fired}
+
