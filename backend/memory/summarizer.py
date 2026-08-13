@@ -87,6 +87,50 @@ Summary:"""
         return f"Session covered: {' '.join(words[:50])}..."
 
 
+def extract_session_mood(messages: List[dict]) -> dict:
+    """One focused Haiku call: rate the USER's emotional state this session.
+    Returns {valence, arousal}:
+      valence −1.0 (very negative/distressed) .. +1.0 (very positive/content)
+      arousal  0.0 (calm/flat) .. 1.0 (highly activated/agitated)
+    Scores the USER's messages, not Nancy's. Fails safe to neutral."""
+    if not messages:
+        return {"valence": 0.0, "arousal": 0.0}
+    user_turns = "\n".join(
+        m["content"][:300] for m in messages
+        if m.get("role") == "user" and not m.get("is_summary", False)
+    )
+    if len(user_turns) < 20:
+        return {"valence": 0.0, "arousal": 0.0}
+    prompt = f"""Rate the USER's overall emotional state in these messages.
+
+Return ONLY JSON:
+{{"valence": <number -1.0 to 1.0>, "arousal": <number 0.0 to 1.0>}}
+
+valence: -1.0 = very negative/distressed/sad, 0 = neutral, +1.0 = very positive/content/happy
+arousal: 0.0 = calm/flat/tired, 0.5 = normal, 1.0 = highly activated/agitated/excited
+
+Judge the USER (the person), not any assistant. Base it on how they seem to feel.
+No prose, only the JSON.
+
+USER messages:
+{user_turns}"""
+    try:
+        import json as _json
+        raw = _call_haiku(prompt, max_tokens=60).strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1].replace("json", "", 1).strip()
+        d = _json.loads(raw)
+        v = float(d.get("valence", 0.0))
+        a = float(d.get("arousal", 0.0))
+        # clamp
+        v = max(-1.0, min(1.0, v))
+        a = max(0.0, min(1.0, a))
+        return {"valence": round(v, 3), "arousal": round(a, 3)}
+    except Exception as e:
+        print(f"[Mood] extraction failed: {e}")
+        return {"valence": 0.0, "arousal": 0.0}
+
+
 # ── Key facts extractor ────────────────────────────────────────────────────────
 
 def extract_key_facts(summary: str) -> List[str]:

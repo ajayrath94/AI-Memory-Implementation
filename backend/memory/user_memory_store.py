@@ -17,7 +17,7 @@ from supabase_store import (
     save_stm_cluster, get_all_sessions
 )
 from memory.summarizer import (
-    summarize_session, recursive_summarize,
+    summarize_session, recursive_summarize, extract_session_mood,
     extract_key_facts,
 )
 from classifier.pillar_classifier import (
@@ -400,12 +400,17 @@ def process_session_end(session_id: str, user_id: str = "default"):
     # 2. Compute session centroid from pillar vectors
     centroid = compute_session_centroid(session_id)
 
-    # 3. Save session summary + centroid
+    # 2b. Extract LLM valence/arousal — the honest, chartable mood signal
+    mood = extract_session_mood(messages)
+
+    # 3. Save session summary + centroid + mood
     db = get_client()
     db.table("sessions").update({
         "summary":                session_summary,
         "summary_generated_at":   "now()",
         "pillar_centroid":        centroid,
+        "valence":                mood["valence"],
+        "arousal":                mood["arousal"],
     }).eq("id", session_id).execute()
 
     # 4. Get existing user memory
