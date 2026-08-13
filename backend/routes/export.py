@@ -162,6 +162,22 @@ def export_memory_xlsx(user_id: str = None):
             cell.font = _F(name=_FONT, size=10)
             cell.alignment = cell.alignment.copy(wrap_text=True, vertical="top")
 
+    # ---- Sheet 5: Reminders (the reactive engine's captured intentions) ----
+    ws5 = wb.create_sheet("Reminders")
+    h5 = ["user_id", "what", "fire_at", "status", "source", "created_at", "fired_at"]
+    ws5.append(h5)
+    rems = q("reminders", "user_id,what,fire_at,status,source,created_at,fired_at")
+    rems.sort(key=lambda r: (str(r.get("user_id")), str(r.get("fire_at"))))
+    for r in rems:
+        ws5.append([r.get("user_id"), r.get("what"), r.get("fire_at"),
+                    r.get("status"), r.get("source"), r.get("created_at"), r.get("fired_at")])
+    _style_header(ws5, len(h5))
+    _autowidth(ws5, [20, 40, 22, 12, 10, 22, 22])
+    from openpyxl.styles import Font as _F5
+    for _row in ws5.iter_rows(min_row=2):
+        for _cell in _row:
+            _cell.font = _F5(name=_FONT, size=10)
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)

@@ -66,6 +66,11 @@ def summarize_session(messages: List[dict]) -> str:
 - Key topics and interests revealed
 - Emotional tone
 
+
+IMPORTANT: The ASSISTANT here is named Nancy (an AI companion). "Nancy" is NEVER
+the user — she is the assistant. The USER is the person Nancy talks to. Summarize
+the USER (the human); never call the user "Nancy". If the user's name is unknown,
+say "the user".
 Keep it to 3-5 sentences. Write in third person about the user.
 
 Conversation:
