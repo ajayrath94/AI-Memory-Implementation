@@ -116,9 +116,10 @@ export const API_KEY    = 'jSQ2qdMyXMJq4Y8dwcQuDjkc7zp_vB79uHvCvDTKVZA'
 export const MODELS = [
   { label: 'Claude Haiku',  value: 'claude-haiku-4-5',           provider: 'Anthropic' },
   { label: 'Claude Sonnet', value: 'claude-sonnet-4-20250514',    provider: 'Anthropic' },
-  { label: 'GPT-4o Mini',   value: 'gpt-4o-mini',                provider: 'OpenAI'    },
-  { label: 'Gemini Flash',  value: 'gemini-2.0-flash',           provider: 'Google'    },
-  { label: 'Llama 70B',     value: 'llama-3.3-70b-versatile',    provider: 'Groq'      },
+  { label: 'Gemini Flash',  value: 'gemini-flash-latest',        provider: 'Google'    },
+  { label: 'Gemini Pro',    value: 'gemini-pro-latest',          provider: 'Google'    },
+  { label: 'DeepSeek',      value: 'deepseek-chat',              provider: 'DeepSeek'  },
+  // GPT-4o Mini: gpt-4o-mini (OpenAI) — re-add once billing is added to the OpenAI account
 ]
 
 export const DEFAULT_MODEL = 'claude-haiku-4-5'

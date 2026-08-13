@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { path: '/',         icon: 'chatbubble-outline',    label: 'Chat'     },
   { path: '/sessions', icon: 'time-outline',          label: 'Sessions' },
   { path: '/memory',   icon: 'hardware-chip-outline', label: 'Memory'   },
+  { path: '/reminders', icon: 'alarm-outline',          label: 'Reminders'},
   { path: '/profile',  icon: 'person-outline',        label: 'Profile'  },
   { path: '/settings', icon: 'settings-outline',      label: 'Settings' },
 ]

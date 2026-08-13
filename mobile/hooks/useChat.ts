@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { useAppStore } from '../store/appStore'
 import { sendMessage } from '../services/api'
+import { scheduleReminderNudges } from '../services/notificationService'
 import { API_BASE, API_KEY, DEFAULT_MODEL } from '../constants'
 
 export function useChat() {
@@ -28,6 +29,12 @@ export function useChat() {
 
       if (data.session_id && !sessionId) {
         setSessionId(data.session_id)
+      }
+
+      // If Nancy set a reminder, schedule local notifications for each nudge so
+      // the phone actually alerts the user at the right times (offline, app-closed).
+      if (data.reminder && data.reminder.nudges) {
+        scheduleReminderNudges(data.reminder).catch(e => console.error('[notif]', e))
       }
 
       addMessage({
