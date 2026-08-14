@@ -29,91 +29,86 @@ from typing import List, Optional
 
 def detect_alerts(user_id: str) -> List[dict]:
     """
-    Scan memory + profile for alert conditions.
-    Returns list of alert dicts ready to send.
+    Scan the user's real signals for alert conditions. Redesigned to use signals
+    that actually work: health CLUSTER strength + recent session VALENCE — NOT the
+    compressed pillar-trend regression (which reads flat 0.7 centroids as always
+    "stable"). Eldercare errs toward alerting EARLY: a single strong signal fires,
+    not "wait for 3 consecutive". Duplicate-suppression (24h) prevents spam.
     """
     from memory.user_memory_store import get_user_memory
     from memory.profile_store import get_user_profile
+    from supabase_store import get_client
 
     memory  = get_user_memory(user_id) or {}
     profile = get_user_profile(user_id) or {}
+    db = get_client()
 
-    alerts  = []
-    trend   = memory.get("pillar_trend", {})
-    pillar_trends = trend.get("pillar_trends", {}) if isinstance(trend, dict) else {}
-    trend_alerts  = trend.get("alerts", []) if isinstance(trend, dict) else []
+    health     = profile.get("health", {}) or {}
+    conditions = health.get("conditions", []) or []
+    life       = profile.get("life_context", {}) or {}
+    living     = (life.get("living_situation") or "").lower()
+    lonely     = "alone" in living
 
-    health    = profile.get("health", {})
-    conditions = health.get("conditions", [])
-    concerns   = health.get("concerns", [])
-    family     = profile.get("family", {})
-    life       = profile.get("life_context", {})
-    living     = life.get("living_situation", "")
-    personality = profile.get("personality", {})
-    emotion_state = personality.get("emotional_state", "")
-
-    # Apply pillar weights to alert sensitivity
+    # user pillar weights (respect explicit de-prioritization)
     try:
         from memory.pillar_weights import get_pillar_weights
         weights = get_pillar_weights(user_id)
     except Exception:
         weights = {}
 
-    def is_alert_active(pillar, base_condition):
-        """Check if alert should fire considering user weights."""
-        w = weights.get(pillar, 1.0)
-        if w < 0.5:
-            return False  # User explicitly de-prioritized this pillar
-        return base_condition
+    def weighted_ok(pillar):
+        return weights.get(pillar, 1.0) >= 0.5
 
-    # ── HEALTH alert ──────────────────────────────────────────────────────────
-    if is_alert_active("HEALTH_WELLNESS", pillar_trends.get("HEALTH_WELLNESS") == "rising" and conditions):
+    alerts = []
+
+    # ── HEALTH — from cluster strength, not trend ──────────────────────────────
+    # A strong/growing health cluster means the person keeps bringing it up.
+    try:
+        hc = (db.table("interest_clusters").select("label,strength,event_count")
+              .eq("user_id", user_id).eq("pillar", "HEALTH_WELLNESS")
+              .order("strength", desc=True).limit(5).execute()).data or []
+    except Exception:
+        hc = []
+    strong_health = [h for h in hc if (h.get("strength") or 0) >= 1.0]
+    if weighted_ok("HEALTH_WELLNESS") and strong_health:
+        labels = ", ".join(h["label"] for h in strong_health[:3])
+        # severity scales with how strong / how many mentions
+        top = strong_health[0]
+        sev = "high" if (top.get("strength") or 0) >= 1.5 or (top.get("event_count") or 0) >= 3 else "medium"
         alerts.append({
-            "alert_type": "health",
-            "severity":   "high",
-            "message":    f"Health concerns increasing across recent sessions. Reported: {', '.join(conditions[:3])}. Consider checking in or scheduling a doctor visit.",
-            "pillar":     "HEALTH_WELLNESS",
+            "alert_type": "health", "severity": sev,
+            "message": f"Recurring health concern: {labels}. This has come up repeatedly — consider checking in or a doctor visit.",
+            "pillar": "HEALTH_WELLNESS",
         })
 
-    # ── STRESS alert ──────────────────────────────────────────────────────────
-    if is_alert_active("STRESS", pillar_trends.get("STRESS") == "rising"):
-        alerts.append({
-            "alert_type": "stress",
-            "severity":   "medium",
-            "message":    f"Stress levels rising across recent sessions. Emotional state: {emotion_state or 'elevated'}. A call from family might help.",
-            "pillar":     "STRESS",
-        })
-
-    # ── SADNESS alert ─────────────────────────────────────────────────────────
-    if is_alert_active("SADNESS", pillar_trends.get("SADNESS") == "rising"):
-        lonely = "lives alone" in living.lower() if living else False
-        severity = "high" if lonely else "medium"
-        alerts.append({
-            "alert_type": "sadness",
-            "severity":   severity,
-            "message":    f"Sadness increasing across sessions{' — user appears to live alone' if lonely else ''}. Emotional support recommended.",
-            "pillar":     "SADNESS",
-        })
-
-    # ── EMERGENCY alert ───────────────────────────────────────────────────────
-    if any("distress" in a.lower() or "3 consecutive" in a.lower() for a in trend_alerts):
-        alerts.append({
-            "alert_type": "emergency",
-            "severity":   "critical",
-            "message":    f"Repeated emotional distress detected across 3+ consecutive sessions. Immediate family contact recommended. Conditions: {', '.join(conditions[:2]) if conditions else 'unknown'}.",
-            "pillar":     "STRESS",
-        })
-
-    # ── Consecutive session check from trend alerts ────────────────────────────
-    for ta in trend_alerts:
-        if "health" in ta.lower() and "consecutive" in ta.lower():
-            if not any(a["alert_type"] == "health" for a in alerts):
-                alerts.append({
-                    "alert_type": "health",
-                    "severity":   "medium",
-                    "message":    ta,
-                    "pillar":     "HEALTH_WELLNESS",
-                })
+    # ── MOOD (sadness/distress) — from recent session VALENCE ───────────────────
+    # valence is the honest LLM signal (-1 distressed .. +1 content). One clearly
+    # low session is enough to flag; we don't wait for a 3-session pattern.
+    try:
+        recent = (db.table("sessions").select("valence,created_at")
+                  .eq("user_id", user_id).not_.is_("valence", "null")
+                  .order("created_at", desc=True).limit(3).execute()).data or []
+    except Exception:
+        recent = []
+    vals = [float(s["valence"]) for s in recent if s.get("valence") is not None]
+    if vals:
+        latest = vals[0]
+        avg    = sum(vals) / len(vals)
+        # a single strongly-negative session, OR a sustained low average
+        if weighted_ok("SADNESS") and (latest <= -0.6 or avg <= -0.4):
+            severity = "high" if (latest <= -0.7 and lonely) else "medium"
+            alerts.append({
+                "alert_type": "sadness", "severity": severity,
+                "message": f"Recent conversations show low mood{' — and they appear to live alone' if lonely else ''}. Emotional support or a call from family may help.",
+                "pillar": "SADNESS",
+            })
+        # very negative = treat as distress/emergency-adjacent
+        if weighted_ok("STRESS") and latest <= -0.8:
+            alerts.append({
+                "alert_type": "emergency", "severity": "critical",
+                "message": f"A recent conversation showed significant emotional distress. Please reach out soon.{(' Conditions: ' + ', '.join(conditions[:2])) if conditions else ''}",
+                "pillar": "STRESS",
+            })
 
     return alerts
 
