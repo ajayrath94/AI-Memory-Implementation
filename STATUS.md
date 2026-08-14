@@ -136,6 +136,55 @@ Validated across 5 contrasting cases:
 | Happy (valence +0.85) | NO ALERT | -- |
 
 
+### Caregiver wellbeing & alerts (DONE, validated)
+
+A caregiver links to an elder and gets a wellbeing picture + automatic alerts.
+Built on honest signals, not the compressed pillar-trend.
+
+**Auth + dashboard data**
+- Caregiver login stores a real JWT (Supabase auth) -> dashboard reads it ->
+  loads the linked elder's real data. `care_relationships` links caregiver to
+  elder with per-type notify flags + alert_email.
+- `GET /care/wellbeing/{user_id}` -- one call: narrative summary, composite
+  wellbeing score, valence trend, emotional weather, engagement, health flags,
+  reminder adherence, care schedule.
+
+**Honest wellbeing signal -- LLM valence/arousal**
+- Per session at summary time, an LLM scores valence (-1..+1) + arousal (0..1).
+  Fixed the core problem: pillar centroids are compressed cosine-sims (~0.7, avg
+  session-similarity 0.999) that read every trend "stable" -- charting them lies.
+  Valence gives real spread (+0.85 warm vs -0.85 distressed): the chartable line.
+
+**Pattern-based decline detection (the alert brain)**
+- Capture (per session): valence, arousal, `soft_flags` (closed early-warning
+  vocab: fatigue, withdrawal, loneliness, pain, sleep_trouble, appetite_change,
+  confusion, anxiety, low_mood, hopelessness -- countable over time), `acute`
+  (LLM + independent keyword backstop so a broken call can never hide an
+  emergency; fails toward alerting).
+- Detect (7-day hybrid): ACUTE -> immediate critical (bypass). RULES pre-filter
+  (cheap, no LLM): a flag in >=3 sessions, OR >=2 flags clustered, OR avg valence
+  <= -0.3; no candidate -> no LLM, no alert. LLM CONFIRMS candidates + writes the
+  message. Plus single-session valence backstop (<= -0.6 sadness, <= -0.8 critical).
+- Deliver: SendGrid email (respects notify_* flags) + `care_alerts` store +
+  24h dedup + automatic every heartbeat (wired into the scheduler pass).
+
+Why this shape: soft signals (tired, withdrawn) are real early-warning signs in
+the elderly but only meaningful as PATTERNS. "Tired today" must not email family;
+the same signal persisting over a week should. Track continuously, alert on
+persistence + trajectory judged by the LLM -- not a crude "wait for 3 consecutive"
+gate (which on the broken trend never fired at all).
+
+Validated across 5 cases:
+
+| Case | Result | Via |
+|---|---|---|
+| Persistent decline (fatigue x5/week, neutral valence) | ALERT | pattern detector |
+| Concerning single session (4 flags, v -0.6) | ALERT | valence backstop |
+| One-off tired (v -0.2, 1 flag) | NO ALERT | false-positive fixed |
+| Acute (chest pain) | ALERT critical, immediate | acute bypass |
+| Happy (v +0.85) | NO ALERT | -- |
+
+
 ### Inspection / continuous improvement
 - Excel export: `GET /export/memory-xlsx?user_id=optional` — 5 sheets
   (Track1_Narrative, Track2_Clusters, Sessions, Messages, Reminders).
