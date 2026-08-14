@@ -148,3 +148,110 @@ def delete_fact(fact_id: str):
         return {"deleted": fact_id}
     except Exception as e:
         raise HTTPException(500, f"delete_fact failed: {e}")
+
+
+# ── Wellbeing dashboard — one call, everything the caregiver needs ──────────────
+# All from data Nancy already captures: narrative summary, session valence
+# (LLM-scored, honest signal), engagement, health clusters, reminder adherence.
+
+@router.get("/wellbeing/{user_id}")
+def get_wellbeing(user_id: str, days: int = 7):
+    from datetime import datetime, timezone, timedelta
+    db = _db()
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(days=days)).isoformat()
+
+    # 1. Narrative (hero) + profile (name/health)
+    mem_rows = db.table("user_memory").select("summary,session_count").eq("user_id", user_id).limit(1).execute().data or []
+    mem = mem_rows[0] if mem_rows else {}
+    prof_rows = db.table("user_profile").select("name,age_group,location,health").eq("user_id", user_id).limit(1).execute().data or []
+    prof = prof_rows[0] if prof_rows else {}
+
+    # 2. Sessions in range (valence trend + engagement + weather)
+    sessions = (db.table("sessions")
+                .select("created_at,valence,arousal,summary")
+                .eq("user_id", user_id).gte("created_at", since)
+                .order("created_at", desc=False).execute().data or [])
+
+    # per-day aggregation
+    from collections import defaultdict
+    day_valences = defaultdict(list)
+    day_counts = defaultdict(int)
+    for s in sessions:
+        day = (s.get("created_at") or "")[:10]
+        if not day:
+            continue
+        day_counts[day] += 1
+        v = s.get("valence")
+        if v is not None:
+            day_valences[day].append(float(v))
+
+    def _tone(v):
+        if v is None:      return "unknown"
+        if v >= 0.35:      return "warm"
+        if v <= -0.35:     return "low"
+        return "mixed"
+
+    valence_trend = []
+    emotional_weather = []
+    for day in sorted(set(list(day_valences.keys()) + list(day_counts.keys()))):
+        vs = day_valences.get(day, [])
+        avg_v = round(sum(vs) / len(vs), 3) if vs else None
+        valence_trend.append({"date": day, "valence": avg_v, "sessions": day_counts.get(day, 0)})
+        emotional_weather.append({"date": day, "tone": _tone(avg_v)})
+
+    # composite wellbeing score from recent valence: map −1..+1 → 0..100
+    scored = [d["valence"] for d in valence_trend if d["valence"] is not None]
+    if scored:
+        avg_recent = sum(scored) / len(scored)
+        wellbeing_score = round((avg_recent + 1) / 2 * 100)
+    else:
+        wellbeing_score = None
+
+    # 3. Engagement
+    total_sessions = len(sessions)
+
+    # 4. Health flags (HEALTH_WELLNESS clusters)
+    health = (db.table("interest_clusters")
+              .select("label,strength,event_count")
+              .eq("user_id", user_id).eq("pillar", "HEALTH_WELLNESS")
+              .order("strength", desc=True).limit(8).execute().data or [])
+    health_flags = [{"label": h.get("label"), "strength": h.get("strength"),
+                     "mentions": h.get("event_count")} for h in health]
+
+    # 5. Reminders — upcoming + simple adherence from nudge fired-state
+    rems = (db.table("reminders").select("what,fire_at,event_at,status,nudges,source")
+            .eq("user_id", user_id).order("fire_at", desc=False).execute().data or [])
+    upcoming, past = [], []
+    for r in rems:
+        item = {"what": r.get("what"), "fire_at": r.get("fire_at"),
+                "status": r.get("status"), "source": r.get("source")}
+        if r.get("status") == "pending":
+            upcoming.append(item)
+        else:
+            past.append(item)
+    # adherence: of past reminders, how many actually fired (delivered) vs cancelled
+    fired = sum(1 for r in rems if r.get("status") == "fired")
+    cancelled = sum(1 for r in rems if r.get("status") == "cancelled")
+
+    # 6. Care schedule (recurring meds/routines the caregiver set)
+    schedule = (db.table("care_schedule").select("type,label,time_of_day,days,dose,active")
+                .eq("user_id", user_id).eq("active", True).execute().data or [])
+
+    return {
+        "user_id":        user_id,
+        "name":           prof.get("name"),
+        "age_group":      prof.get("age_group"),
+        "location":       prof.get("location"),
+        "summary":        mem.get("summary"),
+        "session_count":  mem.get("session_count"),
+        "wellbeing_score": wellbeing_score,
+        "valence_trend":  valence_trend,
+        "emotional_weather": emotional_weather,
+        "engagement":     {"sessions_in_period": total_sessions, "days": days},
+        "health_flags":   health_flags,
+        "reminders":      {"upcoming": upcoming[:10], "past": past[:10],
+                           "adherence": {"fired": fired, "cancelled": cancelled}},
+        "care_schedule":  schedule,
+        "range_days":     days,
+    }
