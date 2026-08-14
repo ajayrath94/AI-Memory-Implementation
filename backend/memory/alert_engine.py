@@ -27,63 +27,143 @@ from typing import List, Optional
 
 # ── Alert detection ────────────────────────────────────────────────────────────
 
+_MODEL = "claude-haiku-4-5-20251001"
+
+
+def detect_decline_pattern(user_id: str, db) -> List[dict]:
+    """Hybrid decline detection over a 7-day window — the early-warning brain.
+
+    RULES pre-filter (cheap, no LLM): tally soft_flags + valence across recent
+    sessions. Soft signals (fatigue, withdrawal, ...) matter only as PATTERNS —
+    a one-off "tired" is nothing; the same flag across several sessions, or
+    several flags clustering, or a sustained low mood, is a candidate.
+
+    LLM confirms (only on candidates): judges whether the pattern is genuinely
+    concerning + writes the caregiver message. This is what stops the "grandma
+    said she's tired once → email family" false positive while still catching
+    real early decline.
+
+    ACUTE sessions bypass everything → immediate critical alert.
+    """
+    from collections import Counter
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(days=7)).isoformat()
+    try:
+        sessions = (db.table("sessions")
+                    .select("valence,soft_flags,acute,created_at,summary")
+                    .eq("user_id", user_id).gte("created_at", since)
+                    .order("created_at", desc=True).limit(20).execute()).data or []
+    except Exception as e:
+        print(f"[AlertEngine] decline query failed: {e}")
+        return []
+    if not sessions:
+        return []
+
+    alerts = []
+
+    # ── ACUTE — any acute session in the window → immediate critical ────────────
+    if any(s.get("acute") for s in sessions):
+        return [{
+            "alert_type": "emergency", "severity": "critical",
+            "message": "An acute concern was detected in a recent conversation. Please check on them right away.",
+            "pillar": "HEALTH_WELLNESS",
+        }]
+
+    # ── RULES pre-filter — is there a candidate pattern worth the LLM? ──────────
+    flag_counter = Counter()
+    for s in sessions:
+        for f in (s.get("soft_flags") or []):
+            flag_counter[f] += 1
+    vals = [float(s["valence"]) for s in sessions if s.get("valence") is not None]
+    avg_valence = sum(vals) / len(vals) if vals else 0.0
+
+    persistent = any(ct >= 3 for ct in flag_counter.values())        # same flag in 3+ sessions
+    clustered  = len([f for f, ct in flag_counter.items() if ct >= 2]) >= 2  # 2+ flags recurring
+    low_mood   = avg_valence <= -0.3 and len(vals) >= 2              # sustained low
+
+    if not (persistent or clustered or low_mood):
+        return []   # no candidate → no LLM call, no alert
+
+    # ── LLM confirm — is this genuinely a concerning decline pattern? ──────────
+    flag_summary = ", ".join(f"{f}×{ct}" for f, ct in flag_counter.most_common()) or "none"
+    val_summary = ", ".join(
+        f"{float(s['valence']):+.1f}" for s in reversed(sessions) if s.get("valence") is not None
+    ) or "n/a"
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        prompt = f"""You watch over an elderly person's wellbeing for their family.
+
+Over the last 7 days ({len(sessions)} conversations), these early-warning signals
+appeared:
+  soft signals (state × how many sessions): {flag_summary}
+  mood trajectory (oldest→newest valence, -1 low .. +1 good): {val_summary}
+
+Is this a CONCERNING pattern of decline a caregiver should be told about — e.g.
+persistent fatigue, growing withdrawal or loneliness, a steady mood drop, several
+signals clustering? Or is it normal ups-and-downs not worth alarming family over?
+
+A single bad day is NOT concerning. Persistence or a worsening trend IS.
+
+Return ONLY JSON:
+{{"concerning": <true/false>, "severity": "low"|"medium"|"high", "message": "one warm, specific sentence for the caregiver about what you're noticing and a gentle suggestion"}}
+No prose, only JSON."""
+        resp = client.messages.create(model=_MODEL, max_tokens=200,
+                                      messages=[{"role": "user", "content": prompt}])
+        raw = resp.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1].replace("json", "", 1).strip()
+        d = json.loads(raw)
+        if d.get("concerning"):
+            alerts.append({
+                "alert_type": "sadness",
+                "severity": d.get("severity", "medium"),
+                "message": d.get("message") or "A pattern of declining wellbeing has been noticed. A check-in may help.",
+                "pillar": "SADNESS",
+            })
+    except Exception as e:
+        print(f"[AlertEngine] decline LLM confirm failed: {e}")
+        # fail toward informing: if we had a candidate but the LLM broke, raise a soft flag
+        if persistent or low_mood:
+            alerts.append({
+                "alert_type": "sadness", "severity": "medium",
+                "message": "Recent conversations suggest a possible dip in wellbeing. A check-in may help.",
+                "pillar": "SADNESS",
+            })
+    return alerts
+
+
 def detect_alerts(user_id: str) -> List[dict]:
     """
-    Scan the user's real signals for alert conditions. Redesigned to use signals
-    that actually work: health CLUSTER strength + recent session VALENCE — NOT the
-    compressed pillar-trend regression (which reads flat 0.7 centroids as always
-    "stable"). Eldercare errs toward alerting EARLY: a single strong signal fires,
-    not "wait for 3 consecutive". Duplicate-suppression (24h) prevents spam.
+    Detect caregiver-alert conditions from signals that actually work:
+      1. ACUTE + soft-decline PATTERNS (detect_decline_pattern, 7-day hybrid)
+      2. A single strongly-negative session (immediate distress)
+    Eldercare errs toward informing early; 24h dedup prevents spam. Soft signals
+    (tired, withdrawn) alert only as PATTERNS, never one-offs.
     """
-    from memory.user_memory_store import get_user_memory
     from memory.profile_store import get_user_profile
     from supabase_store import get_client
-
-    memory  = get_user_memory(user_id) or {}
     profile = get_user_profile(user_id) or {}
     db = get_client()
 
-    health     = profile.get("health", {}) or {}
-    conditions = health.get("conditions", []) or []
-    life       = profile.get("life_context", {}) or {}
-    living     = (life.get("living_situation") or "").lower()
+    conditions = (profile.get("health", {}) or {}).get("conditions", []) or []
+    living     = ((profile.get("life_context", {}) or {}).get("living_situation") or "").lower()
     lonely     = "alone" in living
 
-    # user pillar weights (respect explicit de-prioritization)
     try:
         from memory.pillar_weights import get_pillar_weights
         weights = get_pillar_weights(user_id)
     except Exception:
         weights = {}
-
     def weighted_ok(pillar):
         return weights.get(pillar, 1.0) >= 0.5
 
     alerts = []
 
-    # ── HEALTH — from cluster strength, not trend ──────────────────────────────
-    # A strong/growing health cluster means the person keeps bringing it up.
-    try:
-        hc = (db.table("interest_clusters").select("label,strength,event_count")
-              .eq("user_id", user_id).eq("pillar", "HEALTH_WELLNESS")
-              .order("strength", desc=True).limit(5).execute()).data or []
-    except Exception:
-        hc = []
-    strong_health = [h for h in hc if (h.get("strength") or 0) >= 1.0]
-    if weighted_ok("HEALTH_WELLNESS") and strong_health:
-        labels = ", ".join(h["label"] for h in strong_health[:3])
-        # severity scales with how strong / how many mentions
-        top = strong_health[0]
-        sev = "high" if (top.get("strength") or 0) >= 1.5 or (top.get("event_count") or 0) >= 3 else "medium"
-        alerts.append({
-            "alert_type": "health", "severity": sev,
-            "message": f"Recurring health concern: {labels}. This has come up repeatedly — consider checking in or a doctor visit.",
-            "pillar": "HEALTH_WELLNESS",
-        })
+    # 1. Acute + soft-decline patterns (the early-warning brain)
+    alerts += detect_decline_pattern(user_id, db)
 
-    # ── MOOD (sadness/distress) — from recent session VALENCE ───────────────────
-    # valence is the honest LLM signal (-1 distressed .. +1 content). One clearly
-    # low session is enough to flag; we don't wait for a 3-session pattern.
+    # 2. A single strongly-negative recent session → immediate distress signal
     try:
         recent = (db.table("sessions").select("valence,created_at")
                   .eq("user_id", user_id).not_.is_("valence", "null")
@@ -93,21 +173,17 @@ def detect_alerts(user_id: str) -> List[dict]:
     vals = [float(s["valence"]) for s in recent if s.get("valence") is not None]
     if vals:
         latest = vals[0]
-        avg    = sum(vals) / len(vals)
-        # a single strongly-negative session, OR a sustained low average
-        if weighted_ok("SADNESS") and (latest <= -0.6 or avg <= -0.4):
-            severity = "high" if (latest <= -0.7 and lonely) else "medium"
-            alerts.append({
-                "alert_type": "sadness", "severity": severity,
-                "message": f"Recent conversations show low mood{' — and they appear to live alone' if lonely else ''}. Emotional support or a call from family may help.",
-                "pillar": "SADNESS",
-            })
-        # very negative = treat as distress/emergency-adjacent
-        if weighted_ok("STRESS") and latest <= -0.8:
+        if weighted_ok("STRESS") and latest <= -0.8 and not any(a["severity"] == "critical" for a in alerts):
             alerts.append({
                 "alert_type": "emergency", "severity": "critical",
-                "message": f"A recent conversation showed significant emotional distress. Please reach out soon.{(' Conditions: ' + ', '.join(conditions[:2])) if conditions else ''}",
+                "message": f"A recent conversation showed significant emotional distress. Please reach out soon.{(' Noted conditions: ' + ', '.join(conditions[:2])) if conditions else ''}",
                 "pillar": "STRESS",
+            })
+        elif weighted_ok("SADNESS") and latest <= -0.6 and not any(a["alert_type"] in ("sadness", "emergency") for a in alerts):
+            alerts.append({
+                "alert_type": "sadness", "severity": "high" if lonely else "medium",
+                "message": f"A recent conversation showed low mood{' — and they appear to live alone' if lonely else ''}. Emotional support or a call from family may help.",
+                "pillar": "SADNESS",
             })
 
     return alerts
