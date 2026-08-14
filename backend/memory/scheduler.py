@@ -63,6 +63,19 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                 print(f"[Reminder] fired nudge for {_rem.get('what')} ({_rem['user_id']})")
         except Exception as _e:
             print(f"[Scheduler] reminder firing failed: {_e}")
+    # Caregiver alerts — detect concerning conditions (health cluster strength,
+    # low session valence) and email the caregiver. run_alert_engine has a 24h
+    # dedup so running every pass is safe (only emails genuinely new alerts).
+    if not dry_run:
+        for _uid in users:
+            try:
+                from memory.alert_engine import run_alert_engine
+                _r = run_alert_engine(_uid)
+                if _r.get("sent"):
+                    print(f"[Alerts] sent {_r.get('sent')} alert(s) for {_uid}")
+            except Exception as _e:
+                print(f"[Scheduler] alert check failed for {_uid}: {_e}")
+
     results = []
 
     for uid in users:
