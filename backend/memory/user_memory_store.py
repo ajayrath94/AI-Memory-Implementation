@@ -411,6 +411,8 @@ def process_session_end(session_id: str, user_id: str = "default"):
         "pillar_centroid":        centroid,
         "valence":                mood["valence"],
         "arousal":                mood["arousal"],
+        "soft_flags":             mood.get("soft_flags", []),
+        "acute":                  mood.get("acute", False),
     }).eq("id", session_id).execute()
 
     # 4. Get existing user memory

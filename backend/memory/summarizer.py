@@ -87,51 +87,79 @@ Summary:"""
         return f"Session covered: {' '.join(words[:50])}..."
 
 
+# Fixed soft-signal vocabulary — countable over time (rules tally these across
+# sessions). Free-text flags wouldn't aggregate; a closed set does.
+SOFT_FLAG_VOCAB = [
+    "fatigue", "withdrawal", "loneliness", "pain", "sleep_trouble",
+    "appetite_change", "confusion", "anxiety", "low_mood", "hopelessness",
+]
+
+# Acute keyword backstop — independent of the LLM so a broken call can NEVER
+# silence a genuine emergency. Fail-safe on the highest-stakes signal.
+_ACUTE_KEYWORDS = [
+    "chest pain", "can't breathe", "cant breathe", "cannot breathe",
+    "fell down", "had a fall", "gir gaya", "gir gayi", "saans nahi",
+    "seene mein dard", "chakkar", "faint", "suicide", "kill myself",
+    "marna chahta", "marna chahti", "end my life", "bleeding badly",
+    "stroke", "heart attack", "dil ka daura",
+]
+
+
 def extract_session_mood(messages: List[dict]) -> dict:
-    """One focused Haiku call: rate the USER's emotional state this session.
-    Returns {valence, arousal}:
-      valence −1.0 (very negative/distressed) .. +1.0 (very positive/content)
-      arousal  0.0 (calm/flat) .. 1.0 (highly activated/agitated)
-    Scores the USER's messages, not Nancy's. Fails safe to neutral."""
+    """One focused Haiku call: capture the USER's wellbeing snapshot this session.
+    Returns {valence, arousal, soft_flags, acute}:
+      valence -1.0 (distressed) .. +1.0 (content)
+      arousal  0.0 (flat) .. 1.0 (agitated)
+      soft_flags: subset of SOFT_FLAG_VOCAB present this session (early-warning
+                  signals - only meaningful as PATTERNS over time, tracked here)
+      acute: an acute/emergency signal needing immediate attention
+    Scores the USER, not Nancy. Fails safe (neutral), but acute has an independent
+    keyword backstop so a broken LLM call cannot hide an emergency."""
     if not messages:
-        return {"valence": 0.0, "arousal": 0.0}
+        return {"valence": 0.0, "arousal": 0.0, "soft_flags": [], "acute": False}
     user_turns = "\n".join(
         m["content"][:300] for m in messages
         if m.get("role") == "user" and not m.get("is_summary", False)
     )
     if len(user_turns) < 20:
-        return {"valence": 0.0, "arousal": 0.0}
-    prompt = f"""Rate the USER's overall emotional state in these messages.
+        return {"valence": 0.0, "arousal": 0.0, "soft_flags": [], "acute": False}
 
-Return ONLY JSON:
-{{"valence": <number -1.0 to 1.0>, "arousal": <number 0.0 to 1.0>}}
+    # keyword acute backstop (runs regardless of the LLM)
+    lower = user_turns.lower()
+    kw_acute = any(k in lower for k in _ACUTE_KEYWORDS)
 
-valence: -1.0 = very negative/distressed/sad, 0 = neutral, +1.0 = very positive/content/happy
-arousal: 0.0 = calm/flat/tired, 0.5 = normal, 1.0 = highly activated/agitated/excited
+    vocab = ", ".join(SOFT_FLAG_VOCAB)
+    prompt = f"""Capture the USER's wellbeing in these messages. Return ONLY JSON:
+{{"valence": <-1.0..1.0>, "arousal": <0.0..1.0>, "soft_flags": [<from the list>], "acute": <true/false>}}
 
-Judge the USER (the person), not any assistant. Base it on how they seem to feel.
-No prose, only the JSON.
+valence: -1.0 very negative/distressed, 0 neutral, +1.0 very positive/content
+arousal: 0.0 flat/tired, 0.5 normal, 1.0 agitated/excited
+soft_flags: which of these EARLY-WARNING states the user shows THIS conversation
+  (only include ones genuinely present; [] if none): {vocab}
+acute: true ONLY for an acute emergency needing immediate attention - chest pain,
+  a fall, trouble breathing, self-harm thoughts, a medical crisis. Normal sadness
+  or tiredness is NOT acute.
+
+Judge the USER (the person), not the assistant. No prose, only JSON.
 
 USER messages:
 {user_turns}"""
     try:
         import json as _json
-        raw = _call_haiku(prompt, max_tokens=60).strip()
+        raw = _call_haiku(prompt, max_tokens=150).strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1].replace("json", "", 1).strip()
         d = _json.loads(raw)
-        v = float(d.get("valence", 0.0))
-        a = float(d.get("arousal", 0.0))
-        # clamp
-        v = max(-1.0, min(1.0, v))
-        a = max(0.0, min(1.0, a))
-        return {"valence": round(v, 3), "arousal": round(a, 3)}
+        v = max(-1.0, min(1.0, float(d.get("valence", 0.0))))
+        a = max(0.0, min(1.0, float(d.get("arousal", 0.0))))
+        flags = [f for f in (d.get("soft_flags") or []) if f in SOFT_FLAG_VOCAB]
+        acute = bool(d.get("acute", False)) or kw_acute
+        return {"valence": round(v, 3), "arousal": round(a, 3),
+                "soft_flags": flags, "acute": acute}
     except Exception as e:
         print(f"[Mood] extraction failed: {e}")
-        return {"valence": 0.0, "arousal": 0.0}
+        return {"valence": 0.0, "arousal": 0.0, "soft_flags": [], "acute": kw_acute}
 
-
-# ── Key facts extractor ────────────────────────────────────────────────────────
 
 def extract_key_facts(summary: str) -> List[str]:
     """
