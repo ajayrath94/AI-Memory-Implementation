@@ -77,6 +77,65 @@ Conservative — never over-merges distinct entities.
 6. Fire — heartbeat (`/debug/fire-reminders`, 5-min cron)
 7. Deliver — `/proactive/{user_id}` surfaces a fired reminder first, once (via `delivered_at`)
 
+### Caregiver wellbeing & alerts (DONE, validated)
+
+A caregiver (family member or professional) links to an elder and gets a
+wellbeing picture + automatic alerts when something's wrong. Built on honest
+signals, not the compressed pillar-trend.
+
+**Auth + dashboard data**
+- Caregiver login stores a real JWT (Supabase auth) -> dashboard reads it from
+  secure-store -> loads the linked elder's real data. `care_relationships` links
+  caregiver<->elder with per-type notify flags + alert_email.
+- `GET /care/wellbeing/{user_id}` -- one call returns everything the dashboard
+  needs: narrative summary (hero), composite wellbeing score, valence trend,
+  emotional weather (per-day tone), engagement, health flags, reminder
+  adherence, care schedule.
+
+**The honest wellbeing signal -- LLM valence/arousal**
+- Per session, at summary time, an LLM scores the USER's valence (-1..+1) and
+  arousal (0..1). This FIXED the core problem: the pillar centroids are
+  compressed cosine-sims (~0.7, avg session-similarity 0.999) that read every
+  trend as "stable" -- charting them lies. Valence gives real spread (verified
+  +0.85 warm vs -0.85 distressed) and is the chartable mood line.
+
+**Pattern-based decline detection (the alert brain)**
+- Capture (per session): valence, arousal, `soft_flags` (fixed early-warning
+  vocab: fatigue, withdrawal, loneliness, pain, sleep_trouble, appetite_change,
+  confusion, anxiety, low_mood, hopelessness -- a CLOSED set so it's countable
+  over time), and `acute` (LLM + an independent keyword backstop so a broken
+  LLM call can NEVER hide an emergency -- fails toward alerting).
+- Detect (7-day window, hybrid):
+  - ACUTE session -> immediate critical, bypasses everything.
+  - RULES pre-filter (cheap, no LLM): a soft_flag in >=3 sessions (persistent),
+    OR >=2 distinct flags recurring (clustered), OR sustained low valence
+    (avg <= -0.3). No candidate -> no LLM call, no alert.
+  - LLM CONFIRMS only on candidates: judges whether the pattern is genuinely
+    concerning + writes a warm, specific caregiver message.
+  - Plus a single strongly-negative session backstop (valence <= -0.6 sadness,
+    <= -0.8 critical) for acute distress in one conversation.
+- Deliver: email caregiver via SendGrid (respects notify_* flags) + store in
+  `care_alerts` (dashboard reads it) + 24h dedup (no spam) + runs automatically
+  every heartbeat (wired into the scheduler pass).
+
+Why this shape -- soft signals (tired, withdrawn) are real early-warning signs
+in the elderly, but only meaningful as PATTERNS. A single "I'm tired today" must
+not email family; the same signal persisting/clustering over a week should. So
+we track continuously and alert on persistence + trajectory, judged by the LLM
+-- not a crude "wait for 3 consecutive" gate (which, on the broken trend signal,
+never fired at all).
+
+Validated across 5 contrasting cases:
+
+| Case | Result | Via |
+|---|---|---|
+| Persistent decline (fatigue x5 over a week, neutral valence) | ALERT | pattern detector |
+| Concerning single session (4 flags, valence -0.6) | ALERT | valence backstop |
+| One-off tired (valence -0.2, 1 flag) | NO ALERT | false-positive fixed |
+| Acute (chest pain) | ALERT critical, immediate | acute bypass |
+| Happy (valence +0.85) | NO ALERT | -- |
+
+
 ### Inspection / continuous improvement
 - Excel export: `GET /export/memory-xlsx?user_id=optional` — 5 sheets
   (Track1_Narrative, Track2_Clusters, Sessions, Messages, Reminders).
@@ -141,6 +200,16 @@ Auth + performance are additive layers, planned before wider launch.
 ---
 
 ## 6. Deferred / parked (consciously)
+
+- Rich wellbeing UI -- dashboard shows the basic elder card + alerts; the mockup
+  panels reading `/care/wellbeing` (valence trend, emotional weather, score,
+  reminder tracker) are NOT yet built (next visible frontend work).
+- Profile-enricher over-generalizes health conditions ("pain/physical discomfort
+  (MEDIUM confidence)" appears for everyone incl. happy users) -- pollutes the
+  health picture; needs tuning.
+- Tune alert thresholds with real usage (soft_flag >=3 sessions, >=2 clustered,
+  valence <= -0.3 candidate; single <= -0.6/-0.8).
+- Rotate keys (OpenAI, SendGrid, shared API key) -- part of the security gate.
 
 - Native pgvector + HNSW (scale, ~100+ users)
 - Fusion nodes / meta-clusters / super-clusters (20-50 users)
