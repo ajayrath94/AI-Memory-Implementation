@@ -313,3 +313,72 @@ def get_full_context(user_id: str):
         "music":    {"top_videos": music.get("videos", [])[:3]},
         "places":   {},  # Only fetch on demand (health alert triggers)
     }
+
+
+# ── Web search (agent) — the long-tail catch-all ────────────────────────────────
+# Google Custom Search fetches live web results; Haiku synthesizes a warm, concise
+# answer in the user's language. Nancy's voice, current facts, grounded in results
+# (Haiku answers FROM the snippets, not its own memory — current + less hallucination).
+
+def _search_web(query: str, num: int = 5) -> list:
+    """Google Custom Search → list of {title, snippet, link}. [] on failure."""
+    key = os.getenv("GOOGLE_API_KEY")
+    cx  = os.getenv("GOOGLE_SEARCH_ENGINE_ID")
+    if not key or not cx:
+        return []
+    try:
+        q = urllib.parse.quote(query)
+        url = (f"https://www.googleapis.com/customsearch/v1"
+               f"?key={key}&cx={cx}&q={q}&num={num}&gl=in")
+        data = http_get(url)
+        out = []
+        for item in (data.get("items") or [])[:num]:
+            out.append({
+                "title":   item.get("title"),
+                "snippet": item.get("snippet"),
+                "link":    item.get("link"),
+            })
+        return out
+    except Exception as e:
+        print(f"[Search] Google CSE failed: {e}")
+        return []
+
+
+@router.get("/search/{user_id}")
+def web_search(user_id: str, q: str):
+    """Search the live web + synthesize a warm answer in the user's language.
+    The catch-all for 'what is / how do I / is X good for Y' that no fixed
+    API covers. Returns {answer, sources}."""
+    results = _search_web(q, num=5)
+    if not results:
+        return {"answer": None, "sources": [], "error": "no search results (check GOOGLE_API_KEY / GOOGLE_SEARCH_ENGINE_ID / CSE web-search config)"}
+
+    # user's language preference (Hinglish default), so the answer matches how they speak
+    interests = get_user_interests(user_id)
+    lang = interests.get("language", "hinglish")
+
+    snippets = "\n".join(f"- {r['title']}: {r['snippet']}" for r in results if r.get("snippet"))
+    prompt = f"""A person asked: "{q}"
+
+Here are current web search results:
+{snippets}
+
+Answer their question warmly and concisely, as a caring companion would — not like
+a search engine. Base your answer ONLY on these results (don't invent facts). If the
+results don't answer it, say so gently. Answer in the user's language: {lang}
+(Hinglish = natural mix of Hindi and English, the way an Indian family member speaks).
+Keep it to 2-4 short sentences. No bullet points, no links in the text."""
+
+    try:
+        from memory.summarizer import _call_haiku
+        answer = _call_haiku(prompt, max_tokens=250).strip()
+    except Exception as e:
+        print(f"[Search] synthesis failed: {e}")
+        # fallback: return the top snippet plainly
+        answer = results[0].get("snippet") if results else None
+
+    return {
+        "answer":  answer,
+        "sources": [{"title": r["title"], "link": r["link"]} for r in results[:3]],
+        "query":   q,
+    }
