@@ -321,26 +321,30 @@ def get_full_context(user_id: str):
 # (Haiku answers FROM the snippets, not its own memory — current + less hallucination).
 
 def _search_web(query: str, num: int = 5) -> list:
-    """Google Custom Search → list of {title, snippet, link}. [] on failure."""
-    key = os.getenv("GOOGLE_API_KEY")
-    cx  = os.getenv("GOOGLE_SEARCH_ENGINE_ID")
-    if not key or not cx:
+    """Brave Search → list of {title, snippet, link}. [] on failure."""
+    key = os.getenv("BRAVE_SEARCH_API_KEY")
+    if not key:
+        print("[Search] BRAVE_SEARCH_API_KEY not set")
         return []
     try:
         q = urllib.parse.quote(query)
-        url = (f"https://www.googleapis.com/customsearch/v1"
-               f"?key={key}&cx={cx}&q={q}&num={num}&gl=in")
-        data = http_get(url)
+        url = f"https://api.search.brave.com/res/v1/web/search?q={q}&count={num}"
+        req = urllib.request.Request(url, headers={
+            "X-Subscription-Token": key,
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=8) as res:
+            data = json.loads(res.read())
         out = []
-        for item in (data.get("items") or [])[:num]:
+        for item in (data.get("web", {}).get("results") or [])[:num]:
             out.append({
                 "title":   item.get("title"),
-                "snippet": item.get("snippet"),
-                "link":    item.get("link"),
+                "snippet": item.get("description"),
+                "link":    item.get("url"),
             })
         return out
     except Exception as e:
-        print(f"[Search] Google CSE failed: {e}")
+        print(f"[Search] Brave search failed: {e}")
         return []
 
 
