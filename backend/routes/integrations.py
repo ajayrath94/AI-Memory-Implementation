@@ -386,3 +386,72 @@ Keep it to 2-4 short sentences. No bullet points, no links in the text."""
         "sources": [{"title": r["title"], "link": r["link"]} for r in results[:3]],
         "query":   q,
     }
+
+
+# ── Recipes (health-aware) ──────────────────────────────────────────────────────
+# Spoonacular recipe search, filtered by the user's health conditions:
+# high BP -> low sodium, diabetes -> low sugar. Recipes tied to who they are.
+
+def _user_health_filters(user_id: str) -> dict:
+    """Read the user's health conditions, map to Spoonacular filters."""
+    try:
+        from memory.profile_store import get_user_profile
+        profile = get_user_profile(user_id) or {}
+        health = profile.get("health", {}) or {}
+        blob = " ".join(str(x).lower() for x in
+                        (health.get("conditions", []) + health.get("concerns", [])))
+    except Exception:
+        blob = ""
+    filters, notes = {}, []
+    if "blood pressure" in blob or "bp" in blob or "hypertension" in blob:
+        filters["maxSodium"] = 500
+        notes.append("low-salt (good for blood pressure)")
+    if "diabet" in blob or "sugar" in blob:
+        filters["maxSugar"] = 10
+        notes.append("low-sugar")
+    return {"filters": filters, "notes": notes}
+
+
+@router.get("/recipes/{user_id}")
+def get_recipes(user_id: str, query: str = None, number: int = 5):
+    """Health-aware recipe suggestions. Reads the user's conditions and filters
+    (BP -> low sodium, diabetes -> low sugar). Returns recipes + a why-fits note."""
+    key = os.getenv("SPOONACULAR_API_KEY")
+    if not key:
+        return {"error": "SPOONACULAR_API_KEY not set", "recipes": []}
+
+    hf = _user_health_filters(user_id)
+    params = {
+        "apiKey": key,
+        "number": number,
+        "addRecipeInformation": "true",
+        "fillIngredients": "true",
+    }
+    if query:
+        params["query"] = query
+    params.update(hf["filters"])
+
+    try:
+        qs = urllib.parse.urlencode(params)
+        url = f"https://api.spoonacular.com/recipes/complexSearch?{qs}"
+        data = http_get(url)
+        recipes = []
+        for r in (data.get("results") or [])[:number]:
+            ingredients = [i.get("original") for i in (r.get("missedIngredients", []) + r.get("usedIngredients", []))] \
+                          or [i.get("name") for i in (r.get("extendedIngredients") or [])]
+            recipes.append({
+                "title":        r.get("title"),
+                "image":        r.get("image"),
+                "ready_in_min": r.get("readyInMinutes"),
+                "servings":     r.get("servings"),
+                "ingredients":  ingredients[:15],
+                "source_url":   r.get("sourceUrl"),
+            })
+        return {
+            "recipes":     recipes,
+            "health_note": ", ".join(hf["notes"]) if hf["notes"] else None,
+            "query":       query,
+        }
+    except Exception as e:
+        print(f"[Recipes] Spoonacular failed: {e}")
+        return {"error": str(e)[:100], "recipes": []}
