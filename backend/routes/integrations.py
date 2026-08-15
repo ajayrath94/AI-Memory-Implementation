@@ -434,7 +434,9 @@ def get_recipes(user_id: str, query: str = None, number: int = 5):
     try:
         qs = urllib.parse.urlencode(params)
         url = f"https://api.spoonacular.com/recipes/complexSearch?{qs}"
-        data = http_get(url)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; NancyAI/1.0)"})
+        with urllib.request.urlopen(req, timeout=8) as res:
+            data = json.loads(res.read())
         recipes = []
         for r in (data.get("results") or [])[:number]:
             ingredients = [i.get("original") for i in (r.get("missedIngredients", []) + r.get("usedIngredients", []))] \
