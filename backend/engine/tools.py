@@ -194,11 +194,14 @@ CALENDAR_ADD_SCHEMA = {
     "function": {
         "name": "add_calendar_event",
         "description": (
-            "Add an event to the user's calendar. Use when they mention an "
-            "appointment, visit, or something happening on a date/time (e.g. "
-            "'Tuesday ko doctor hai', 'beta Sunday ko aa raha hai'). ALWAYS "
-            "confirm the details (what + when) with the user in your reply before "
-            "or right after adding, since this creates a reminder for them."
+            "Add an event to the user's calendar. You MUST call this tool (not "
+            "just say 'I'll remember') whenever the user mentions an appointment, "
+            "visit, or something happening on a date/time (e.g. 'Tuesday ko doctor "
+            "hai', 'beta Sunday ko aa raha hai'). Calling this tool is what "
+            "actually saves it — saying you'll remember without calling it saves "
+            "nothing. For event_at, compute the FULL ISO datetime in the user's "
+            "local timezone (India, +05:30) — e.g. 11am Tuesday = that date "
+            "T11:00:00+05:30. Call the tool, THEN confirm warmly."
         ),
         "parameters": {
             "type": "object",
