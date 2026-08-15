@@ -267,3 +267,42 @@ def get_model_preference(user_id: str):
     except Exception:
         pass
     return {"model": "claude-haiku-4-5"}
+
+
+# ── Food preferences — editable by elder AND caregiver ──────────────────────────
+# Structured taste profile that recipes read + the enricher grows over time.
+
+class FoodPrefs(BaseModel):
+    diet:      Optional[str] = None
+    likes:     Optional[list] = None
+    dislikes:  Optional[list] = None
+    avoid:     Optional[list] = None
+    cuisines:  Optional[list] = None
+
+
+@router.get("/food/{user_id}")
+def get_food(user_id: str):
+    """View the user's food profile."""
+    from memory.profile_store import get_user_profile
+    profile = get_user_profile(user_id) or {}
+    food = profile.get("food") or {}
+    return {
+        "user_id":  user_id,
+        "diet":     food.get("diet"),
+        "likes":    food.get("likes", []),
+        "dislikes": food.get("dislikes", []),
+        "avoid":    food.get("avoid", []),
+        "cuisines": food.get("cuisines", []),
+    }
+
+
+@router.put("/food/{user_id}")
+def update_food(user_id: str, prefs: FoodPrefs):
+    """Set/merge food prefs (elder or caregiver). Lists REPLACE when provided."""
+    from memory.profile_store import get_user_profile, save_user_profile
+    patch = {k: v for k, v in prefs.model_dump().items() if v is not None}
+    if not patch:
+        return {"status": "no changes"}
+    save_user_profile(user_id, {"food": patch})
+    updated = (get_user_profile(user_id) or {}).get("food", {})
+    return {"status": "updated", "food": updated}
