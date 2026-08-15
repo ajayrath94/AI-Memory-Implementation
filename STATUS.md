@@ -250,6 +250,15 @@ Auth + performance are additive layers, planned before wider launch.
 
 ## 6. Deferred / parked (consciously)
 
+- Right to be forgotten (one-shot wipe) -- PRE-LAUNCH REQUIRED (store compliance +
+  trust for health data). Design DONE: pure "forget me" (wipes caregiver link +
+  alerts too), typed-word confirmation, delete-only scope. Endpoint drafted
+  (`DELETE /memory/forget/{user_id}`, FK-safe cascade: messages-via-sessions →
+  events → clusters → sessions → care/reminders/weights → memory/profile/context).
+  HELD until recommendations + other table-adding features land, so the cascade
+  covers every table (a wipe that misses a table isn't a real wipe). Resume: re-scan
+  tables, finalize, build confirm flow. ~30 min to finish.
+
 - Rich wellbeing UI -- dashboard shows the basic elder card + alerts; the mockup
   panels reading `/care/wellbeing` (valence trend, emotional weather, score,
   reminder tracker) are NOT yet built (next visible frontend work).
