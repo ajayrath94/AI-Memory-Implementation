@@ -393,23 +393,65 @@ Keep it to 2-4 short sentences. No bullet points, no links in the text."""
 # high BP -> low sodium, diabetes -> low sugar. Recipes tied to who they are.
 
 def _user_health_filters(user_id: str) -> dict:
-    """Read the user's health conditions, map to Spoonacular filters."""
+    """Read the user's health, region, religion, and any captured food prefs →
+    Spoonacular params. Layers TASTE (cuisine/diet/likes) onto HEALTH (sodium/sugar),
+    so recipes fit the whole person, not just their condition."""
     try:
         from memory.profile_store import get_user_profile
         profile = get_user_profile(user_id) or {}
-        health = profile.get("health", {}) or {}
-        blob = " ".join(str(x).lower() for x in
-                        (health.get("conditions", []) + health.get("concerns", [])))
     except Exception:
-        blob = ""
+        profile = {}
+
+    health    = profile.get("health", {}) or {}
+    interests = profile.get("interests", {}) or {}
+    food      = profile.get("food", {}) or {}          # future capture field
+    location  = str(profile.get("location", "") or "").lower()
+    religion  = " ".join(str(x).lower() for x in (
+                    interests.get("religion", []) if isinstance(interests.get("religion"), list)
+                    else [interests.get("religion", "")]))
+
     filters, notes = {}, []
-    if "blood pressure" in blob or "bp" in blob or "hypertension" in blob:
-        filters["maxSodium"] = 500
+
+    # ── HEALTH ──────────────────────────────────────────────────────────────
+    hblob = " ".join(str(x).lower() for x in
+                     (health.get("conditions", []) + health.get("concerns", [])))
+    if "blood pressure" in hblob or "hypertension" in hblob:
+        filters["maxSodium"] = 800   # loosened from 500 so more dishes qualify
         notes.append("low-salt (good for blood pressure)")
-    if "diabet" in blob or "sugar" in blob:
-        filters["maxSugar"] = 10
+    if "diabet" in hblob or ("sugar" in hblob and "blood sugar" in hblob):
+        filters["maxSugar"] = 15
         notes.append("low-sugar")
-    return {"filters": filters, "notes": notes}
+
+    # ── REGION → cuisine ────────────────────────────────────────────────────
+    india_hints = ["jaipur","delhi","mumbai","kolkata","chennai","bangalore",
+                   "hyderabad","pune","india","rajasthan","up","bihar","gujarat"]
+    if any(h in location for h in india_hints):
+        filters["cuisine"] = "Indian"
+        notes.append("Indian")
+
+    # ── RELIGION / captured diet → veg lean (soft, overridable by explicit prefs) ─
+    captured_diet = (food.get("diet") or "").lower()
+    if captured_diet:
+        if "veg" in captured_diet and "non" not in captured_diet:
+            filters["diet"] = "vegetarian"
+            notes.append("vegetarian")
+    elif "hindu" in religion or "jain" in religion:
+        # elderly Hindu/Jain often vegetarian — soft default until we capture the real pref
+        filters["diet"] = "vegetarian"
+        notes.append("vegetarian")
+
+    # ── captured LIKES / AVOID ──────────────────────────────────────────────
+    likes = food.get("likes") or []
+    avoid = food.get("avoid") or []
+    if avoid:
+        # Spoonacular intolerances are a fixed set; pass through recognized ones
+        known = {"dairy","egg","gluten","peanut","seafood","sesame","shellfish",
+                 "soy","sulfite","tree nut","wheat"}
+        into = [a for a in (x.lower() for x in avoid) if a in known]
+        if into:
+            filters["intolerances"] = ",".join(into)
+
+    return {"filters": filters, "notes": notes, "likes": likes}
 
 
 @router.get("/recipes/{user_id}")
