@@ -6,6 +6,7 @@ import {
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { router } from 'expo-router'
+import { saveSession } from '../../services/authService'
 import { useTheme } from '../../hooks/useTheme'
 import { Colors, Typography, Spacing, Radius, API_BASE } from '../../constants'
 
@@ -30,7 +31,16 @@ export default function LoginScreen() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Login failed')
 
-      // TODO: store token in secure store
+      // store the JWT so the dashboard can authenticate its requests
+      await saveSession({
+        access_token:  data.session?.access_token || '',
+        refresh_token: data.session?.refresh_token || '',
+        user: {
+          id:    data.caregiver?.id    || '',
+          email: data.caregiver?.email || email.trim().toLowerCase(),
+          role:  'caregiver',
+        } as any,
+      })
       router.replace('/caregiver/dashboard')
     } catch (e: any) {
       Alert.alert('Login failed', e.message)

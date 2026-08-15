@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useTheme } from '../../hooks/useTheme'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY } from '../../constants'
+import { getAccessToken } from '../../services/authService'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Caregiver {
@@ -70,8 +71,7 @@ export default function CaregiverDashboard() {
   const [loading,    setLoading]    = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
-  // TODO: get token from secure store after auth
-  const token = '' // placeholder until auth is wired
+  const [token, setToken] = useState<string>('')
 
   const fetchAll = useCallback(async () => {
     try {
@@ -91,7 +91,8 @@ export default function CaregiverDashboard() {
     }
   }, [token, caregiver?.id])
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { getAccessToken().then(t => setToken(t || '')) }, [])
+  useEffect(() => { if (token) fetchAll() }, [token])
 
   const onRefresh = () => { setRefreshing(true); fetchAll() }
 
