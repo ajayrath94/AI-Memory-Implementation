@@ -10,7 +10,8 @@ Each entry needs:
   - handler: the real Python function to call when the LLM requests this tool
 """
 
-from routes.integrations import get_weather, get_music_recommendations, get_news, get_nearby_places
+from routes.integrations import get_weather, get_music_recommendations, get_news, get_nearby_places, web_search, get_recipes
+from routes.calendar import get_calendar
 
 
 # ── Tool schemas (OpenAI format — universal across all LiteLLM providers) ──────
@@ -134,7 +135,182 @@ PLACES_SCHEMA = {
 }
 
 
+# ── New tool schemas (recipes, search, calendar, food) ──────────────────────────
+
+RECIPES_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "get_recipes",
+        "description": (
+            "Suggest recipes / meal ideas. Use whenever the user asks what to "
+            "cook, wants a recipe, asks 'kya banau', or mentions wanting food "
+            "ideas. Automatically filters for their health (low-salt for BP, "
+            "low-sugar for diabetes) and taste (vegetarian, Indian cuisine, "
+            "their liked dishes) — so just call it, the personalization is "
+            "handled. Don't invent recipes from memory; call this for real ones."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Optional. What kind of food, in the user's words, e.g. "
+                        "'dinner', 'something light', 'rajma'. Omit for a general suggestion."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+SEARCH_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "search_web",
+        "description": (
+            "Search the live web for a warm, current answer. Use for ANY general "
+            "question, current fact, or 'what is / how do I / is X good for Y' "
+            "that the other tools (weather, music, news, places, recipes) don't "
+            "cover — e.g. health questions, prices, how-tos, general knowledge. "
+            "Don't answer from memory when it's something current or factual; search."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The question, in the user's own words.",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+CALENDAR_ADD_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "add_calendar_event",
+        "description": (
+            "Add an event to the user's calendar. Use when they mention an "
+            "appointment, visit, or something happening on a date/time (e.g. "
+            "'Tuesday ko doctor hai', 'beta Sunday ko aa raha hai'). ALWAYS "
+            "confirm the details (what + when) with the user in your reply before "
+            "or right after adding, since this creates a reminder for them."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title":    {"type": "string", "description": "What the event is, e.g. 'Doctor appointment'."},
+                "event_at": {"type": "string", "description": "ISO 8601 datetime, e.g. '2026-08-19T16:00:00'. Infer from what the user said relative to now."},
+                "category": {"type": "string", "description": "One of: medical, social, festival, personal. Best guess."},
+            },
+            "required": ["title", "event_at"],
+        },
+    },
+}
+
+CALENDAR_VIEW_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "get_calendar",
+        "description": (
+            "Get the user's upcoming schedule — appointments, reminders, and "
+            "recurring routines (meds) — as one timeline. Use when they ask "
+            "what's coming up, their schedule, or their day/week."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "How many days ahead to show. Default 7."},
+            },
+            "required": [],
+        },
+    },
+}
+
+FOOD_PREF_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "update_food_prefs",
+        "description": (
+            "Silently record the user's food preferences whenever they come up "
+            "naturally in conversation — a dish they like ('mujhe rajma pasand "
+            "hai'), a dislike, their diet ('main veg hoon'), or something they "
+            "avoid ('pyaaz-lehsun nahi khaati'). Call this in the background to "
+            "remember; you don't need to announce that you saved it. This makes "
+            "future recipe suggestions fit their taste."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "likes":    {"type": "array", "items": {"type": "string"}, "description": "Foods/dishes they like."},
+                "dislikes": {"type": "array", "items": {"type": "string"}, "description": "Foods they dislike."},
+                "diet":     {"type": "string", "description": "e.g. 'vegetarian', 'non-vegetarian', 'vegan'."},
+                "avoid":    {"type": "array", "items": {"type": "string"}, "description": "Foods to avoid (allergy/religious), e.g. onion, garlic."},
+            },
+            "required": [],
+        },
+    },
+}
+
+
+# ── Handlers for the model-taking functions (build the Pydantic models) ─────────
+
+def _handle_add_calendar(args, user_id):
+    from routes.calendar import add_event, CalendarEvent
+    ev = CalendarEvent(
+        user_id=user_id,
+        title=args.get("title", "Event"),
+        event_at=args.get("event_at"),
+        category=args.get("category") or "personal",
+        created_by="elder",
+    )
+    return add_event(ev)
+
+
+def _handle_update_food(args, user_id):
+    from routes.memory_state import update_food, FoodPrefs
+    # smart-merge: append to existing lists rather than replace (auto-capture accumulates)
+    from memory.profile_store import get_user_profile
+    existing = (get_user_profile(user_id) or {}).get("food", {}) or {}
+    def _merge(key):
+        old = existing.get(key) or []
+        new = args.get(key) or []
+        return sorted(set([*old, *new])) if (old or new) else None
+    prefs = FoodPrefs(
+        likes=_merge("likes"),
+        dislikes=_merge("dislikes"),
+        avoid=_merge("avoid"),
+        diet=args.get("diet") or existing.get("diet"),
+    )
+    return update_food(user_id, prefs)
+
+
 TOOL_REGISTRY = {
+
+    "get_recipes": {
+        "schema":  RECIPES_SCHEMA,
+        "handler": lambda args, user_id: get_recipes(user_id, args.get("query")),
+    },
+    "search_web": {
+        "schema":  SEARCH_SCHEMA,
+        "handler": lambda args, user_id: web_search(user_id, args.get("query")),
+    },
+    "add_calendar_event": {
+        "schema":  CALENDAR_ADD_SCHEMA,
+        "handler": _handle_add_calendar,
+    },
+    "get_calendar": {
+        "schema":  CALENDAR_VIEW_SCHEMA,
+        "handler": lambda args, user_id: get_calendar(user_id, args.get("days") or 7),
+    },
+    "update_food_prefs": {
+        "schema":  FOOD_PREF_SCHEMA,
+        "handler": _handle_update_food,
+    },
     "get_weather": {
         "schema":  WEATHER_SCHEMA,
         "handler": lambda args, user_id: get_weather(user_id, args.get("location")),
