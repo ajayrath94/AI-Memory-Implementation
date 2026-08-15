@@ -7,6 +7,7 @@ from routes.schedule import router as schedule_router
 from routes.reminders import router as reminders_router
 from routes.export import router as export_router
 from routes.care import router as care_router
+from routes.calendar import router as calendar_router
 from routes.context import router as context_router
 from routes.alerts import router as alerts_router
 from routes.memory_state import router as memory_state_router
