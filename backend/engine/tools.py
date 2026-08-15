@@ -236,12 +236,14 @@ FOOD_PREF_SCHEMA = {
     "function": {
         "name": "update_food_prefs",
         "description": (
-            "Silently record the user's food preferences whenever they come up "
-            "naturally in conversation — a dish they like ('mujhe rajma pasand "
-            "hai'), a dislike, their diet ('main veg hoon'), or something they "
-            "avoid ('pyaaz-lehsun nahi khaati'). Call this in the background to "
-            "remember; you don't need to announce that you saved it. This makes "
-            "future recipe suggestions fit their taste."
+            "Record the user's food preferences to memory. You MUST call this "
+            "tool (not just say you noted it) whenever the user mentions ANY food "
+            "preference: a dish they like ('mujhe rajma pasand hai' -> likes), a "
+            "dislike or something they don't eat ('karela pasand nahi' -> "
+            "dislikes), their diet ('main veg hoon' -> diet), or something they "
+            "avoid for allergy/religion ('pyaaz-lehsun nahi khaati' -> avoid). "
+            "Calling this tool is what actually saves it — saying 'noted' without "
+            "calling it saves nothing. Call it, THEN reply warmly."
         ),
         "parameters": {
             "type": "object",
