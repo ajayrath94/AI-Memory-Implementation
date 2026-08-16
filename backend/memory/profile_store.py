@@ -16,6 +16,7 @@ Profile is extracted from conversations using Claude Haiku
 and merged incrementally — never overwrites, only enriches.
 """
 
+import re
 import os
 import json
 from typing import Optional
@@ -54,7 +55,8 @@ def save_user_profile(user_id: str, updates: dict):
     db       = get_client()
     existing = get_user_profile(user_id) or {}
 
-    merged = _deep_merge(existing, updates)
+    owner  = updates.get("name") or existing.get("name") or ""
+    merged = _deep_merge(existing, updates, owner)
     merged["user_id"]    = user_id
     merged["updated_at"] = "now()"
 
@@ -62,7 +64,159 @@ def save_user_profile(user_id: str, updates: dict):
     print(f"[Profile] Updated profile for {user_id}")
 
 
-def _deep_merge(base: dict, updates: dict) -> dict:
+
+# ── List canonicalisation ─────────────────────────────────────────────────────
+# The session extractor writes free-form descriptive strings, so the same entity
+# arrives phrased differently every run ("Shubham", "Shubham (son)", "Shubham -
+# sends medication"). Exact-match dedup never fires against that, which is how
+# profile lists grew unbounded. We compare on a stripped identity key instead
+# and keep the cleanest surface form we have seen.
+
+_PAREN = re.compile(r"\s*[\(\[][^\)\]]*[\)\]]")
+_TAIL  = re.compile(r"\s+[-\u2013\u2014]\s+.*$")
+_HEDGE = re.compile(
+    r"\b(appears?\s+to\s+be|seems?\s+to\s+be|appears?|possibly|probably|"
+    r"maybe|likely|mentioned\s+as|mentioned\s+in\s+conversation|mentioned|"
+    r"known\s+person|unclear|unknown)\b", re.I)
+_FRAGMENT_PREFIX = ("in ", "at ", "on ", "the ", "with ", "from ", "for ")
+
+
+# ── Reserved entities ─────────────────────────────────────────────────────────
+# Nancy is the companion, not a person in the user's life — but she is named in
+# almost every turn, so the extractor keeps proposing her as a relative. The
+# user's own name has the same problem from self-reference ("Shobha ne kaha").
+# Both are dropped before dedup so they can never reach the profile.
+
+_ASSISTANT_NAMES = {"nancy", "nancy ai", "nancy app"}
+
+
+def _reserved_names(owner: str = "") -> set:
+    r = set(_ASSISTANT_NAMES)
+    if owner:
+        o = re.sub(r"[^\w\s]", " ", owner).strip().lower()
+        if o:
+            r.add(o)
+            r.update(o.split())      # first name alone
+    return r
+
+
+def _is_reserved(key: str, owner: str = "") -> bool:
+    if not key:
+        return False
+    reserved = _reserved_names(owner)
+    if key in reserved:
+        return True
+    return key.split()[0] in reserved if key.split() else False
+
+
+# Relation words that arrive with no name attached ("Daughter - living abroad",
+# "Beta (son/child)"). These are placeholders the extractor emits when it knows
+# a relative exists but not who — they are not entities and must not persist as
+# names. Hinglish included: the extractor works in the language the user speaks.
+_RELATION_WORDS = {
+    "son", "daughter", "child", "children", "kid", "kids", "husband", "wife",
+    "spouse", "mother", "father", "parent", "brother", "sister", "sibling",
+    "grandson", "granddaughter", "grandchild", "grandchildren", "uncle", "aunt",
+    "cousin", "nephew", "niece", "friend", "neighbour", "neighbor", "caregiver",
+    "beta", "beti", "bahu", "damad", "pota", "poti", "bhai", "behen", "bhen",
+    "maa", "ma", "papa", "pita", "pati", "patni", "dada", "dadi", "nana", "nani",
+    "mama", "mami", "chacha", "chachi", "bua", "saas", "sasur", "devar", "jeth",
+}
+
+# Leading relation labels: "Son: Arjun" and "Arjun" are one person.
+_LABEL = re.compile(
+    r"^\s*(son|daughter|child|husband|wife|spouse|mother|father|brother|sister|"
+    r"grandson|granddaughter|grandchild|beta|beti|friend|caregiver)\s*:\s*",
+    re.I)
+
+
+_GENERIC = {
+    "chronic", "urgent", "urgent health concern", "health concern", "concern",
+    "concerns", "issue", "issues", "problem", "problems", "general", "other",
+    "unknown", "unclear", "various", "misc", "none", "n a", "health", "status",
+}
+
+
+def _clean_surface(s: str) -> str:
+    """Strip parentheticals, dash-tails and hedges but keep original casing."""
+    t = _LABEL.sub("", s)
+    t = _PAREN.sub(" ", t)
+    t = _TAIL.sub("", t)
+    t = _HEDGE.sub(" ", t)
+    t = re.sub(r"\s+", " ", t).strip(" ,;:-\u2013\u2014")
+    return t
+
+
+# Strip a trailing prepositional phrase: "Arjun in Mumbai" and "Arjun" are one
+# person. Only after a name-shaped head, so "in Bangalore" is untouched here and
+# falls to the fragment check below.
+_TRAILING_PP = re.compile(
+    r"^(.*?\S)\s+(in|at|from|near|of|with|living\s+in|lives\s+in|based\s+in)\s+\S.*$",
+    re.I)
+
+# Function words that can never be the head of an entity name. Hedge removal
+# leaves debris ("mentioned but location unknown" -> "but location"); rather
+# than chase every phrasing, require the remainder to still look like a name.
+_STOPHEADS = {
+    "but", "and", "or", "the", "a", "an", "who", "which", "that", "this",
+    "there", "here", "not", "no", "is", "was", "has", "have", "been", "be",
+    "some", "any", "one", "someone", "somebody", "person", "people", "location",
+    "status", "details", "detail", "info", "information", "context",
+}
+
+
+def _canonical_key(s) -> str:
+    """Identity key for dedup. Returns '' for items that should be dropped."""
+    if not isinstance(s, str):
+        return ""
+    t = _clean_surface(s).lower()
+    m = _TRAILING_PP.match(t)
+    if m:
+        t = m.group(1)
+    t = t.split("/")[0]          # "knee pain/dard" -> "knee pain"
+    t = re.sub(r"[^\w\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    if len(t) < 2 or t in _GENERIC or t in _RELATION_WORDS:
+        return ""
+    if t.startswith(_FRAGMENT_PREFIX):
+        return ""
+    words = t.split()
+    if words[0] in _STOPHEADS:
+        return ""
+    if all(w in _STOPHEADS or w in _RELATION_WORDS or w in _GENERIC for w in words):
+        return ""
+    return t
+
+
+def _flatten_item(item):
+    """The extractor occasionally emits a dict instead of a string (the prompt
+    asks for children 'with details', so the model sometimes obliges with
+    structure). Rare and schema-less — four entries across 81 profiles, four
+    different key sets. Collapse to the name so it dedups with the string form
+    rather than being silently discarded."""
+    if isinstance(item, dict):
+        return (item.get("name") or item.get("value") or "").strip()
+    return item
+
+
+def _merge_list(existing, new, cap: int = 25, owner: str = "") -> list:
+    best, order = {}, []
+    for item in (_flatten_item(x) for x in list(existing or []) + list(new or [])):
+        k = _canonical_key(item)
+        if not k or _is_reserved(k, owner):
+            continue
+        val = _clean_surface(item) if isinstance(item, str) else item
+        if not val:
+            continue
+        if k not in best:
+            best[k] = val
+            order.append(k)
+        elif len(val) < len(best[k]):
+            best[k] = val
+    return [best[k] for k in order][:cap]
+
+
+def _deep_merge(base: dict, updates: dict, owner: str = "") -> dict:
     """
     Deep merge updates into base.
     - Scalars: only update if base is empty/None
@@ -79,10 +233,9 @@ def _deep_merge(base: dict, updates: dict) -> dict:
             continue  # Never overwrite with empty
 
         if isinstance(new_val, dict) and isinstance(existing_val, dict):
-            result[key] = _deep_merge(existing_val, new_val)
+            result[key] = _deep_merge(existing_val, new_val, owner)
         elif isinstance(new_val, list) and isinstance(existing_val, list):
-            combined = existing_val + [x for x in new_val if x not in existing_val]
-            result[key] = combined
+            result[key] = _merge_list(existing_val, new_val, owner=owner)
         else:
             # For scalars: update if existing is empty
             if not existing_val:
@@ -99,60 +252,94 @@ def extract_profile_from_session(session_id: str, user_id: str) -> dict:
     """
     Use Claude Haiku to extract profile information from a session.
     Returns a partial profile dict with only what was found.
+
+    Reads USER turns only. Including Nancy's replies let the extractor treat the
+    companion's own words as evidence about the user: in one profile "Shubham"
+    was named exactly once, by Nancy, and became the user's spouse, child AND
+    grandchild across successive sessions. Nancy herself was repeatedly filed as
+    a family member. The schema below reads as a form to fill in, so the model
+    fills it from whatever proper nouns are in range — the rules exist to make
+    an empty field the expected answer rather than a failure.
     """
     messages = get_session_messages(session_id)
     if not messages:
         return {}
 
-    # Build conversation text
     convo = []
     for msg in messages:
-        if msg.get("role") in ("user", "assistant"):
-            role    = "User" if msg["role"] == "user" else "Nancy"
-            content = msg.get("content", "")[:500]
-            convo.append(f"{role}: {content}")
+        if msg.get("role") == "user":
+            content = (msg.get("content") or "")[:500].strip()
+            if content:
+                convo.append(content)
+    if not convo:
+        return {}
+    convo_text = "\n".join(f"- {line}" for line in convo[-20:])
 
-    convo_text = "\n".join(convo[-20:])  # Last 20 messages
+    prompt = f"""These are statements the user made. Extract only what the user
+stated about themselves.
 
-    prompt = f"""Analyze this conversation and extract factual information about the user.
-Return ONLY a JSON object with what you can confidently extract. Leave fields empty if not mentioned.
+RULES — these override the schema:
 
-Conversation:
+0. "Nancy" is the name of the AI companion the user is talking to. The user
+   addresses her by name. She is NEVER a family member, friend or contact, and
+   must never appear anywhere in the output. Nor may the user's own name appear
+   in "family" — a person is not their own relative.
+
+1. The schema is a shape, not a checklist. Most fields are empty most of the
+   time. An empty field is the CORRECT answer when the user did not say it.
+2. Do not infer a relationship from a name. A name with no stated relationship
+   does not go in "family" at all.
+3. Do not guess which relation someone is. "Mera beta Shubham" is a son.
+   "Shubham called" is a person with no stated relation — omit them.
+   If the user refers to a relative without naming them ("meri beti", "my
+   son"), omit them too. A relation word is not a name — never write "beta",
+   "beti", "son" or "daughter" as if it were one.
+4. Do not infer religion, caste, community or politics from greetings, food,
+   festivals or names. Record these ONLY if the user states the practice
+   directly. "Namaste" is a greeting, not a religious practice.
+5. Do not infer living situation, loneliness, or family estrangement. Record
+   only what is stated outright.
+6. Never use hedging words in a value ("appears to be", "possibly", "seems",
+   "mentioned"). If you would need one, the field should be empty instead.
+7. Names go in name fields; descriptions do not. Write "Arjun", not
+   "Arjun - son, doctor in Mumbai". Put a location in the location field.
+
+User's statements:
 {convo_text}
 
 Extract into this exact JSON structure (use empty string/dict/list if not found):
 {{
-  "name": "user's name if mentioned",
-  "age_group": "approximate age group: under-50/50-60/60-70/70-80/80+",
-  "location": "city or region if mentioned",
-  "language_pref": "hindi/english/hinglish based on how they speak",
+  "name": "user's own name, only if they said it",
+  "age_group": "under-50/50-60/60-70/70-80/80+, only if age was stated",
+  "location": "city or region the user says they live in",
+  "language_pref": "hindi/english/hinglish based on how they write",
   "family": {{
-    "spouse": "name/status if mentioned",
-    "children": ["list of children mentioned with details"],
-    "grandchildren": ["list if mentioned"],
-    "other": ["other family members mentioned"]
+    "spouse": "name ONLY if user said husband/wife/pati/patni",
+    "children": ["name ONLY if user said beta/beti/son/daughter"],
+    "grandchildren": ["name ONLY if user said pota/poti/grandson/granddaughter"],
+    "other": ["name AND stated relation, e.g. 'Meera (sister)'; omit if unstated"]
   }},
   "health": {{
-    "conditions": ["list of health conditions mentioned"],
-    "medications": ["list of medications mentioned"],
-    "concerns": ["health concerns or symptoms mentioned"]
+    "conditions": ["condition the user says they have"],
+    "medications": ["medication the user says they take"],
+    "concerns": ["symptom or worry the user stated"]
   }},
   "interests": {{
-    "sports": ["sports they follow"],
-    "music": ["music preferences"],
-    "entertainment": ["TV/movies/shows"],
-    "religion": ["religious practices if mentioned"],
-    "hobbies": ["other hobbies"]
+    "sports": ["sports the user says they follow"],
+    "music": ["music the user says they like"],
+    "entertainment": ["TV/movies/shows the user says they watch"],
+    "religion": ["religious practice ONLY if the user describes doing it"],
+    "hobbies": ["other hobbies the user states"]
   }},
   "personality": {{
-    "traits": ["personality traits observed"],
-    "emotional_state": "current overall emotional state",
+    "traits": ["trait clearly evidenced in how the user writes"],
+    "emotional_state": "emotional state the user expressed",
     "communication_style": "how they communicate"
   }},
   "life_context": {{
-    "occupation": "past/current occupation if mentioned",
-    "living_situation": "lives alone/with family/etc",
-    "notable_events": ["significant life events mentioned"]
+    "occupation": "job the user says they have or had",
+    "living_situation": "ONLY if the user states who they live with",
+    "notable_events": ["event the user described"]
   }}
 }}
 
@@ -167,23 +354,21 @@ Return ONLY the JSON, no explanation."""
             messages   = [{"role": "user", "content": prompt}]
         )
         text = resp.content[0].text.strip()
-
         # Clean JSON
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0].strip()
         elif "```" in text:
             text = text.split("```")[1].split("```")[0].strip()
-
         extracted = json.loads(text)
         print(f"[Profile] Extracted profile data from session {session_id[:8]}")
         return extracted
-
     except json.JSONDecodeError as e:
         print(f"[Profile] JSON parse failed: {e}")
         return {}
     except Exception as e:
         print(f"[Profile] Extraction failed: {e}")
         return {}
+
 
 
 # ── Update profile after session ───────────────────────────────────────────────
