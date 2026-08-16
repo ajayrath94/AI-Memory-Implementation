@@ -60,6 +60,16 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                     "priority": "HIGH",
                 })
                 mark_nudge_fired(_rem["id"], _item["nudge_index"])
+                try:
+                    from memory.push_sender import send_push
+                    send_push(
+                        _rem["user_id"],
+                        title="Nancy",
+                        body=_item.get("message") or _rem.get("what") or "You have a reminder",
+                        data={"type": "reminder", "reminder_id": _rem["id"]},
+                    )
+                except Exception as _pe:
+                    print(f"[Push] reminder push failed: {_pe}")
                 print(f"[Reminder] fired nudge for {_rem.get('what')} ({_rem['user_id']})")
         except Exception as _e:
             print(f"[Scheduler] reminder firing failed: {_e}")
