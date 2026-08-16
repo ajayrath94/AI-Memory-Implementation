@@ -1,5 +1,5 @@
 import './_errorHandler'
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect} from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet,
   Animated, Dimensions, Pressable,
@@ -7,7 +7,7 @@ import {
 import { Slot, useRouter, usePathname } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Colors, Spacing, Radius } from '../constants'
+import { Colors, Spacing, Radius, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
 
 const COLLAPSED_W = 56
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { path: '/sessions', icon: 'time-outline',          label: 'Sessions' },
   { path: '/memory',   icon: 'hardware-chip-outline', label: 'Memory'   },
   { path: '/reminders', icon: 'alarm-outline',          label: 'Reminders'},
+  { path: '/calendar', icon: 'calendar-outline',       label: 'Calendar' },
   { path: '/profile',  icon: 'person-outline',        label: 'Profile'  },
   { path: '/settings', icon: 'settings-outline',      label: 'Settings' },
 ]
@@ -30,6 +31,8 @@ function isLightHex(hex: string): boolean {
   const b = parseInt(h.substring(4, 6), 16)
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5
 }
+
+import { syncReminderNotifications } from '../services/notificationService'
 
 export default function RootLayout() {
   // ── All hooks at top, no conditionals before them ──
@@ -58,6 +61,13 @@ export default function RootLayout() {
     router.push(path as any)
     if (open) toggle()
   }, [router, open, toggle])
+
+  const userId = useAppStore(s => s.userId)
+  useEffect(() => {
+    if (userId) {
+      syncReminderNotifications(userId, API_BASE, API_KEY)
+    }
+  }, [userId])
 
   const resolvedBg   = bgColor || Colors.bg
   const isSidebarLight = isLightHex(resolvedBg)

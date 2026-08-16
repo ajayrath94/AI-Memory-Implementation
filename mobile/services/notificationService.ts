@@ -87,3 +87,74 @@ export async function cancelAllNotifications() {
   try { await Notifications.cancelAllScheduledNotificationsAsync() }
   catch (e) { console.error('[notif] cancel-all failed', e) }
 }
+
+
+/**
+ * Central sync: fetch ALL pending reminders (regular + calendar-sourced) and
+ * schedule a local notification for each future one. Cancels previously-scheduled
+ * ones first to avoid duplicates. Call on app open — covers reminders added via
+ * chat AND calendar events, offline + app-closed delivery.
+ */
+export async function syncReminderNotifications(
+  userId: string, apiBase: string, apiKey: string
+): Promise<number> {
+  const granted = await ensureNotificationPermission()
+  if (!granted) {
+    console.log('[notif] permission not granted — skipping sync')
+    return 0
+  }
+  try {
+    // clear existing scheduled notifications so we re-schedule cleanly
+    await Notifications.cancelAllScheduledNotificationsAsync()
+
+    const res = await fetch(`${apiBase}/reminders/${userId}`, {
+      headers: { 'X-API-Key': apiKey },
+    })
+    const data = await res.json()
+    const upcoming = data?.upcoming || []
+    const now = Date.now()
+    let scheduled = 0
+
+    for (const r of upcoming) {
+      // prefer explicit nudges; else a single notification at fire_at
+      const points: { at: string; message: string }[] =
+        (r.nudges && r.nudges.length)
+          ? r.nudges
+          : [{ at: r.fire_at_utc, message: reminderMessage(r) }]
+
+      for (const p of points) {
+        const when = new Date(p.at).getTime()
+        if (isNaN(when) || when <= now) continue
+        try {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: 'Nancy',
+              body:  p.message,
+              sound: 'default',
+              data:  { reminderId: r.id, kind: r.source || 'reminder' },
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: new Date(when),
+            },
+          })
+          scheduled += 1
+        } catch (e) {
+          console.error('[notif] schedule failed', e)
+        }
+      }
+    }
+    console.log(`[notif] synced ${scheduled} notification(s) from ${upcoming.length} reminders`)
+    return scheduled
+  } catch (e) {
+    console.error('[notif] sync failed', e)
+    return 0
+  }
+}
+
+/** A warm, simple notification message for a reminder with no pre-written nudge. */
+function reminderMessage(r: { what: string; source?: string }): string {
+  const what = r.what || 'Reminder'
+  if (r.source === 'calendar') return `Yaad hai na? ${what} aaj hai.`
+  return `Yaad dila rahi hoon: ${what}`
+}
