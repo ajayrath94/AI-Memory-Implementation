@@ -1,5 +1,8 @@
 import * as Notifications from 'expo-notifications'
 import { Platform } from 'react-native'
+import Constants from 'expo-constants'
+import { API_BASE } from '../constants'
+import { getAuthHeaders } from './authService'
 
 // Show notifications even when the app is foregrounded.
 Notifications.setNotificationHandler({
@@ -157,4 +160,47 @@ function reminderMessage(r: { what: string; source?: string }): string {
   const what = r.what || 'Reminder'
   if (r.source === 'calendar') return `Yaad hai na? ${what} aaj hai.`
   return `Yaad dila rahi hoon: ${what}`
+}
+
+/**
+ * Register this device for server-initiated push (alerts, proactive nudges,
+ * recommendations). Local notifications already cover reminders known at
+ * creation time; this covers what the server decides later.
+ */
+export async function registerPushToken(userId: string): Promise<string | null> {
+  try {
+    const granted = await ensureNotificationPermission()
+    if (!granted) {
+      console.log('[push] permission not granted — no token')
+      return null
+    }
+
+    const projectId = Constants?.expoConfig?.extra?.eas?.projectId
+    if (!projectId) {
+      console.error('[push] no EAS projectId in config')
+      return null
+    }
+
+    const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId })
+    if (!token) return null
+
+    const res = await fetch(`${API_BASE}/push/register`, {
+      method:  'POST',
+      headers: { ...(await getAuthHeaders()) },
+      body:    JSON.stringify({
+        user_id:    userId,
+        expo_token: token,
+        platform:   Platform.OS,
+      }),
+    })
+    if (!res.ok) {
+      console.error('[push] register failed', res.status)
+      return null
+    }
+    console.log('[push] registered', token.slice(0, 25) + '...')
+    return token
+  } catch (e) {
+    console.error('[push] token error', e)
+    return null
+  }
 }

@@ -32,7 +32,7 @@ function isLightHex(hex: string): boolean {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5
 }
 
-import { syncReminderNotifications } from '../services/notificationService'
+import { syncReminderNotifications, registerPushToken } from '../services/notificationService'
 
 export default function RootLayout() {
   // ── All hooks at top, no conditionals before them ──
@@ -66,6 +66,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (userId) {
       syncReminderNotifications(userId, API_BASE, API_KEY)
+      registerPushToken(userId)
     }
   }, [userId])
 
