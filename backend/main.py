@@ -17,6 +17,7 @@ from routes.persona import router as persona_router
 from routes.integrations import router as integrations_router
 from routes.location import router as location_router
 from routes.debug import router as debug_router
+from routes.push import router as push_router
 from routes.memory_view import router as memory_view_router
 from utils.auth import require_api_key
 import os
@@ -52,6 +53,7 @@ app.include_router(persona_router, prefix="/persona", tags=["persona"], dependen
 app.include_router(integrations_router, prefix="/integrations", tags=["integrations"], dependencies=[Depends(require_api_key)])
 app.include_router(location_router, prefix="/location", tags=["location"], dependencies=[Depends(require_api_key)])
 app.include_router(debug_router, prefix="/debug", tags=["debug"], dependencies=[Depends(require_api_key)])
+app.include_router(push_router, prefix="/push", tags=["push"], dependencies=[Depends(require_api_key)])
 app.include_router(memory_view_router, prefix="/view", tags=["view"])
 
 @app.get("/")

@@ -16,7 +16,8 @@
       "bundleIdentifier": "com.aimemory.app",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "AI Memory uses the microphone for voice input.",
-        "NSLocationWhenInUseUsageDescription": "Nancy uses your location to give you accurate local weather and find nearby places like pharmacies and hospitals."
+        "NSLocationWhenInUseUsageDescription": "Nancy uses your location to give you accurate local weather and find nearby places like pharmacies and hospitals.",
+        "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition."
       }
     },
     "android": {
@@ -24,7 +25,12 @@
       "permissions": [
         "RECORD_AUDIO",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
@@ -36,6 +42,7 @@
       "expo-av",
       "expo-speech-recognition",
       "expo-secure-store",
+      "expo-notifications",
       [
         "expo-location",
         {
@@ -44,6 +51,13 @@
       ]
     ],
     "newArchEnabled": true,
-    "icon": "./assets/icon.png"
+    "icon": "./assets/icon.png",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e935e277-232b-480a-be52-22f06f0c49f1"
+      }
+    },
+    "owner": "ajayrath94"
   }
 }
