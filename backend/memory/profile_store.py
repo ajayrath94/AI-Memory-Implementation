@@ -277,15 +277,31 @@ def extract_profile_from_session(session_id: str, user_id: str) -> dict:
         return {}
     convo_text = "\n".join(f"- {line}" for line in convo[-20:])
 
+    # The companion's name is per-user (bot_personas.bot_name). A companion may
+    # also be styled as a relative — "Shubham", relationship "son" — in which
+    # case the user says "mera beta Shubham" about the COMPANION. Nothing
+    # distinguishes that from a real son of the same name, so for familial
+    # personas the name is off-limits even when a relation is stated.
+    from memory.persona_names import get_companion_name, is_familial_persona
+    bot_name = get_companion_name(user_id)
+    familial_note = ""
+    if is_familial_persona(user_id):
+        familial_note = (
+            f" This companion is styled as a relative, so the user may address"
+            f" them as one (\"mera beta {bot_name}\", \"{bot_name} beta\")."
+            f" That is still the companion, not a real relative — never record"
+            f" \"{bot_name}\" in family under any relation.")
+
     prompt = f"""These are statements the user made. Extract only what the user
 stated about themselves.
 
 RULES — these override the schema:
 
-0. "Nancy" is the name of the AI companion the user is talking to. The user
-   addresses her by name. She is NEVER a family member, friend or contact, and
-   must never appear anywhere in the output. Nor may the user's own name appear
-   in "family" — a person is not their own relative.
+0. "{bot_name}" is the name of the AI companion the user is talking to. The
+   user addresses the companion by name constantly. The companion is NEVER a
+   family member, friend or contact, and must never appear anywhere in the
+   output.{familial_note} Nor may the user's own name appear in "family" — a
+   person is not their own relative.
 
 1. The schema is a shape, not a checklist. Most fields are empty most of the
    time. An empty field is the CORRECT answer when the user did not say it.
