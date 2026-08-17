@@ -126,9 +126,20 @@ def upsert_persona(user_id: str, req: PersonaCreate):
 
         # Check if exists
         existing = db.table("bot_personas")\
-            .select("id")\
+            .select("id,bot_name,bot_name_history")\
             .eq("user_id", user_id)\
             .execute()
+
+        # Every name this companion has ever had stays reserved. Stored sessions
+        # still contain the old name after a rename; if it stopped being
+        # reserved, re-extraction over them would file the former companion as a
+        # relative. See memory/persona_names.get_reserved_names.
+        history = list((existing.data or [{}])[0].get("bot_name_history") or [])
+        prev    = (existing.data or [{}])[0].get("bot_name")
+        for n in (prev, data["bot_name"]):
+            if n and n not in history:
+                history.append(n)
+        data["bot_name_history"] = history
 
         if existing.data:
             db.table("bot_personas")\
