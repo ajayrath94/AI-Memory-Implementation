@@ -393,7 +393,7 @@ def process_session_end(session_id: str, user_id: str = "default"):
         return
 
     # 1. Summarize session
-    session_summary = summarize_session(messages)
+    session_summary = summarize_session(messages, user_id)
     if not session_summary:
         return
 

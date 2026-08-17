@@ -42,7 +42,7 @@ def _call_haiku(prompt: str, max_tokens: int = 500) -> str:
 
 # ── Session summarizer ─────────────────────────────────────────────────────────
 
-def summarize_session(messages: List[dict]) -> str:
+def summarize_session(messages: List[dict], user_id: str = "") -> str:
     """
     Summarize a single session's messages into a concise summary.
     Extracts: topics discussed, emotions, key facts, user preferences.
@@ -60,6 +60,9 @@ def summarize_session(messages: List[dict]) -> str:
     if len(conversation) < 50:
         return ""
 
+    from memory.persona_names import get_companion_name
+    bot_name = get_companion_name(user_id) if user_id else "Nancy"
+
     prompt = f"""Summarize this conversation concisely. Focus on:
 - What the user talked about or asked for
 - Any personal details mentioned (health, family, preferences, feelings)
@@ -67,10 +70,13 @@ def summarize_session(messages: List[dict]) -> str:
 - Emotional tone
 
 
-IMPORTANT: The ASSISTANT here is named Nancy (an AI companion). "Nancy" is NEVER
-the user — she is the assistant. The USER is the person Nancy talks to. Summarize
-the USER (the human); never call the user "Nancy". If the user's name is unknown,
-say "the user".
+IMPORTANT: The ASSISTANT here is named {bot_name} (an AI companion). "{bot_name}"
+is NEVER the user — that is the assistant. The USER is the person {bot_name} talks
+to. Summarize the USER (the human); never call the user "{bot_name}". If the
+user's name is unknown, say "the user". The assistant may be styled as a relative
+(a son, a daughter) and may be addressed as one — that does not make the
+assistant a real family member, and the assistant must never be summarized as a
+person in the user's life.
 Keep it to 3-5 sentences. Write in third person about the user.
 
 Conversation:

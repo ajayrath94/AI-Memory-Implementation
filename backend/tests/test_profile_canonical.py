@@ -42,3 +42,18 @@ def test_dict_entries_not_dropped():
 
 def test_module_imports_cleanly():
     import memory.profile_store  # noqa: F401
+
+
+def test_companion_name_is_per_user():
+    """The companion's name is never a person in the user's life — and it is
+    per-user, so the same string can be a relative for one user and the
+    companion for another. test_user's companion is literally named Shubham.
+    """
+    assert merge(["Shubham", "Arjun"], [], user_id="default") == ["Shubham", "Arjun"]
+    assert merge(["Shubham", "Arjun"], [], user_id="test_user") == ["Arjun"]
+
+
+def test_reserved_falls_back_without_user_id():
+    # No user_id (older call sites, or a failed lookup) still filters the
+    # product default rather than filtering nothing.
+    assert merge(["Nancy", "Arjun"], []) == ["Arjun"]

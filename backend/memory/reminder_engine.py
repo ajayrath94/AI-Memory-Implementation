@@ -30,6 +30,9 @@ def detect_and_store_reminder(user_id: str, text: str, session_id: str = "") -> 
     now_local = tc.get("local_time", "")
     tz_name = tc.get("timezone", "Asia/Kolkata")
 
+    from memory.persona_names import get_companion_name
+    bot_name = get_companion_name(user_id)
+
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -41,10 +44,11 @@ def detect_and_store_reminder(user_id: str, text: str, session_id: str = "") -> 
 
 User message: "{text}"
 
-NOTE: The assistant's name is Nancy. If the user's message starts with or
-contains "Nancy", they are ADDRESSING the assistant — "Nancy" is NEVER the
-subject, owner, or the user. Strip it. The reminder belongs to the USER, not
-Nancy. Never write "Nancy's appointment" and never address the user as "Nancy".
+NOTE: The assistant's name is {bot_name}. If the user's message starts with or
+contains "{bot_name}", they are ADDRESSING the assistant — "{bot_name}" is NEVER
+the subject, owner, or the user. Strip it. The reminder belongs to the USER, not
+{bot_name}. Never write "{bot_name}'s appointment" and never address the user as
+"{bot_name}".
 
 Is this a request to be REMINDED of something later? (e.g. "kal 12 baje yaad
 dilana", "remind me tomorrow"). Only an explicit ask to be reminded/notified —
@@ -75,11 +79,11 @@ If it IS, do three things:
      hour" for a far-off event, use judgment — don't spam. EVERY nudge time must
      be at or before the event, never after, and in the future.
 
-3. For EACH nudge, write what Nancy SAYS TO the user — warm and informational
+3. For EACH nudge, write what {bot_name} SAYS TO the user — warm and informational
    for early nudges, gently more urgent as the event approaches. Elderly user,
-   natural Hinglish, short and caring. Reference the event. Nancy is the SPEAKER
-   (the caring companion) — do NOT start the message with "Nancy," and never
-   address the user as "Nancy". Speak directly to the user (e.g. "Aaj doctor
+   natural Hinglish, short and caring. Reference the event. {bot_name} is the
+   SPEAKER (the caring companion) — do NOT start the message with "{bot_name},"
+   and never address the user as "{bot_name}". Speak directly to the user (e.g. "Aaj doctor
    appointment hai 3 baje, tayyari kar lena").
 
 Return ONLY JSON:
@@ -87,7 +91,7 @@ Return ONLY JSON:
   "what": "short description",
   "event_at_local": "YYYY-MM-DD HH:MM",
   "nudges": [
-    {{"at_local": "YYYY-MM-DD HH:MM", "message": "Nancy's words for this nudge"}}
+    {{"at_local": "YYYY-MM-DD HH:MM", "message": "{bot_name}'s words for this nudge"}}
   ]}}
 No prose, only JSON."""
 

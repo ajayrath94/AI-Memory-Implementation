@@ -56,7 +56,7 @@ def save_user_profile(user_id: str, updates: dict):
     existing = get_user_profile(user_id) or {}
 
     owner  = updates.get("name") or existing.get("name") or ""
-    merged = _deep_merge(existing, updates, owner)
+    merged = _deep_merge(existing, updates, owner, user_id)
     merged["user_id"]    = user_id
     merged["updated_at"] = "now()"
 
@@ -87,11 +87,13 @@ _FRAGMENT_PREFIX = ("in ", "at ", "on ", "the ", "with ", "from ", "for ")
 # user's own name has the same problem from self-reference ("Shobha ne kaha").
 # Both are dropped before dedup so they can never reach the profile.
 
-_ASSISTANT_NAMES = {"nancy", "nancy ai", "nancy app"}
-
-
-def _reserved_names(owner: str = "") -> set:
-    r = set(_ASSISTANT_NAMES)
+def _reserved_names(owner: str = "", user_id: str = "") -> set:
+    """Companion names (current and historical) plus the profile owner's own
+    name. The companion set comes from memory.persona_names so a renamed
+    companion is still filtered — see that module for why history is kept."""
+    from memory.persona_names import get_reserved_names as _companion_names
+    r = _companion_names(user_id) if user_id else {"nancy", "nancy ai", "nancy app"}
+    r = set(r)
     if owner:
         o = re.sub(r"[^\w\s]", " ", owner).strip().lower()
         if o:
@@ -100,10 +102,10 @@ def _reserved_names(owner: str = "") -> set:
     return r
 
 
-def _is_reserved(key: str, owner: str = "") -> bool:
+def _is_reserved(key: str, owner: str = "", user_id: str = "") -> bool:
     if not key:
         return False
-    reserved = _reserved_names(owner)
+    reserved = _reserved_names(owner, user_id)
     if key in reserved:
         return True
     return key.split()[0] in reserved if key.split() else False
@@ -199,11 +201,11 @@ def _flatten_item(item):
     return item
 
 
-def _merge_list(existing, new, cap: int = 25, owner: str = "") -> list:
+def _merge_list(existing, new, cap: int = 25, owner: str = "", user_id: str = "") -> list:
     best, order = {}, []
     for item in (_flatten_item(x) for x in list(existing or []) + list(new or [])):
         k = _canonical_key(item)
-        if not k or _is_reserved(k, owner):
+        if not k or _is_reserved(k, owner, user_id):
             continue
         val = _clean_surface(item) if isinstance(item, str) else item
         if not val:
@@ -216,7 +218,7 @@ def _merge_list(existing, new, cap: int = 25, owner: str = "") -> list:
     return [best[k] for k in order][:cap]
 
 
-def _deep_merge(base: dict, updates: dict, owner: str = "") -> dict:
+def _deep_merge(base: dict, updates: dict, owner: str = "", user_id: str = "") -> dict:
     """
     Deep merge updates into base.
     - Scalars: only update if base is empty/None
@@ -233,9 +235,9 @@ def _deep_merge(base: dict, updates: dict, owner: str = "") -> dict:
             continue  # Never overwrite with empty
 
         if isinstance(new_val, dict) and isinstance(existing_val, dict):
-            result[key] = _deep_merge(existing_val, new_val, owner)
+            result[key] = _deep_merge(existing_val, new_val, owner, user_id)
         elif isinstance(new_val, list) and isinstance(existing_val, list):
-            result[key] = _merge_list(existing_val, new_val, owner=owner)
+            result[key] = _merge_list(existing_val, new_val, owner=owner, user_id=user_id)
         else:
             # For scalars: update if existing is empty
             if not existing_val:
