@@ -49,8 +49,11 @@ def test_companion_name_is_per_user():
     per-user, so the same string can be a relative for one user and the
     companion for another. test_user's companion is literally named Shubham.
     """
-    assert merge(["Shubham", "Arjun"], [], user_id="default") == ["Shubham", "Arjun"]
-    assert merge(["Shubham", "Arjun"], [], user_id="test_user") == ["Arjun"]
+    # NB: don't use "Arjun" as the control — test_user was renamed through
+    # Arjun during development, so it lives in bot_name_history and is
+    # (correctly) reserved for that user forever.
+    assert merge(["Shubham", "Vikram"], [], user_id="default") == ["Shubham", "Vikram"]
+    assert merge(["Shubham", "Vikram"], [], user_id="test_user") == ["Vikram"]
 
 
 def test_reserved_falls_back_without_user_id():
