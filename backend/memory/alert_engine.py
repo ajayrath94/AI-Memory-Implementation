@@ -244,6 +244,7 @@ def send_email_alert(
     caregiver_name: str,
     user_name: str,
     alerts: list,
+    user_id: str = "",
 ) -> bool:
     """Send ONE consolidated email covering all alerts via SendGrid."""
     api_key = os.getenv("SENDGRID_API_KEY")
@@ -266,7 +267,13 @@ def send_email_alert(
         "low":      "💙",
     }.get(top_alert["severity"], "ℹ️")
 
-    subject = f"{severity_emoji} Nancy Alert: {user_name} needs attention"
+    # The caregiver knows the companion by whatever the user named it, so the
+    # subject and body use that. The sender identity below stays "Nancy AI" —
+    # that is the product, not the companion.
+    from memory.persona_names import get_companion_name
+    bot_name = get_companion_name(user_id)
+
+    subject = f"{severity_emoji} {bot_name} Alert: {user_name} needs attention"
 
     alert_blocks = ""
     for a in alerts:
@@ -283,12 +290,12 @@ def send_email_alert(
     html = f"""
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
       <div style="background:#1a1a2e;padding:24px;border-radius:12px 12px 0 0">
-        <h1 style="color:white;margin:0;font-size:22px">Nancy — Care Alert</h1>
+        <h1 style="color:white;margin:0;font-size:22px">{bot_name} — Care Alert</h1>
         <p style="color:#aaa;margin:8px 0 0">Automated notification from Nancy AI</p>
       </div>
       <div style="background:#f9f9f9;padding:24px;border-radius:0 0 12px 12px;border:1px solid #eee">
         <p style="color:#333">Hi <strong>{caregiver_name}</strong>,</p>
-        <p style="color:#333">Nancy has detected the following about <strong>{user_name}</strong>:</p>
+        <p style="color:#333">{bot_name} has detected the following about <strong>{user_name}</strong>:</p>
         {alert_blocks}
         <div style="background:#f0f0f0;padding:12px;border-radius:8px;margin:16px 0">
           <p style="margin:0;font-size:13px;color:#666">
@@ -410,7 +417,7 @@ def run_alert_engine(user_id: str) -> dict:
         if not email:
             continue
 
-        sent = send_email_alert(email, caregiver_name, user_name, caregiver_alerts)
+        sent = send_email_alert(email, caregiver_name, user_name, caregiver_alerts, user_id)
 
         # Log each alert type individually for history, but only one email was sent
         for alert in caregiver_alerts:

@@ -199,7 +199,9 @@ def _notify_caregiver_travel(user_id: str, current: str, home: str, profile: dic
         alert = {
             "alert_type": "travel",
             "severity":   "low",
-            "message":    f"{name} is currently in {current} (home: {home}). Nancy is monitoring and has surfaced local emergency resources.",
+            "message":    f"{name} is currently in {current} (home: {home}). "
+                          f"{get_companion_name(user_id)} is monitoring and has "
+                          f"surfaced local emergency resources.",
             "pillar":     "LOCATION",
         }
 
@@ -207,7 +209,7 @@ def _notify_caregiver_travel(user_id: str, current: str, home: str, profile: dic
             caregiver = rel.get("caregivers", {})
             email     = rel.get("alert_email") or caregiver.get("email")
             if email:
-                send_email_alert(email, caregiver.get("name", "Caregiver"), name, [alert])
+                send_email_alert(email, caregiver.get("name", "Caregiver"), name, [alert], user_id)
                 print(f"[LocationEngine] Travel alert sent to {email}")
 
     except Exception as e:

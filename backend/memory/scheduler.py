@@ -62,9 +62,10 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                 mark_nudge_fired(_rem["id"], _item["nudge_index"])
                 try:
                     from memory.push_sender import send_push
+                    from memory.persona_names import get_companion_name
                     send_push(
                         _rem["user_id"],
-                        title="Nancy",
+                        title=get_companion_name(_rem["user_id"]),
                         body=_item.get("message") or _rem.get("what") or "You have a reminder",
                         data={"type": "reminder", "reminder_id": _rem["id"]},
                     )
