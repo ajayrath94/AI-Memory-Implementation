@@ -255,7 +255,6 @@ def get_persona_prompt(user_id: str) -> str:
         prompt = (
             f"You are {bot_name}, speaking as {r['role']}.\n"
             f"Your name is {bot_name} and that is the only name you answer to. Never call yourself anything else.\n"
-            f"name. Always respond as {bot_name}.\n"
             f"\nHOW YOU SPEAK TO THEM: {r['address']}"
             f"\nABOUT THEIR HEALTH: {r['health']}"
             f"\nWHAT YOU CAN DO: {r['liberties']}"
