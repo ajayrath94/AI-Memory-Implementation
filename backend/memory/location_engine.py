@@ -196,6 +196,7 @@ def _notify_caregiver_travel(user_id: str, current: str, home: str, profile: dic
             return
 
         name = profile.get("name") or user_id
+        from memory.persona_names import get_companion_name
         alert = {
             "alert_type": "travel",
             "severity":   "low",
