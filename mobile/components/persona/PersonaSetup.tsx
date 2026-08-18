@@ -82,11 +82,53 @@ export default function PersonaSetup({ userId, caregiverId, onSaved }: Props) {
     }
   }
 
+  // The companion's name is reserved in the memory system — anything the user
+  // says with that name is treated as being about the companion, not a person.
+  // If they already have a relative with the same name, that relative stops
+  // being recordable. Worth warning about, not worth blocking: naming a
+  // companion after someone you miss is a reasonable thing to want.
+  const findFamilyClash = async (name: string): Promise<string | null> => {
+    try {
+      const res  = await fetch(`${API_BASE}/memory/profile/${userId}`, {
+        headers: { 'X-API-Key': API_KEY },
+      })
+      const data = await res.json()
+      const fam  = data?.family || {}
+      const all: string[] = []
+      Object.values(fam).forEach((v: any) => {
+        if (Array.isArray(v)) all.push(...v.filter((x: any) => typeof x === 'string'))
+        else if (typeof v === 'string' && v) all.push(v)
+      })
+      const wanted = name.trim().toLowerCase()
+      return all.find(m => m.trim().toLowerCase() === wanted) || null
+    } catch (e) {
+      return null   // never block saving on a failed check
+    }
+  }
+
   const save = async () => {
     if (!persona.bot_name.trim()) {
       Alert.alert('Name required', 'Please give your companion a name')
       return
     }
+
+    const clash = await findFamilyClash(persona.bot_name)
+    if (clash) {
+      const proceed = await new Promise<boolean>(resolve => {
+        Alert.alert(
+          'That name is already in the family',
+          `You have a family member called ${clash}. If your companion shares ` +
+          `that name, mentions of ${clash} will be treated as the companion — ` +
+          `so their details may not be remembered separately.`,
+          [
+            { text: 'Pick another', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Use it anyway', onPress: () => resolve(true) },
+          ]
+        )
+      })
+      if (!proceed) return
+    }
+
     setSaving(true)
     try {
       const res = await fetch(`${API_BASE}/persona/${userId}`, {
