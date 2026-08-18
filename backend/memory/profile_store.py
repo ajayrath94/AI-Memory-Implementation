@@ -47,6 +47,67 @@ def ensure_profile_exists(user_id: str):
         print(f"[Profile] ensure_profile_exists: {e}")
 
 
+# ── Resolve before merge ──────────────────────────────────────────────────────
+# String canonicalisation cannot tell that "knee pain" and "knees health" are
+# one concern while "back pain" is another — and neither can cosine alone:
+# measured on this data, "joint pain"/"back pain" scores 0.92, ABOVE pairs that
+# should merge. entity_resolver does vector retrieval then LLM adjudication,
+# which is the only combination that separates them. Resolving here, at write
+# time, is what stops the lists fragmenting in the first place; the batch
+# cleaner only mops up what already accumulated.
+
+_RESOLVE_KEYS = {
+    "conditions": "health condition",
+    "concerns":   "health concern",
+    "sports":     "sport",
+    "music":      "music interest",
+    "entertainment": "entertainment interest",
+    "hobbies":    "hobby",
+}
+# "medications" is deliberately absent: "BP tablet (old)" and "(new)" record a
+# switch, and resolving them together would erase it.
+
+
+def _resolve_incoming(updates: dict, existing: dict, user_id: str) -> dict:
+    """Rewrite new list items to the canonical name already stored, where the
+    resolver confirms they are the same thing. Never drops: an unmatched item
+    passes through unchanged and becomes a new entry."""
+    if not user_id:
+        return updates
+
+    try:
+        from memory.entity_resolver import resolve
+    except Exception as e:
+        print(f"[Profile] resolver unavailable: {e}")
+        return updates
+
+    out = dict(updates)
+    for section in ("health", "interests"):
+        new_block = updates.get(section)
+        old_block = existing.get(section) or {}
+        if not isinstance(new_block, dict) or not isinstance(old_block, dict):
+            continue
+        section_out = dict(new_block)
+        for key, entity_type in _RESOLVE_KEYS.items():
+            incoming = new_block.get(key)
+            pool = [x for x in (old_block.get(key) or []) if isinstance(x, str)]
+            if not isinstance(incoming, list) or not pool:
+                continue
+            resolved = []
+            for item in incoming:
+                if not isinstance(item, str) or not item.strip():
+                    continue
+                try:
+                    r = resolve(item, entity_type, "", user_id, against=pool)
+                    resolved.append(r["name"])
+                except Exception as e:
+                    print(f"[Profile] resolve failed for {item!r}: {e}")
+                    resolved.append(item)
+            section_out[key] = resolved
+        out[section] = section_out
+    return out
+
+
 def save_user_profile(user_id: str, updates: dict):
     """
     Merge updates into existing profile.
@@ -55,8 +116,9 @@ def save_user_profile(user_id: str, updates: dict):
     db       = get_client()
     existing = get_user_profile(user_id) or {}
 
-    owner  = updates.get("name") or existing.get("name") or ""
-    merged = _deep_merge(existing, updates, owner, user_id)
+    owner   = updates.get("name") or existing.get("name") or ""
+    updates = _resolve_incoming(updates, existing, user_id)
+    merged  = _deep_merge(existing, updates, owner, user_id)
     merged["user_id"]    = user_id
     merged["updated_at"] = "now()"
 

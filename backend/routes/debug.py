@@ -296,6 +296,18 @@ def run_backstop(payload: dict = None):
     return {"status": "backstop running in background", "idle_hours": idle}
 
 
+@router.post("/clean-profile/{user_id}")
+def clean_profile_endpoint(user_id: str, dry_run: bool = True,
+                           include_medications: bool = False):
+    """Distil profile health/interest lists (LLM-adjudicated merge + drop).
+    Defaults to dry_run — a profile has no second copy, so applying is opt-in.
+    Medications are excluded by default: "BP tablet (old)" vs "(new)" records a
+    switch, and merging them would erase it."""
+    from memory.profile_cleaner import clean_profile
+    return clean_profile(user_id, dry_run=dry_run,
+                         include_medications=include_medications)
+
+
 @router.post("/clean-clusters/{user_id}")
 def clean_clusters_endpoint(user_id: str, dry_run: bool = False):
     """Run the Track 2 cluster-cleaner (vector-candidate + LLM-confirm merge/

@@ -317,3 +317,36 @@ def test_partial_update_does_not_clobber():
     finally:
         db.table("bot_personas").delete().eq("user_id", uid).execute()
         db.table("user_profile").delete().eq("user_id", uid).execute()
+
+
+def test_write_path_resolves_against_stored_items():
+    """
+    New phrasings of a stored concern must fold into it rather than append.
+    This is what stops health lists fragmenting — one profile had "knee pain"
+    in seven variants because every session wrote a fresh wording.
+
+    Also guards the failure mode cosine alone has: "back aching badly" scores
+    high against "knee pain" (measured 0.92 for joint/back pain pairs) and must
+    still resolve to "back pain", not the knee entry.
+    """
+    from memory.profile_store import _resolve_incoming
+
+    existing = {"health": {"concerns": ["knee pain", "back pain",
+                                        "Medication compliance"]}}
+    updates = {"health": {"concerns": ["Knee pain/discomfort", "back aching badly",
+                                       "high blood pressure"]}}
+    out = _resolve_incoming(updates, existing, "default")["health"]["concerns"]
+
+    assert "knee pain" in out, "knee variant did not resolve"
+    assert "back pain" in out, "back variant did not resolve"
+    assert "Knee pain/discomfort" not in out
+    assert "back aching badly" not in out
+    assert "high blood pressure" in out, "genuinely new item was lost"
+
+
+def test_resolver_does_not_merge_different_body_parts():
+    from memory.entity_resolver import resolve
+    r = resolve("back aching badly", "health concern", "", "default",
+                against=["knee pain"])
+    assert not r["matched"] or r["name"] != "knee pain", \
+        "back pain was merged into knee pain"

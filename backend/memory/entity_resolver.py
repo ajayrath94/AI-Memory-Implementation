@@ -92,7 +92,29 @@ def _candidates(user_id: str, vector: List[float], pillar: str = "") -> List[dic
     return out[:MAX_CANDIDATES]
 
 
-def resolve(name: str, entity_type: str, pillar: str, user_id: str) -> dict:
+def _candidates_from(vector: List[float], pool: List[str],
+                     entity_type: str = "") -> List[dict]:
+    """Nearest members of a caller-supplied pool. Same floor and cap as the
+    table-backed path, so adjudication sees a comparable shortlist."""
+    from classifier.pillar_classifier import cosine_similarity
+
+    scored = []
+    for other in pool:
+        if not isinstance(other, str) or not other.strip():
+            continue
+        vec = embed_entity(other, entity_type)
+        if not vec:
+            continue
+        score = cosine_similarity(vector, vec)
+        if score >= CANDIDATE_FLOOR:
+            scored.append({"name": other, "score": round(score, 4),
+                           "type": entity_type, "pillar": ""})
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:MAX_CANDIDATES]
+
+
+def resolve(name: str, entity_type: str, pillar: str, user_id: str,
+            against: Optional[List[str]] = None) -> dict:
     """
     Returns {"name": <canonical name to use>, "embedding": [...], "matched": bool}
 
@@ -103,7 +125,13 @@ def resolve(name: str, entity_type: str, pillar: str, user_id: str) -> dict:
     if not vector:
         return {"name": name, "embedding": None, "matched": False}
 
-    cands = _candidates(user_id, vector, pillar)
+    if against is not None:
+        # Caller supplied the pool to match against. Profile list fields live in
+        # a JSON column, not user_behavioral_events, so they cannot be found by
+        # the default candidate query.
+        cands = _candidates_from(vector, against, entity_type)
+    else:
+        cands = _candidates(user_id, vector, pillar)
     if not cands:
         return {"name": name, "embedding": vector, "matched": False}
 
