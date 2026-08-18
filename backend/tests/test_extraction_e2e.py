@@ -247,3 +247,73 @@ def test_rename_keeps_history_reserved():
     finally:
         db.table("bot_personas").delete().eq("user_id", uid).execute()
         db.table("user_profile").delete().eq("user_id", uid).execute()
+
+
+def test_partial_update_does_not_clobber():
+    """
+    POSTing only {"bot_name": ...} must not reset the rest of the persona.
+    PersonaCreate has defaults for every field, so building the update from all
+    attributes silently wiped slangs, language_mix and personality on any
+    name-only rename — which is exactly what a rename UI would send.
+    """
+    from routes.persona import upsert_persona, PersonaCreate
+    db  = get_client()
+    uid = "pytest_partial_user"
+
+    db.table("bot_personas").delete().eq("user_id", uid).execute()
+    db.table("user_profile").delete().eq("user_id", uid).execute()
+    db.table("user_profile").insert({"user_id": uid, "name": "Pytest"}).execute()
+    db.table("bot_personas").insert({
+        "user_id": uid, "bot_name": "Asha", "relationship": "friend",
+        "voice_type": "preset", "slangs": ["arre yaar", "bilkul"],
+        "language_mix": {"hindi": 0.7}, "personality": {"warmth": 0.9},
+        "bot_name_history": ["Asha"],
+    }).execute()
+    try:
+        upsert_persona(uid, PersonaCreate(**{"bot_name": "Priya"}))
+        row = db.table("bot_personas").select("*").eq("user_id", uid).execute().data[0]
+
+        assert row["bot_name"] == "Priya"
+        assert row["slangs"] == ["arre yaar", "bilkul"], "slangs were clobbered"
+        assert row["language_mix"] == {"hindi": 0.7}, "language_mix was clobbered"
+        assert row["personality"] == {"warmth": 0.9}, "personality was clobbered"
+        assert row["relationship"] == "friend", "relationship was clobbered"
+        assert row["bot_name_history"] == ["Asha", "Priya"]
+    finally:
+        db.table("bot_personas").delete().eq("user_id", uid).execute()
+        db.table("user_profile").delete().eq("user_id", uid).execute()
+
+
+def test_partial_update_does_not_clobber():
+    """
+    POSTing only {"bot_name": ...} must not reset the rest of the persona.
+    PersonaCreate has defaults for every field, so building the update from all
+    attributes silently wiped slangs, language_mix and personality on any
+    name-only rename — which is exactly what a rename UI would send.
+    """
+    from routes.persona import upsert_persona, PersonaCreate
+    db  = get_client()
+    uid = "pytest_partial_user"
+
+    db.table("bot_personas").delete().eq("user_id", uid).execute()
+    db.table("user_profile").delete().eq("user_id", uid).execute()
+    db.table("user_profile").insert({"user_id": uid, "name": "Pytest"}).execute()
+    db.table("bot_personas").insert({
+        "user_id": uid, "bot_name": "Asha", "relationship": "friend",
+        "voice_type": "preset", "slangs": ["arre yaar", "bilkul"],
+        "language_mix": {"hindi": 0.7}, "personality": {"warmth": 0.9},
+        "bot_name_history": ["Asha"],
+    }).execute()
+    try:
+        upsert_persona(uid, PersonaCreate(**{"bot_name": "Priya"}))
+        row = db.table("bot_personas").select("*").eq("user_id", uid).execute().data[0]
+
+        assert row["bot_name"] == "Priya"
+        assert row["slangs"] == ["arre yaar", "bilkul"], "slangs were clobbered"
+        assert row["language_mix"] == {"hindi": 0.7}, "language_mix was clobbered"
+        assert row["personality"] == {"warmth": 0.9}, "personality was clobbered"
+        assert row["relationship"] == "friend", "relationship was clobbered"
+        assert row["bot_name_history"] == ["Asha", "Priya"]
+    finally:
+        db.table("bot_personas").delete().eq("user_id", uid).execute()
+        db.table("user_profile").delete().eq("user_id", uid).execute()

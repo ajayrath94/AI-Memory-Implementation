@@ -110,19 +110,23 @@ def upsert_persona(user_id: str, req: PersonaCreate):
         from supabase_store import get_client
         db = get_client()
 
-        data = {
-            "user_id":      user_id,
-            "bot_name":     req.bot_name.strip(),
-            "relationship": req.relationship,
-            "voice_type":   req.voice_type,
-            "voice_id":     req.voice_id,
-            "slangs":       req.slangs,
-            "language_mix": req.language_mix,
-            "personality":  req.personality,
-            "updated_at":   "now()",
-        }
-        if req.caregiver_id:
-            data["caregiver_id"] = req.caregiver_id
+        # Only write fields the caller actually sent. Building `data` from every
+        # attribute meant a rename that posted just {"bot_name": ...} silently
+        # wiped slangs, language_mix and personality back to their defaults —
+        # PersonaCreate cannot otherwise tell "omitted" from "set to empty".
+        # exclude_unset preserves that distinction, so clearing a field on
+        # purpose still works.
+        sent = req.model_dump(exclude_unset=True)
+
+        data = {"user_id": user_id, "updated_at": "now()"}
+        for field in ("bot_name", "relationship", "voice_type", "voice_id",
+                      "slangs", "language_mix", "personality", "caregiver_id"):
+            if field in sent:
+                data[field] = sent[field]
+        if isinstance(data.get("bot_name"), str):
+            data["bot_name"] = data["bot_name"].strip()
+        if data.get("caregiver_id") is None:
+            data.pop("caregiver_id", None)
 
         # Check if exists
         existing = db.table("bot_personas")\
@@ -134,12 +138,18 @@ def upsert_persona(user_id: str, req: PersonaCreate):
         # still contain the old name after a rename; if it stopped being
         # reserved, re-extraction over them would file the former companion as a
         # relative. See memory/persona_names.get_reserved_names.
-        history = list((existing.data or [{}])[0].get("bot_name_history") or [])
-        prev    = (existing.data or [{}])[0].get("bot_name")
-        for n in (prev, data["bot_name"]):
+        row     = (existing.data or [{}])[0]
+        history = list(row.get("bot_name_history") or [])
+        for n in (row.get("bot_name"), data.get("bot_name")):
             if n and n not in history:
                 history.append(n)
-        data["bot_name_history"] = history
+        if history:
+            data["bot_name_history"] = history
+
+        # A brand-new persona still needs a name.
+        if not existing.data and not data.get("bot_name"):
+            data["bot_name"] = "Nancy"
+            data["bot_name_history"] = ["Nancy"]
 
         if existing.data:
             db.table("bot_personas")\
@@ -149,8 +159,10 @@ def upsert_persona(user_id: str, req: PersonaCreate):
         else:
             db.table("bot_personas").insert(data).execute()
 
-        print(f"[Persona] Updated for {user_id}: {req.bot_name} ({req.relationship})")
-        return {"status": "ok", "bot_name": req.bot_name}
+        print(f"[Persona] Updated for {user_id}: {data.get('bot_name', '(unchanged)')}"
+              f" ({data.get('relationship', '(unchanged)')})")
+        return {"status": "ok",
+                "bot_name": data.get("bot_name") or row.get("bot_name")}
 
     except Exception as e:
         return {"status": "error", "error": str(e)}
