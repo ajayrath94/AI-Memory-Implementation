@@ -125,7 +125,25 @@ def add_event(ev: CalendarEvent):
         raise HTTPException(status_code=400, detail=f"insert failed: {str(e)[:100]}")
 
     # spawn a reminder if enabled
+    #
+    # Two independent paths can catch one message: detect_and_store_reminder
+    # parses "remind me at X", and Nancy's add_calendar_event tool fires on
+    # "anything happening at a date/time". "Call home in 5 minutes" is both, so
+    # the user gets two identical notifications. Skip the spawn when a pending
+    # reminder already exists at this moment — whichever path ran first wins.
     if ev.reminder_enabled and created:
+        try:
+            dupe = (db.table("reminders").select("id")
+                    .eq("user_id", ev.user_id)
+                    .eq("fire_at", ev.event_at)
+                    .eq("status", "pending")
+                    .execute()).data
+        except Exception:
+            dupe = []
+        if dupe:
+            print(f"[Calendar] reminder already pending at {ev.event_at} — not spawning")
+            return {"status": "created", "event": created}
+
         try:
             db.table("reminders").insert({
                 "user_id": ev.user_id,
