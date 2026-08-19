@@ -16,3 +16,6 @@ mobile/dist/
 *.log
 project.zip
 *.zip
+mobile/fcm-service-account.json
+mobile/google-services.json
+mobile/android/app/google-services.json
