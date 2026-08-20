@@ -170,6 +170,25 @@ No prose, only JSON."""
             "source": "user",
             "session_id": session_id or None,
         }
+        # Two paths catch the same sentence. "Dawai leni hai 10 minute mein"
+        # trips detect_and_store_reminder AND Nancy's add_calendar_event tool,
+        # whose spawned reminder lands here seconds earlier — so the user gets
+        # one calendar row and two near-identical reminders for one request.
+        # calendar.py has the mirror of this check; whichever path arrives
+        # second skips.
+        try:
+            _dupe = (db.table("reminders").select("id,what")
+                     .eq("user_id", user_id)
+                     .eq("fire_at", row.get("fire_at"))
+                     .eq("status", "pending")
+                     .execute()).data or []
+        except Exception:
+            _dupe = []
+        if _dupe:
+            print(f"[Reminder] already pending at {row.get('fire_at')} "
+                  f"({_dupe[0].get('what')!r}) — not storing a second")
+            return None
+
         res = db.table("reminders").insert(row).execute()
         rid = (res.data or [{}])[0].get("id")
     except Exception as e:
