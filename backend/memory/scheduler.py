@@ -9,9 +9,30 @@ from datetime import datetime, timezone
 
 
 def _active_user_ids() -> list:
+    """Users the heartbeat should consider.
+
+    This used to read user_context, which is the LOCATION table — written only
+    when the app reports GPS. That made proactive outreach and caregiver alerts
+    silently conditional on location permission: someone who declined it was
+    invisible to both. For an eldercare product that is the wrong dependency —
+    a person who won't share their location still needs their daughter told when
+    they're declining.
+
+    user_memory is the honest source: a row exists once a session has been
+    summarized, which is exactly the population there is anything to be
+    proactive about.
+    """
     try:
         from supabase_store import get_client
-        rows = (get_client().table("user_context").select("user_id").execute()).data or []
+        # Dormant users cost LLM calls on every heartbeat for cluster cleaning
+        # and alert detection, and there is nothing new to detect. Someone who
+        # comes back after months re-enters the list on their next session.
+        from datetime import datetime, timezone, timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        rows = (get_client().table("user_memory")
+                .select("user_id,updated_at")
+                .gte("updated_at", cutoff)
+                .execute()).data or []
         return [r["user_id"] for r in rows if r.get("user_id")]
     except Exception as e:
         print(f"[Scheduler] user list failed: {e}")
