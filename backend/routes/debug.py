@@ -335,6 +335,25 @@ def fire_reminders_endpoint():
                 "priority": "HIGH",
             })
             mark_nudge_fired(rem["id"], item["nudge_index"])
+
+            # Actually deliver it. Without this the endpoint marks reminders
+            # fired and sends nothing — which is what was happening: the cron
+            # calls this route, reminders showed status=fired, and the only
+            # notifications arriving were the phone's own local ones. The
+            # scheduler's copy of this loop does push, but only when
+            # dry_run=False, and the cron only ever calls it with dry_run=true.
+            try:
+                from memory.push_sender import send_push
+                from memory.persona_names import get_companion_name
+                send_push(
+                    rem["user_id"],
+                    title=get_companion_name(rem["user_id"]),
+                    body=item.get("message") or rem.get("what") or "You have a reminder",
+                    data={"type": "reminder", "reminder_id": rem["id"]},
+                )
+            except Exception as _pe:
+                print(f"[FireReminders] push failed for {rem.get('id')}: {_pe}")
+
             fired.append({"user_id": rem["user_id"], "what": rem.get("what"),
                           "message": item.get("message")})
         except Exception as e:
