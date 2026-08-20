@@ -769,6 +769,14 @@ For EACH fact return an object:
 - relation: likes | stopped_liking | lives_in | works_as | is | has_condition | feels | did
 - object: canonical target ("Amreeka"->"America") or null
 - entity_type: person | food | health | hobby | artist | media | place | belief | other
+- kind: durable_fact | action_request | scheduled_event | transient_state
+    durable_fact    = still true next month. "knee pain", "son Shubham in Bangalore", "loves Kishore Kumar"
+    action_request  = asking for something to be done. "remind me in 5 minutes", "paanch minute mein yaad dilana"
+    scheduled_event = a specific thing at a specific time. "doctor kal 12 baje", "beta Sunday ko aa raha hai"
+    transient_state = how they feel right now, not a trait. "thak gayi hoon", "confused", "theek hoon"
+  Judge the MEANING, not the words - this must work in any language.
+  When unsure between durable_fact and anything else, choose the other one:
+  a missed fact costs a little signal, a stored request or dated event rots.
 - sentiment: positive | negative | neutral
 - salience: 0.0-1.0 (pain, money, family worries high; casual mentions low)
 - is_correction: true if the message CHANGES/RETRACTS a prior fact. Triggers: switched, gave up, "no wait", actually, "I meant", "prefer X now", "not X anymore"
@@ -807,12 +815,22 @@ _VAGUE_HEALTH = {
     "tabiyat kharab", "unwell", "not good", "bimaar", "theek nahi",
 }
 
-def _is_durable_fact(name: str, ptype: str = "", rel_type: str = "") -> bool:
+def _is_durable_fact(name: str, ptype: str = "", rel_type: str = "",
+                     kind: str = "") -> bool:
     """Gate out things that shouldn't become their own memory cluster:
     bare emotions ('proud') and vague, non-specific complaints ('tabiyat theek
     nahi'). Uses the extracted name/type — no extra LLM call. Emotions belong to
     the summary's texture, not the fact clusters; vague phrases should attach to
     a concrete condition, not spawn a cluster."""
+    # The extractor now labels each proposition. Trust it when present: it reads
+    # meaning rather than word shapes, so it works in any language — the older
+    # heuristics below are English verb lists that missed "drink water in 3
+    # minutes" and "call home in 5 minutes" entirely. They stay as a fallback
+    # for propositions extracted before the field existed.
+    k = (kind or "").strip().lower()
+    if k and k != "durable_fact":
+        return False
+
     n = (name or "").strip().lower()
     if not n or len(n) < 2:
         return False
@@ -881,7 +899,8 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # theek nahi") — they belong to the summary's texture, not durable
             # fact clusters. Uses already-extracted fields, no extra LLM call.
             _rt = (first.get("relationship_type") or "").lower()
-            if not _is_durable_fact(subj, etype, _rt):
+            _kind = (first.get("kind") or "").strip().lower()
+            if not _is_durable_fact(subj, etype, _rt, _kind):
                 continue
 
             # merge attributes across all of this subject's props

@@ -60,3 +60,29 @@ def test_reserved_falls_back_without_user_id():
     # No user_id (older call sites, or a failed lookup) still filters the
     # product default rather than filtering nothing.
     assert merge(["Nancy", "Arjun"], []) == ["Arjun"]
+
+
+def test_only_durable_facts_become_clusters():
+    """
+    The extractor labels each proposition; only durable_fact should cluster.
+
+    Before this, a hand-written English verb list was the only gate, and it
+    missed the most common imperatives outright — "drink water in 3 minutes",
+    "call home in 5 minutes" and "eat food in 5 minutes" all became permanent
+    memory clusters about the person. Meaning-based labelling also survives the
+    move to other languages, which a verb list cannot.
+    """
+    from memory.profile_enricher import _is_durable_fact
+
+    assert _is_durable_fact("Shubham", "person", "", "durable_fact")
+    assert not _is_durable_fact("paani", "other", "", "action_request")
+    assert not _is_durable_fact("thakan", "other", "", "transient_state")
+    assert not _is_durable_fact("doctor", "other", "", "scheduled_event")
+
+
+def test_missing_kind_falls_back_to_heuristics():
+    # Propositions extracted before the field existed have no kind. They must
+    # still go through the original checks rather than being dropped wholesale.
+    from memory.profile_enricher import _is_durable_fact
+    assert _is_durable_fact("knee pain", "health", "", "")
+    assert not _is_durable_fact("proud", "emotion", "emotion", "")
