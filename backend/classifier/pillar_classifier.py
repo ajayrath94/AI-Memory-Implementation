@@ -95,6 +95,10 @@ def _get_groups():
 
 
 # Legacy constants for backward compatibility
+# Below this cosine, the winning core pillar is not distinguishable from the
+# runners-up and should not be trusted. See classify_input.
+CORE_CONFIDENCE_FLOOR = 0.73
+
 CORE_PILLARS       = ["FINANCE", "ASPIRATIONS", "CAREER_GOAL", "HEALTH_WELLNESS", "ENTERTAINMENT", "FAMILY", "GENERAL"]
 EMOTION_PILLARS    = ["OPTIMISM", "JOY", "FEAR", "SADNESS", "ANGER", "STRESS", "LOVE"]
 FUNCTIONAL_PILLARS = ["PLAN", "SEARCH", "ORDER", "TRACK", "NUDGE"]
@@ -598,6 +602,23 @@ def classify_input(text: str) -> ClassifiedInput:
     core       = max(core_scores,  key=core_scores.get)
     emotion    = max(emo_scores,   key=emo_scores.get)
     functional = max(func_scores,  key=func_scores.get)
+
+    # Confidence floor on the core pillar.
+    #
+    # Short sentences embed into a narrow cone, so every centroid scores close
+    # to every other one and the winner can be decided by noise. Measured on
+    # this data: correct assignments land at 0.75-0.84, while "I need to call
+    # home in 5 minutes" won ASPIRATIONS at 0.7067 and its Hinglish twin won
+    # FINANCE at 0.7130 — the same sentence, two unrelated pillars, both wrong.
+    #
+    # Below the floor we say GENERAL, which is honestly "unclassified", rather
+    # than asserting a pillar that beat the field by two thousandths. Emotion
+    # and functional are left alone: they discriminate cleanly here (NUDGE
+    # scores 0.758 where the core pillars are still at 0.70).
+    if core_scores[core] < CORE_CONFIDENCE_FLOOR and core != "GENERAL":
+        print(f"[Classifier] {core} won at {core_scores[core]:.4f} "
+              f"(below {CORE_CONFIDENCE_FLOOR}) — falling back to GENERAL")
+        core = "GENERAL"
 
     # Priority scoring
     core_priority       = _score_priority(core,       core_scores[core])
