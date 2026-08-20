@@ -63,6 +63,9 @@ def summarize_session(messages: List[dict], user_id: str = "") -> str:
     from memory.persona_names import get_companion_name
     bot_name = get_companion_name(user_id) if user_id else "Nancy"
 
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%d %B %Y")
+
     prompt = f"""Summarize this conversation concisely. Focus on:
 - What the user talked about or asked for
 - Any personal details mentioned (health, family, preferences, feelings)
@@ -77,6 +80,20 @@ user's name is unknown, say "the user". The assistant may be styled as a relativ
 (a son, a daughter) and may be addressed as one — that does not make the
 assistant a real family member, and the assistant must never be summarized as a
 person in the user's life.
+TIME — this is the rule that matters most. Today is {today}. A summary is read
+back weeks later, so any relative time word in it becomes a lie the moment the
+day changes. One summary said the user had "a doctor's appointment scheduled for
+noon tomorrow"; a week later the companion was still telling her the doctor was
+waiting tomorrow, for an appointment that had already been cancelled.
+- NEVER write tomorrow, today, yesterday, kal, aaj, tonight, this week, next
+  week, "in 5 minutes", or any wording that depends on when it is read.
+- Do NOT summarize appointments, reminders, or anything scheduled. Those are
+  stored separately with real dates and a cancelled/pending status, and the
+  companion looks them up. Repeating them here only creates a stale copy that
+  cannot be cancelled.
+- A standing pattern is fine ("often asks for medicine reminders"). A specific
+  upcoming event is not.
+
 Keep it to 3-5 sentences. Write in third person about the user.
 
 Conversation:
@@ -215,6 +232,9 @@ def recursive_summarize(existing_memory: Optional[str],
         return new_session_summary
 
     # Recursive combination
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%d %B %Y")
+
     prompt = f"""You are maintaining a growing memory profile of a person across multiple conversations.
 
 EXISTING MEMORY (from {session_count - 1} previous sessions):
@@ -229,6 +249,14 @@ Update the memory profile by:
 3. Updating any facts that have changed
 4. Noting patterns (e.g. "mentions knee pain frequently")
 5. Removing outdated or contradicted information
+6. STRIPPING relative time. Today is {today}. The existing memory was written on
+   earlier days, so any "tomorrow", "kal", "next week", "in 5 minutes" in it is
+   now wrong and must not be carried forward — drop the phrase, or the whole
+   sentence if that is all it said. Never introduce new relative time either.
+7. DROPPING specific appointments and reminders. Those live in the calendar and
+   reminder tables with real dates and a cancelled/pending status; a copy here
+   cannot be cancelled and will be repeated back long after the day has passed.
+   Keep the pattern ("often has doctor visits"), not the instance.
 
 Write a comprehensive but concise profile (5-8 sentences max).
 Write in third person. Be specific with names, preferences, and details.
