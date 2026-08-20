@@ -37,7 +37,13 @@ def _call_haiku(prompt: str, max_tokens: int = 500) -> str:
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.content[0].text.strip()
+    text = response.content[0].text.strip()
+    # Haiku likes to title its output ("# Updated Memory Profile", "**Summary:**").
+    # That header goes straight into the companion's prompt, where it means
+    # nothing — strip a leading markdown heading or bolded label.
+    import re as _re
+    text = _re.sub(r"^\s*(#{1,6}\s*|\*\*)[^\n]{0,60}?(\*\*)?\s*:?\s*\n+", "", text, count=1)
+    return text.strip()
 
 
 # ── Session summarizer ─────────────────────────────────────────────────────────
