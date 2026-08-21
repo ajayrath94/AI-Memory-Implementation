@@ -32,6 +32,12 @@ export async function ensureNotificationPermission(): Promise<boolean> {
         name: 'Reminders',
         importance: Notifications.AndroidImportance.HIGH,
         sound: 'default',
+        // On Android 8+ the channel controls vibration, not the message
+        // payload — without a pattern here the phone stays silent however the
+        // server sends it. Two firm buzzes: noticeable if the phone is in
+        // another room, less alarming than one long one.
+        vibrationPattern: [0, 400, 200, 400],
+        enableVibrate: true,
       })
     }
     return status === 'granted'

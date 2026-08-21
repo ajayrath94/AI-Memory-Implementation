@@ -33,6 +33,11 @@ def send_push(user_id: str, title: str, body: str, data: dict = None) -> int:
         messages = [{
             "to": t, "title": title, "body": body,
             "sound": "default", "priority": "high",
+            # Two firm buzzes rather than one long one — more noticeable for
+            # someone who may not have the phone in hand, less alarming than a
+            # continuous vibration. NB on Android 8+ the CHANNEL's pattern wins
+            # over this, and channel settings are cached until reinstall.
+            "vibrate": [0, 400, 200, 400],
             "channelId": "reminders",
             "data": data or {},
         } for t in tokens]
