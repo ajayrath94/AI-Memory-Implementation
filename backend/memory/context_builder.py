@@ -199,6 +199,13 @@ def compose(user_id: str, intent: str = "check_in",
     from memory.intent_spec import scope_for
     spec = scope_for(intent)
 
+    # "fixed" is the floor, not a short-circuit: compose when there is
+    # something personal to say, fall back to it when there is not. Safety is
+    # the exception — it fires when an elderly person is away from home at 2am,
+    # and predictable beats warm at that moment.
+    if spec.get("fixed") and spec.get("always_fixed"):
+        return spec["fixed"]
+
     ctx = build_context(user_id, include=["persona", "language"] + spec["sources"])
     persona = ctx.pop("persona", "You are a warm companion.")
     task = spec["task"]
@@ -305,6 +312,9 @@ Write only the message. No preamble, no quotation marks."""
     problem = check_in_character(text)
     if problem:
         print(f"[Context] {problem} for {user_id}, falling back: {text[:80]}")
-        return ""
+        # A declared fixed line beats the caller's templates, which stitch
+        # three unrelated sentences together and mention medication inside an
+        # explore offer.
+        return spec.get("fixed") or ""
 
     return text

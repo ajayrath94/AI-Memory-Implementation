@@ -25,7 +25,11 @@ SCOPE = {
     "check_in": {
         "sources": ["memory", "routine", "interests", "patterns"],
         "task": ("You are starting the conversation — they have not said "
-                 "anything yet. Write your opening line."),
+                 "anything yet. Write your opening line.\n"
+                 "Do NOT mention any medicine, tablet, dose or dawai. A "
+                 "separate reminder handles those at the right hour and names "
+                 "the right one; a greeting that guesses at medication usually "
+                 "names the wrong drug."),
         # A check-in is a greeting, not a nudge. Naming a drug here turns a warm
         # note into a medical instruction, and the drug named is often the wrong
         # one because nothing said which is due.
@@ -44,12 +48,23 @@ SCOPE = {
         "sources": ["memory", "interests", "patterns", "integrations"],
         "task": ("Suggest one thing they might enjoy right now, drawn from "
                  "what they already like. Offer, do not insist."),
+        # Used when there is nothing in their interests to draw on — better
+        # than the stitched templates, which opened an explore offer with a
+        # medication reminder.
+        "fixed": "Bahar nikle hain? Kuch acha mile toh bataiyega.",
         "forbid_medication": True,
     },
     "safety": {
         # Nothing but who they are and where they are. A safety check that
         # wanders into hobbies is worse than useless.
         "sources": [],
+        # And with nothing to draw on, the composer has nothing personal to
+        # say — it broke character three times out of three and fell back to a
+        # template about morning chai. This fires when an elderly person is
+        # away from home at 2am, which is the moment the system most needs to
+        # be reliable, so it does not go near a model.
+        "fixed": "Aap theek ho? Itni raat ho gayi hai — sab theek hai na?",
+        "always_fixed": True,
         "task": ("They are away from home and it is late. Check they are "
                  "alright. Calm and brief — do not alarm them."),
         "forbid_medication": True,
