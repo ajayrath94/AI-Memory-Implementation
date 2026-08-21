@@ -7,7 +7,8 @@ import {
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../hooks/useTheme'
-import { Colors, Typography, Spacing, Radius } from '../constants'
+import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY, DEFAULT_MODEL } from '../constants'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useAppStore } from '../store/appStore'
 import { syncLocation } from '../services/locationService'
 import { useChat } from '../hooks/useChat'
@@ -56,6 +57,8 @@ export default function ChatScreen() {
   useEffect(() => {
     const sub = AppState.addEventListener('change', next => {
       if (appState.current.match(/active/) && next.match(/inactive|background/)) {
+        useAppStore.getState().setLastSeenAt(Date.now())
+        AsyncStorage.setItem('lastSeenAt', String(Date.now())).catch(() => {})
         endSession()
       }
       if (appState.current.match(/inactive|background/) && next === 'active') {
@@ -65,6 +68,58 @@ export default function ChatScreen() {
     })
     return () => sub.remove()
   }, [sessionId])
+
+  // ── Nancy opens the conversation ──────────────────────────────────────────
+  // The backend has had should_nancy_open() since the beginning and nothing
+  // called it, so a proactive push woke the user and dropped them into an
+  // empty screen. The gate stays server-side: she speaks only after 4+ hours
+  // away or when priority is high, otherwise the reply is empty.
+  useEffect(() => {
+    console.log('[proactive-open] mount — messages:', messages.length, 'session:', sessionId)
+    if (messages.length > 0 || sessionId) return
+    let cancelled = false
+
+    const openConversation = async () => {
+      try {
+        // Read from disk, not the store: the store is in-memory only, so after a
+        // cold start lastSeenAt is null and every launch looks like a 24-hour
+        // absence — she would greet you five times in an afternoon.
+        const stored = await AsyncStorage.getItem('lastSeenAt')
+        const lastSeen = stored ? Number(stored) : null
+        const hoursAway = lastSeen ? (Date.now() - lastSeen) / 3600000 : 24
+
+        const res = await fetch(`${API_BASE}/chat/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+          body: JSON.stringify({
+            text: '', user_id: userId, model: DEFAULT_MODEL,
+            context: {
+              hour: new Date().getHours(),
+              last_seen_hours: hoursAway,
+              opened_app: true,
+            },
+          }),
+        })
+        const data = await res.json()
+        console.log('[proactive-open] reply:', JSON.stringify(data).slice(0, 200))
+        if (cancelled || !data?.reply) return
+
+        if (data.session_id) useAppStore.getState().setSessionId(data.session_id)
+        useAppStore.getState().addMessage({
+          id: data.message_id || String(Date.now()),
+          role: 'assistant',
+          content: data.reply,
+          model: data.model || DEFAULT_MODEL,
+          timestamp: Date.now(),
+        })
+      } catch (e) {
+        console.log('[proactive-open]', e)
+      }
+    }
+
+    openConversation()
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: Colors.bg }]}>

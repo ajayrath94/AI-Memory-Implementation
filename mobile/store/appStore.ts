@@ -16,6 +16,9 @@ interface AppState {
   model:       string
   loading:     boolean
   sessionId:   string | null
+  // When the app last went to background. Drives whether the companion opens
+  // the conversation on return — see the proactive-open effect in index.tsx.
+  lastSeenAt:  number | null
   userId:      string
   bgColor:     string
   lastMeta:    { core: string; emotion: string; functional: string } | null
@@ -25,6 +28,7 @@ interface AppState {
   setModel:      (model: string) => void
   setLoading:    (v: boolean) => void
   setSessionId:  (id: string | null) => void
+  setLastSeenAt: (t: number) => void
   setUserId:     (id: string) => void
   setBgColor:    (color: string) => void
   setLastMeta:   (meta: any) => void
@@ -39,6 +43,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   model:      MODELS[0].value,
   loading:    false,
   sessionId:  null,
+  lastSeenAt: null,
   userId:     'default',
   bgColor:    '#0a0a0a',
   lastMeta:   null,
@@ -48,6 +53,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setModel:      (model) => set({ model }),
   setLoading:    (v)     => set({ loading: v }),
   setSessionId:  (id)    => set({ sessionId: id }),
+  setLastSeenAt: (t)     => set({ lastSeenAt: t }),
   setUserId:     (id)    => set({ userId: id }),
   setBgColor:    (color) => set({ bgColor: color }),
   setLastMeta:   (meta)  => set({ lastMeta: meta }),
