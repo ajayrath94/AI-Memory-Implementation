@@ -120,9 +120,149 @@ def _integrations(user_id: str) -> str:
     return ""
 
 
+def _recent_companion_lines(user_id: str, n: int = 6) -> list:
+    """The last few things the companion said to this person, across sessions.
+
+    get_recent_messages is session-scoped, which is no help here: proactive
+    messages often each get their own session, so within-session history is
+    empty exactly when repetition is worst.
+    """
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        sess = (db.table("sessions").select("id")
+                .eq("user_id", user_id)
+                .order("updated_at", desc=True).limit(8).execute()).data or []
+        ids = [s["id"] for s in sess]
+        if not ids:
+            return []
+        rows = (db.table("messages").select("content,timestamp")
+                .in_("session_id", ids).eq("role", "assistant")
+                .order("timestamp", desc=True).limit(n).execute()).data or []
+        return [r.get("content", "") for r in rows if r.get("content")]
+    except Exception as e:
+        print(f"[Context] recent lines failed: {e}")
+        return []
+
+
+def _recent(user_id: str) -> str:
+    """What the companion has already said, so it stops asking the same thing.
+
+    One user had a single durable cluster after the junk sweep, so the composer
+    reached for it every time: Kishore Kumar in nine of ten messages across a
+    day. Nothing was telling it what it had just said.
+    """
+    lines = _recent_companion_lines(user_id, n=5)
+    if not lines:
+        return ""
+    joined = "\n".join(f"  - {l[:120]}" for l in lines)
+    return ("You recently said the following. Do not repeat these, and do not "
+            "ask again about anything you already asked about here:\n" + joined)
+
+
+def curiosity_score(user_id: str) -> dict:
+    """
+    How much the companion should be trying to LEARN rather than draw on what
+    it knows. Returns {score: 0..1, reason: str} — inspectable, because a bare
+    number nobody can explain is worse than a fixed rule.
+
+    Three pressures, each of which independently justifies asking something new:
+
+      thinness    — few durable facts means little to draw on. A companion with
+                    one interest will ask about it forever.
+      staleness   — nothing new learned in weeks means it is not listening well,
+                    however warm each individual message is.
+      repetition  — the same entity in most recent messages. This one matters
+                    even for a rich profile: it is the symptom the user notices.
+    """
+    from datetime import datetime, timezone
+
+    n_clusters = 0
+    newest = None
+    try:
+        from supabase_store import get_client
+        rows = (get_client().table("interest_clusters")
+                .select("label,first_seen").eq("user_id", user_id)
+                .eq("status", "active").execute()).data or []
+        n_clusters = len(rows)
+        stamps = [r.get("first_seen") for r in rows if r.get("first_seen")]
+        if stamps:
+            newest = max(stamps)
+    except Exception as e:
+        print(f"[Context] curiosity cluster read failed: {e}")
+
+    # thinness: 1.0 at zero clusters, ~0.5 at one, ~0.09 at ten
+    thinness = 1.0 / (1.0 + n_clusters)
+
+    # staleness: nothing new for a fortnight is a full point
+    staleness = 0.0
+    if newest:
+        try:
+            dt = datetime.fromisoformat(str(newest).replace("Z", "+00:00"))
+            days = (datetime.now(timezone.utc) - dt).days
+            staleness = min(days / 14.0, 1.0)
+        except Exception:
+            pass
+    else:
+        staleness = 1.0
+
+    # repetition: how much the recent lines overlap each other
+    repetition = 0.0
+    lines = _recent_companion_lines(user_id, n=5)
+    if len(lines) >= 3:
+        words = []
+        for l in lines:
+            words.append({w.lower().strip(".,!?—-")
+                          for w in l.split() if len(w) > 4})
+        # Requiring a word in EVERY line missed the obvious case: four
+        # messages about Kishore Kumar and one about something else scored
+        # zero. Count words appearing in most of them instead.
+        from collections import Counter
+        tally = Counter()
+        for s in words:
+            tally.update(s)
+        need = max(2, int(len(words) * 0.6))
+        shared = [w for w, n in tally.items() if n >= need]
+        repetition = min(len(shared) / 3.0, 1.0)
+
+    score = min(0.55 * thinness + 0.20 * staleness + 0.25 * repetition, 1.0)
+
+    reason = (f"clusters={n_clusters} thinness={thinness:.2f} "
+              f"staleness={staleness:.2f} repetition={repetition:.2f}")
+    return {"score": round(score, 3), "reason": reason,
+            "n_clusters": n_clusters}
+
+
+def curiosity_instruction(user_id: str) -> str:
+    """Turn the score into something the model can act on.
+
+    Sampled, so the companion is not relentlessly inquisitive — but the
+    probability is the score, so a user it knows nothing about gets asked
+    often and one it knows well almost never.
+    """
+    import random
+
+    c = curiosity_score(user_id)
+    if random.random() >= c["score"]:
+        return ""
+
+    print(f"[Context] curiosity fired for {user_id}: {c['reason']}")
+    return (
+        "THIS OVERRIDES THE CONTEXT BELOW. You know very little about this "
+        "person, and repeating the one or two things you do know is why they "
+        "heard about the same singer five times in a day.\n"
+        "Ask ONE open, easy question about something you do NOT already know — "
+        "who they saw today, what they cooked, where they grew up, what they "
+        "do on a quiet afternoon. Ask the way a friend would, not a form.\n"
+        "Do NOT mention anything from their interests or memory in this "
+        "message. Not one word of it. The point is to learn something new."
+    )
+
+
 _SOURCES = {
     "persona":      _persona,
     "language":     _language,
+    "recent":       _recent,
     "memory":       _memory,
     "routine":      _routine,
     "interests":    _interests,
@@ -229,6 +369,11 @@ def compose(user_id: str, intent: str = "check_in",
 
     blocks = "\n\n".join(ctx.values())
 
+    # When there is little to draw on, learning beats performing warmth at
+    # something it does not know. Sampled on a score, so it fades as the
+    # profile fills.
+    curiosity = curiosity_instruction(user_id) if intent == "check_in" else ""
+
     prompt = f"""{persona}
 
 {task}
@@ -236,6 +381,7 @@ def compose(user_id: str, intent: str = "check_in",
 {slot_note}
 {urgency}
 {hints}
+{curiosity}
 
 {blocks}
 
