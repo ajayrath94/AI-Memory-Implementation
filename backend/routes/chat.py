@@ -40,9 +40,31 @@ async def chat(req: ChatRequest):
                 req.user_id,
                 hour = req.context.hour,
             )
-            text = result.get("script", "")
-            if not text:
-                text = "Namaste! Kaise ho aap?"
+            script = result.get("script", "") or "Namaste! Kaise ho aap?"
+
+            # Return the script AS THE REPLY. It used to be assigned to `text`
+            # and passed to process_input, which treats it as the USER's
+            # message — so the companion answered her own greeting ("aap mujhe
+            # puch rahe ho aur main aapko puch raha tha") and every proactive
+            # open wrote a fake user turn into the session for the summarizer
+            # and extractor to read back as something the user had said.
+            from supabase_store import get_or_create_session, save_message
+            session = get_or_create_session(req.session_id, req.model, req.user_id)
+            sid = session["id"]
+            saved = save_message(sid, "assistant", script, req.model)
+
+            return {
+                "reply":      script,
+                "session_id": sid,
+                "message_id": (saved or {}).get("id"),
+                "model":      req.model,
+                "proactive":  True,
+                "slot":       result.get("slot"),
+                "priority":   result.get("priority"),
+            }
+
+        # should_nancy_open said no — stay quiet rather than inventing a turn.
+        return {"reply": "", "session_id": req.session_id, "proactive": False}
 
     return await process_input(
         text=text,
