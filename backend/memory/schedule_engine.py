@@ -452,7 +452,15 @@ RULES:
   warm; "Aaj knee pain aur chronic knee pain ka dhyan rakhna" is a chart.
 - Use their name{f" ({name})" if name else ""} naturally, not in every sentence.
 - Match how they speak. If they use Hinglish, use Hinglish.
-- Do not invent events, appointments, or things they did not tell you.
+- Do not invent events, appointments, or things they did not tell you. If their
+  routine above does not mention coffee, do not ask about coffee. Everything you
+  reference must appear in the routine or the memory above, verbatim or close.
+- If you have little to go on, a short warm greeting is the right answer. Say
+  "Namaste, kaise ho aap?" and nothing more.
+- NEVER address the operator, ask for more context, or explain what you do or do
+  not know. You are speaking to the person, not about them. There is no one else
+  to ask. Output that begins "I don't have" or asks for information about them is
+  always wrong.
 
 Write only the message itself. No preamble, no quotation marks."""
 
@@ -465,6 +473,23 @@ Write only the message itself. No preamble, no quotation marks."""
             messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip().strip('"')
+
+        # The model sometimes breaks character when the profile is thin —
+        # "I don't have any information about Sim's routine... could you share
+        # a bit about them?" — which would go to an elderly user as a push
+        # notification. Reject it and let the caller fall back to the template.
+        low = text.lower()
+        _META = (
+            "i don't have", "i do not have", "i don't know", "could you share",
+            "could you tell me", "to write a", "let me know", "as an ai",
+            "i'd need", "i would need", "no information", "not enough context",
+            "based on the information provided", "here's a", "here is a",
+        )
+        if any(m in low for m in _META):
+            print(f"[Schedule] composer broke character for {user_id}, "
+                  f"falling back: {text[:80]}")
+            return ""
+
         return text if text else ""
     except Exception as e:
         print(f"[Schedule] compose failed for {user_id}: {e}")

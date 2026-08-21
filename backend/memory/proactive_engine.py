@@ -25,6 +25,19 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
         tc["hour"] = override_hour
         tc["slot"] = _slot(override_hour)
         tc["mode"] = _mode(override_hour, 0)
+        # unusual_silence was computed inside time_context() against the REAL
+        # hour, so without this the simulated slot and the silence flag
+        # disagree — you get slot=late_night with the daytime 6h threshold,
+        # a state that cannot occur in production.
+        _gap = tc.get("minutes_since_last")
+        if _gap is None:
+            tc["unusual_silence"] = False
+        elif tc["slot"] == "late_night":
+            tc["unusual_silence"] = False
+        elif tc["slot"] == "night":
+            tc["unusual_silence"] = _gap > 12 * 60
+        else:
+            tc["unusual_silence"] = _gap > 6 * 60
     slot   = tc.get("slot")
     mode   = tc.get("mode")            # explore | safety
     hour   = tc.get("hour")
