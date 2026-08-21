@@ -244,6 +244,7 @@ def generate_proactive_script(
     user_id: str,
     hour: int = None,
     force_slot: str = None,
+    action: str = None,
 ) -> dict:
     """
     Generate a proactive message for Nancy to open with.
@@ -306,7 +307,38 @@ def generate_proactive_script(
     # The templates above are now the fallback. Try the composer first: it has
     # the persona, the memory and the care schedule, so it can say something
     # only this person would hear.
-    composed = _compose_script(user_id, slot, priority, reason, profile, memory)
+    # One composer, in context_builder — this used to be a second
+    # implementation here, and two copies of the same thing is how the
+    # reminder-firing loops drifted apart.
+    from memory.context_builder import compose
+    # The caller knows what it decided; a medication reminder should not be
+    # worded as a general check-in. Without this the 20:00 Amlodipine nudge
+    # came out as "how are your knees feeling tonight?" and never named the
+    # drug.
+    intent = {
+        "MEDICATION_REMINDER": "medication",
+        "SAFETY_INFO":         "safety",
+        "EXPLORE_OFFER":       "recommendation",
+    }.get(action or "", "check_in")
+    # Name the dose that is actually due. Without this the medication intent
+    # has no drug data at all — it saw neither the routine nor a hint — and
+    # invented one: "aap ka Digene ka dose abhi le lena chahiye" for a woman
+    # who takes Amlodipine.
+    hints = ""
+    if intent == "medication":
+        try:
+            from memory.care_reader import get_due_schedule_items
+            due = get_due_schedule_items(user_id, hour=hour) or []
+            labels = [d.get("label") for d in due
+                      if d.get("label") and d.get("type") == "medication"]
+            if labels:
+                hints = ("The dose due right now is: " + ", ".join(labels) +
+                         ". Name it exactly. Do not name any other medicine.")
+        except Exception as e:
+            print(f"[Schedule] due-item hint failed: {e}")
+
+    composed = compose(user_id, intent=intent, slot=slot,
+                       priority=priority, hints=hints)
     if composed:
         script = composed
 

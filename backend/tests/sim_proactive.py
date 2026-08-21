@@ -249,11 +249,30 @@ def run_messages():
             d = proactive_check(case["uid"], override_hour=hour)
             if d.get("action") == "SILENCE":
                 continue
-            r = generate_proactive_script(case["uid"], hour=hour) or {}
+            r = generate_proactive_script(case["uid"], hour=hour,
+                                          action=d.get("action")) or {}
             script = (r.get("script") or "").replace("\n", " ")
             print(f"\n── {case['uid'][len(PREFIX):]} @ {hour:02d}h  "
                   f"[{d.get('action')} / {r.get('priority')}]")
             print(f"   {script[:300] or '(empty)'}")
+
+            # Assert what can be asserted. Eyeballing thirteen messages catches
+            # today's bug and misses next week's.
+            from memory.intent_spec import run_checks
+            intent = {"MEDICATION_REMINDER": "medication",
+                      "SAFETY_INFO": "safety",
+                      "EXPLORE_OFFER": "recommendation"}.get(d.get("action"), "check_in")
+            seed = case["seed"]
+            routine = seed.get("schedule") or []
+            meds = [s.get("label") for s in routine if s.get("type") == "medication"]
+            due = [s.get("label") for s in routine
+                   if s.get("type") == "medication"
+                   and str(s.get("time_of_day", ""))[:2].isdigit()
+                   and abs(int(str(s["time_of_day"])[:2]) - hour) <= 1]
+            for problem in run_checks(script, intent,
+                                      due_labels=due, all_medications=meds,
+                                      current_hour=hour, routine=routine):
+                print(f"   !! {problem}")
 
 
 # ── part 3: invariants ────────────────────────────────────────────────────────

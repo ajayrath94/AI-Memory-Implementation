@@ -136,7 +136,7 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                         from memory.push_sender import send_push
                         from memory.persona_names import get_companion_name
 
-                        script = (generate_proactive_script(uid) or {}).get("script", "")
+                        script = (generate_proactive_script(uid, action=action) or {}).get("script", "")
                         if script:
                             n = send_push(
                                 uid,
