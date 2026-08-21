@@ -303,6 +303,13 @@ def generate_proactive_script(
             script = _interest_chat(profile, memory, slot)
         should_call = False
 
+    # The templates above are now the fallback. Try the composer first: it has
+    # the persona, the memory and the care schedule, so it can say something
+    # only this person would hear.
+    composed = _compose_script(user_id, slot, priority, reason, profile, memory)
+    if composed:
+        script = composed
+
     return {
         "script":      script,
         "slot":        slot,
@@ -347,3 +354,118 @@ def should_nancy_open(
         return True
 
     return False
+def _care_schedule_context(user_id: str, slot: str) -> str:
+    """What the user's day actually looks like around now.
+
+    care_schedule holds their real routine — meals, medication times, morning
+    puja, evening walk. The templates ignored it entirely and asked everyone
+    "Aaj ka cricket dekha?" regardless of whether they follow cricket.
+    """
+    try:
+        from supabase_store import get_client
+        rows = (get_client().table("care_schedule").select("*")
+                .eq("user_id", user_id).eq("active", True)
+                .order("time_of_day").execute()).data or []
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+
+    lines = []
+    for r in rows:
+        t = (r.get("time_of_day") or "")[:5]
+        label = r.get("label") or r.get("name") or r.get("type") or ""
+        if t and label:
+            lines.append(f"  {t} — {label} ({r.get('type')})")
+    return "Their daily routine:\n" + "\n".join(lines) if lines else ""
+
+
+def _compose_script(user_id: str, slot: str, priority: str, reason: str,
+                    profile: dict, memory: dict) -> str:
+    """
+    Write the opening line in the companion's own voice.
+
+    Replaces the hand-built templates, which had four problems visible in one
+    sample: they said "Aaj Knee pain aur Chronic knee pain ka dhyan rakhna"
+    because the condition list had near-duplicates; they asked everyone about
+    cricket regardless of interest; they produced identical text for different
+    people; and they ignored the persona entirely, so a companion styled as the
+    user's son spoke exactly like the default one.
+
+    Falls back to the caller's template on any failure — a proactive message
+    that errors should degrade to something generic, not to silence.
+    """
+    import os
+
+    try:
+        from routes.persona import get_persona_prompt
+        persona = get_persona_prompt(user_id)
+    except Exception:
+        persona = "You are Nancy, a warm companion."
+
+    try:
+        from memory.user_memory_store import build_memory_prompt
+        recall = build_memory_prompt(user_id) or ""
+    except Exception:
+        recall = ""
+
+    routine = _care_schedule_context(user_id, slot)
+    name = profile.get("name") or ""
+
+    slot_note = {
+        "morning":    "It is morning — they are starting their day.",
+        "midday":     "It is the middle of the day.",
+        "afternoon":  "It is afternoon.",
+        "evening":    "It is evening.",
+        "night":      "It is night — they will be winding down.",
+        "late_night": "It is very late.",
+    }.get(slot, "")
+
+    urgency = {
+        "critical": "They seemed genuinely distressed recently. Lead with warmth "
+                    "and ask how they are — nothing else matters right now.",
+        "high":     "Something has been worrying them. Acknowledge it gently.",
+        "medium":   "Nothing is wrong. This is an ordinary, affectionate check-in.",
+        "low":      "Nothing is wrong. Keep it light and short.",
+    }.get(priority, "")
+
+    prompt = f"""{persona}
+
+You are starting the conversation — they have not said anything yet. Write your
+opening line.
+
+{slot_note}
+{urgency}
+
+{routine}
+
+{recall}
+
+RULES:
+- One or two sentences. This is a greeting, not a speech.
+- Say something only THIS person would hear. Their routine, what they told you
+  before, what they like. Never a generic question about cricket or the weather
+  unless you know they care about it.
+- If something in their routine is happening around now, that is usually the
+  most natural thing to mention.
+- Never list their conditions back at them. "Ghutne ka dard kaisa hai?" is
+  warm; "Aaj knee pain aur chronic knee pain ka dhyan rakhna" is a chart.
+- Use their name{f" ({name})" if name else ""} naturally, not in every sentence.
+- Match how they speak. If they use Hinglish, use Hinglish.
+- Do not invent events, appointments, or things they did not tell you.
+
+Write only the message itself. No preamble, no quotation marks."""
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.content[0].text.strip().strip('"')
+        return text if text else ""
+    except Exception as e:
+        print(f"[Schedule] compose failed for {user_id}: {e}")
+        return ""
