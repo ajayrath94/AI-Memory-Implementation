@@ -837,7 +837,15 @@ def _is_durable_fact(name: str, ptype: str = "", rel_type: str = "",
     # for propositions extracted before the field existed.
     k = (kind or "").strip().lower()
     if k and k != "durable_fact":
-        return False
+        # One exception: a symptom. "Ghutne mein dard hai" is genuinely a
+        # transient state — it describes today — but the REPETITION is the
+        # signal, and filtering each instance means the trajectory can never
+        # form. Three mentions across a week with trend=worsening is what tells
+        # a companion the pain is getting worse; without this each one is
+        # discarded and the cluster stays at a single event forever.
+        # Everything else transient ("thak gayi hoon") still drops.
+        if not (k == "transient_state" and ptype == "health"):
+            return False
 
     n = (name or "").strip().lower()
     if not n or len(n) < 2:

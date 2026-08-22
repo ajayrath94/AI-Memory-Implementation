@@ -123,10 +123,11 @@ def _patterns(user_id: str) -> str:
 def _integrations(user_id: str) -> str:
     """Live context — weather, what is on, news they would care about.
 
-    Not wired yet. The routes exist (/integrations/weather, /music, /news);
-    this is where their output belongs once we decide what is worth including
-    without making every message a bulletin."""
-    return ""
+    Fused, not concatenated: memory/fusion holds rules that each need several
+    sources to line up before they say anything. Cold weather alone is a
+    bulletin; cold weather plus a knee that hurts in the cold plus no mention
+    of it for days is worth one line. Most turns nothing fires."""
+    return ""      # replaced by fused_context at the call site — see compose()
 
 
 def _recent_companion_lines(user_id: str, n: int = 6) -> list:
@@ -383,6 +384,14 @@ def compose(user_id: str, intent: str = "check_in",
     # profile fills.
     curiosity = curiosity_instruction(user_id) if intent == "check_in" else ""
 
+    # Live context, but only where several sources agree it matters.
+    try:
+        from memory.fusion import fused_context
+        fused = fused_context(user_id, slot=slot, intent=intent)
+    except Exception as e:
+        print(f"[Context] fusion failed: {e}")
+        fused = ""
+
     prompt = f"""{persona}
 
 {task}
@@ -391,6 +400,7 @@ def compose(user_id: str, intent: str = "check_in",
 {urgency}
 {hints}
 {curiosity}
+{fused}
 
 {blocks}
 
