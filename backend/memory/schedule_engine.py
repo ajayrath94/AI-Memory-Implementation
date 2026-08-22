@@ -319,6 +319,7 @@ def generate_proactive_script(
         "MEDICATION_REMINDER": "medication",
         "SAFETY_INFO":         "safety",
         "EXPLORE_OFFER":       "recommendation",
+        "RECOMMENDATION":      "recommendation",
     }.get(action or "", "check_in")
     # Name the dose that is actually due. Without this the medication intent
     # has no drug data at all — it saw neither the routine nor a hint — and

@@ -100,5 +100,29 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
         return decision("EXPLORE_OFFER", "away_daytime",
                         "new place, daytime", "low")
 
-    # ── 5. Nothing worth interrupting ──
+    # ── 5. Something they might enjoy ──
+    #
+    # Recommendations previously only reached someone who was away from home in
+    # daylight (EXPLORE_OFFER above), which is rare — so the whole suggestion
+    # loop had almost nothing to work on. This offers one when there is
+    # something worth offering and the hour is sociable.
+    #
+    # Frequency is capped by log_decision, which is idempotent per user/day/
+    # action: at most one RECOMMENDATION a day however often the heartbeat
+    # runs. Deliberately not mornings (they are getting the day started) or
+    # night (winding down).
+    if slot in ("midday", "afternoon", "evening"):
+        try:
+            from memory.suggestions import pick_suggestion
+            pick = pick_suggestion(user_id)
+        except Exception as e:
+            print(f"[Proactive] pick_suggestion failed: {e}")
+            pick = None
+        # No pick means nothing they have shown they like, or everything has
+        # been offered recently. Say nothing rather than invent something.
+        if pick:
+            return decision("RECOMMENDATION", "something_they_like",
+                            pick["label"], "low")
+
+    # ── 6. Nothing worth interrupting ──
     return decision("SILENCE", "nothing_pressing")
