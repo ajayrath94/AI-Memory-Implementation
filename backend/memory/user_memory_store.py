@@ -392,27 +392,34 @@ def process_session_end(session_id: str, user_id: str = "default"):
         print("[UserMemory] Not enough messages to summarize")
         return
 
-    # 1. Summarize session
+    # 1. Mood FIRST, and unconditionally.
+    #
+    # This used to sit after the summary, behind `if not session_summary:
+    # return` — and summarize_session returns "" for anything under 50
+    # characters. So a short exchange where someone says "akela lagta hai, kuch
+    # acha nahi lag raha" produced no summary, no mood, and no soft_flags,
+    # which is precisely the conversation a caregiver should hear about. Every
+    # session in the database had soft_flags=[], so the alert engine's pattern
+    # detection had nothing to count and could never fire.
+    db   = get_client()
+    mood = extract_session_mood(messages)
+    db.table("sessions").update({
+        "valence":    mood["valence"],
+        "arousal":    mood["arousal"],
+        "soft_flags": mood.get("soft_flags", []),
+        "acute":      mood.get("acute", False),
+    }).eq("id", session_id).execute()
+
+    # 2. Summarize. A session too short to summarise still had a mood.
     session_summary = summarize_session(messages, user_id)
     if not session_summary:
         return
 
-    # 2. Compute session centroid from pillar vectors
     centroid = compute_session_centroid(session_id)
-
-    # 2b. Extract LLM valence/arousal — the honest, chartable mood signal
-    mood = extract_session_mood(messages)
-
-    # 3. Save session summary + centroid + mood
-    db = get_client()
     db.table("sessions").update({
-        "summary":                session_summary,
-        "summary_generated_at":   "now()",
-        "pillar_centroid":        centroid,
-        "valence":                mood["valence"],
-        "arousal":                mood["arousal"],
-        "soft_flags":             mood.get("soft_flags", []),
-        "acute":                  mood.get("acute", False),
+        "summary":              session_summary,
+        "summary_generated_at": "now()",
+        "pillar_centroid":      centroid,
     }).eq("id", session_id).execute()
 
     # 4. Get existing user memory
