@@ -76,7 +76,16 @@ def _interests(user_id: str) -> str:
         print(f"[Context] interests failed: {e}")
         return ""
 
-    interests = p.get("interests") or {}
+    # Computed from clusters, not the stored block. The stored one drifted to
+    # 55 entries — twenty music variants, eight rephrasings of "Hindu (Namaste
+    # greeting)", and topics mentioned once — of which exactly one had a
+    # cluster behind it.
+    try:
+        from memory.interests_view import computed_interests
+        interests = computed_interests(user_id) or {}
+    except Exception as e:
+        print(f"[Context] computed interests failed, using stored: {e}")
+        interests = p.get("interests") or {}
     if not isinstance(interests, dict):
         return ""
     bits = []

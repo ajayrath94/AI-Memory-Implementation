@@ -404,13 +404,6 @@ Extract into this exact JSON structure (use empty string/dict/list if not found)
     "medications": ["medication the user says they take"],
     "concerns": ["symptom or worry the user stated"]
   }},
-  "interests": {{
-    "sports": ["sports the user says they follow"],
-    "music": ["music the user says they like"],
-    "entertainment": ["TV/movies/shows the user says they watch"],
-    "religion": ["religious practice ONLY if the user describes doing it"],
-    "hobbies": ["other hobbies the user states"]
-  }},
   "personality": {{
     "traits": ["trait clearly evidenced in how the user writes"],
     "emotional_state": "emotional state the user expressed",

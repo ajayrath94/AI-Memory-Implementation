@@ -77,9 +77,28 @@ def learning_rate_info(session_count: int):
 
 @router.get("/profile/{user_id}")
 def user_profile(user_id: str = "default"):
-    """Get the full profile for a user."""
+    """Get the full profile for a user.
+
+    Interests are computed from clusters rather than read from the stored
+    block. The stored one drifted to 55 entries for one user — twenty music
+    variants, eight rephrasings of "Hindu (Namaste greeting)", topics mentioned
+    exactly once — of which one had a cluster behind it. Clusters carry
+    sentiment and a mention count, so they can tell a stated preference from a
+    passing remark; a flat list cannot.
+    """
     from memory.profile_store import get_user_profile
-    return get_user_profile(user_id) or {}
+    profile = get_user_profile(user_id) or {}
+    if not profile:
+        return {}
+    try:
+        from memory.interests_view import computed_interests, computed_dislikes
+        profile["interests"] = computed_interests(user_id)
+        dislikes = computed_dislikes(user_id)
+        if dislikes:
+            profile["dislikes"] = dislikes
+    except Exception as e:
+        print(f"[Profile] computed interests failed, serving stored: {e}")
+    return profile
 
 @router.post("/profile/{user_id}")
 def update_profile(user_id: str, data: dict):
