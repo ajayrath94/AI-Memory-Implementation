@@ -95,6 +95,17 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                 print(f"[Reminder] fired nudge for {_rem.get('what')} ({_rem['user_id']})")
         except Exception as _e:
             print(f"[Scheduler] reminder firing failed: {_e}")
+    # Close suggestions nobody answered. Silence is weak evidence on its own,
+    # but a run of it says the suggestions are landing badly.
+    if not dry_run:
+        try:
+            from memory.suggestions import expire_stale
+            n = expire_stale()
+            if n:
+                print(f"[Suggest] expired {n} unanswered suggestion(s)")
+        except Exception as e:
+            print(f"[Scheduler] suggestion expiry failed: {e}")
+
     # Caregiver alerts — detect concerning conditions (health cluster strength,
     # low session valence) and email the caregiver. run_alert_engine has a 24h
     # dedup so running every pass is safe (only emails genuinely new alerts).

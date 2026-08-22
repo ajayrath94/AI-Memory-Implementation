@@ -337,8 +337,32 @@ def generate_proactive_script(
         except Exception as e:
             print(f"[Schedule] due-item hint failed: {e}")
 
+    # For a recommendation, choose the thing FIRST rather than letting the
+    # composer reach for whatever reads well. Two reasons: it skips anything
+    # offered recently or already declined, and it means we know what was
+    # offered when the reply comes back.
+    picked = None
+    if intent == "recommendation":
+        try:
+            from memory.suggestions import pick_suggestion
+            picked = pick_suggestion(user_id)
+            if picked:
+                hints = (hints + "\n" if hints else "") + (
+                    f"Offer this specifically: {picked['label']}. "
+                    f"Mention nothing else they like.")
+        except Exception as e:
+            print(f"[Schedule] pick_suggestion failed: {e}")
+
     composed = compose(user_id, intent=intent, slot=slot,
                        priority=priority, hints=hints)
+
+    if composed and picked:
+        try:
+            from memory.suggestions import record_suggestion
+            record_suggestion(user_id, picked.get("cluster_id"),
+                              picked["label"], intent="recommendation")
+        except Exception as e:
+            print(f"[Schedule] record_suggestion failed: {e}")
     if composed:
         script = composed
 

@@ -549,6 +549,19 @@ async def process_input(text: str, model: str,
     sid = session["id"]
     update_session_weight(sid)
 
+    # If the companion offered something and this is the answer, attribute it
+    # before anything else reads the message. Costs nothing when no suggestion
+    # is open, which is most turns. Fire-and-forget: a failed attribution must
+    # never block the reply.
+    if text and text.strip():
+        def _react():
+            try:
+                from memory.suggestions import handle_reply
+                handle_reply(user_id, text, sid)
+            except Exception as e:
+                print(f"[Suggest] reply handling failed: {e}")
+        threading.Thread(target=_react, daemon=True).start()
+
     # 2. On a genuinely new session, summarize the PREVIOUS unsummarized session.
     #    get_previous_unsummarized_session returns a real session UUID whose
     #    messages actually exist — so the summarizer finds them (the fix).
