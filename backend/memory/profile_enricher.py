@@ -606,14 +606,22 @@ def recompute_cluster_trajectory(user_id: str, cluster_id: str):
         crow = (db.table("interest_clusters").select("pillar")
                 .eq("id", cluster_id).limit(1).execute()).data
         pillar = crow[0].get("pillar") if crow else None
-        if pillar not in ("HEALTH_WELLNESS", "FINANCE"):
-            return
+        # This used to return early for anything but HEALTH_WELLNESS and
+        # FINANCE, on the reasoning that "trend" is meaningless for an artist.
+        # True of trend — but it also skipped current_state and relationship,
+        # so every interest, person and preference cluster had null sentiment
+        # and no segmentation. An event could say relationship_type=preference
+        # and the cluster it belonged to would still be unmarked.
+        trajectory_pillar = pillar in ("HEALTH_WELLNESS", "FINANCE")
 
         evs = (db.table("user_behavioral_events")
                .select("sentiment,event_type,relationship_type,created_at")
                .eq("cluster_id", cluster_id).order("created_at", desc=False)
                .execute()).data or []
         roll = derive_trajectory(evs)
+        if roll and not trajectory_pillar:
+            # An artist does not improve or worsen; a knee does.
+            roll.pop("trend", None)
         if roll:
             db.table("interest_clusters").update(roll).eq("id", cluster_id).execute()
     except Exception as e:
@@ -990,7 +998,32 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                         "surface_form": subj[:200], "strength": ev_strength,
                         "sentiment": sentiment, "salience": salience,
                         "event_type": relation[:40],
-                        "relationship_type": first.get("subject_ref"),
+                        # relationship_type is the KIND of thing this is to them
+                        # (concern/preference/person/...). The entity path at the
+                        # bottom of this file writes exactly that. This path used
+                        # to write subject_ref here instead — proper_name, son,
+                        # self — so one column held two unrelated vocabularies
+                        # and whichever path ran last won. That is why no cluster
+                        # anywhere is marked "preference", and why health rows
+                        # came out as "self".
+                        # The proposition extractor does not return the
+                        # concern/preference vocabulary — that belongs to the
+                        # entity path. But `relation` already carries the same
+                        # distinction and is reliably populated: likes,
+                        # stopped_liking, has_condition, lives_in, feels, did.
+                        # Map it, so a cluster's dominant relation tells us
+                        # whether it is an interest, a concern or a person.
+                        "relationship_type": {
+                            "likes":          "preference",
+                            "stopped_liking": "preference",
+                            "has_condition":  "concern",
+                            "feels":          "feeling",
+                            "lives_in":       "person",
+                            "works_as":       "person",
+                            "is":             "person",
+                            "did":            "action",
+                        }.get((relation or "").lower()) or None,
+                        "context": {"subject_ref": first.get("subject_ref")},
                         "embedding": res.get("embedding"),
                     }).execute()
                 except Exception as e:
