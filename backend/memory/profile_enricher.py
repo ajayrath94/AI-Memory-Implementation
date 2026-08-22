@@ -971,8 +971,17 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                             .limit(1).execute()).data
                     if gone:
                         faded = round((gone[0].get("strength") or 0) * 0.3, 4)
-                        db.table("interest_clusters").update(
-                            {"strength": faded}).eq("id", gone[0]["id"]).execute()
+                        # Fading alone loses WHY it faded. "She stopped liking
+                        # coffee" and "coffee never came up" end up looking the
+                        # same, so the companion has no way to know not to
+                        # offer it. Mark it a negative preference explicitly —
+                        # computed_dislikes reads exactly this.
+                        db.table("interest_clusters").update({
+                            "strength":      faded,
+                            "relationship":  "preference",
+                            "current_state": -1.0,
+                            "last_sentiment": -1.0,
+                        }).eq("id", gone[0]["id"]).execute()
                 except Exception as e:
                     print(f"[Prop] retract-fade failed: {e}")
                 continue
