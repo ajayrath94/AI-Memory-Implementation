@@ -48,6 +48,28 @@ REACTION_WEIGHT = {
 
 # ── choosing what to offer ────────────────────────────────────────────────────
 
+
+def _last_reaction_was_refusal(user_id: str, cluster_id: str) -> bool:
+    """Did they turn this down the last time it came up?
+
+    Deliberately reads the most recent reaction rather than the rolled-up
+    sentiment: recency matters more than the average when the question is
+    "should I offer this again", and a single clear refusal should settle it
+    even if the running average has not caught up.
+    """
+    try:
+        from supabase_store import get_client
+        rows = (get_client().table("suggestions")
+                .select("reaction,reacted_at")
+                .eq("user_id", user_id).eq("cluster_id", cluster_id)
+                .not_.is_("reaction", "null")
+                .order("reacted_at", desc=True).limit(1).execute()).data or []
+    except Exception as e:
+        print(f"[Suggest] last-reaction read failed: {e}")
+        return False
+    return bool(rows) and rows[0].get("reaction") == "declined_preference"
+
+
 def pick_suggestion(user_id: str) -> Optional[dict]:
     """
     Choose the cluster worth surfacing, rather than letting the composer reach
@@ -91,7 +113,14 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
             continue
         state = r.get("current_state")
         if state is not None and state < 0:
-            continue                      # they told us they did not want it
+            continue                      # the average has turned against it
+
+        # The average alone is not enough. One preference decline against a
+        # stated liking leaves current_state at +0.067 — still positive — so
+        # someone could say "mujhe unke gaane pasand nahi" and be offered the
+        # same thing tomorrow. A recent explicit no overrides an old yes.
+        if _last_reaction_was_refusal(user_id, r["id"]):
+            continue
         rel = (r.get("relationship") or "").lower()
         if rel in ("concern", "person", "feeling", "action"):
             continue
