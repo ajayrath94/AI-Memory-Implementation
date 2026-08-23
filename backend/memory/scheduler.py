@@ -95,6 +95,17 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                 print(f"[Reminder] fired nudge for {_rem.get('what')} ({_rem['user_id']})")
         except Exception as _e:
             print(f"[Scheduler] reminder firing failed: {_e}")
+    # Refresh observed routines. Cheap — no model calls, just timestamps —
+    # and it needs to accumulate over weeks before it says anything useful.
+    if not dry_run:
+        try:
+            from memory.patterns import observe_all
+            n = observe_all()
+            if n:
+                print(f"[Patterns] refreshed routines for {n} user(s)")
+        except Exception as e:
+            print(f"[Scheduler] pattern observation failed: {e}")
+
     # Close suggestions nobody answered. Silence is weak evidence on its own,
     # but a run of it says the suggestions are landing badly.
     if not dry_run:
