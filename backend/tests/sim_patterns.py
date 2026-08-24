@@ -41,6 +41,61 @@ def make_user(uid):
     }).execute()
 
 
+def seed_pairs(uid, pairs):
+    """Seed explicit (first, last) local minute-of-day pairs, one per day."""
+    from zoneinfo import ZoneInfo
+    db, IST = get_client(), ZoneInfo("Asia/Kolkata")
+    for d, (first, last) in enumerate(pairs):
+        for mins in (first, last):
+            local = (datetime.now(IST) - timedelta(days=d + 1)).replace(
+                hour=(mins // 60) % 24, minute=mins % 60, second=0, microsecond=0)
+            sid = str(uuid.uuid4())
+            when = local.astimezone(timezone.utc).isoformat()
+            db.table("sessions").insert({
+                "id": sid, "user_id": uid, "model": "sim", "title": "SIM",
+                "updated_at": when}).execute()
+            db.table("messages").insert({
+                "session_id": sid, "role": "user", "model": "sim",
+                "content": "x", "timestamp": when}).execute()
+
+
+def run_midnight():
+    """A day does not end at midnight. Grouping on the calendar date put a
+    00:20 message at the START of the next day, so someone waking at 07:00 and
+    sleeping around midnight derived as wake 03:40, sleep 15:15."""
+    from memory.patterns import observe
+
+    print()
+    print("=" * 78)
+    print("PART 6 — MIDNIGHT WRAPAROUND")
+    print("=" * 78)
+
+    uid = PREFIX + "midnight"
+    make_user(uid)
+    seed_pairs(uid, [(7 * 60, 23 * 60 + 40), (7 * 60, 24 * 60 + 20),
+                     (7 * 60, 23 * 60 + 50), (7 * 60, 24 * 60 + 10),
+                     (7 * 60, 23 * 60 + 30), (7 * 60, 24 * 60 + 15)])
+    observe(uid)
+
+    failures = 0
+    wake  = next((r for r in rows_for(uid, "wake")), None)
+    sleep = next((r for r in rows_for(uid, "sleep")), None)
+
+    ok = wake and str(wake["observed_at"]).startswith("07:")
+    failures += not ok
+    print(f"{'ok  ' if ok else 'FAIL'} wake  {wake['observed_at'] if wake else None} "
+          f"spread={wake['spread_min'] if wake else None} (expected ~07:00)")
+
+    ok2 = sleep and (str(sleep["observed_at"])[:2] in ("23", "00")) \
+          and (sleep.get("spread_min") or 0) < 120
+    failures += not ok2
+    print(f"{'ok  ' if ok2 else 'FAIL'} sleep {sleep['observed_at'] if sleep else None} "
+          f"spread={sleep['spread_min'] if sleep else None} (expected ~00:00, tight)")
+
+    print(f"\n{2 - failures}/2 correct")
+    return failures
+
+
 def seed_days(uid, hours, days=6):
     """Sessions and messages at a given local hour each day, so the observation
     pass has something to derive a wake time from."""
@@ -314,6 +369,7 @@ def main():
         failures += run_idempotent()
         failures += run_drift()
         failures += run_validation()
+        failures += run_midnight()
         print("\n" + "=" * 78)
         print("ALL GREEN" if failures == 0 else f"{failures} FAILURE(S)")
         print("=" * 78)

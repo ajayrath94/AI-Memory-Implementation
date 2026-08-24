@@ -38,6 +38,11 @@ WINDOW_DAYS = 21
 # A drift smaller than someone's own variability is not a drift.
 MIN_DRIFT_MIN = 45
 
+# Below this, the observation is not solid enough to raise with anyone. Four
+# scattered days can produce a centre; it cannot produce a claim about someone's
+# life.
+MIN_DRIFT_CONFIDENCE = 0.5
+
 
 def _tz(user_id: str) -> ZoneInfo:
     try:
@@ -72,16 +77,43 @@ def _user_messages(user_id: str, days: int = WINDOW_DAYS) -> list:
         return []
 
 
+# A person's day does not end at midnight. Someone who messages at 00:20 has
+# not started a new day — they are still up from the previous one. Grouping on
+# the calendar date put that message at the START of Tuesday, so for a user who
+# woke at 07:00 and went to bed around midnight the derived values came out as
+# wake 03:40 and sleep 15:15: both nonsense, from data that was perfectly
+# regular. The day boundary is therefore early morning, when almost nobody is
+# awake.
+DAY_BOUNDARY_HOUR = 4
+
+
 def _by_local_day(stamps: list, tz: ZoneInfo) -> dict:
-    """Group timestamps into local calendar days, as minutes past midnight."""
+    """Group timestamps into local days that run 04:00 to 04:00.
+
+    Minutes are measured from the boundary, not from midnight, so late-night
+    times sort after evening ones instead of before morning ones. Callers get
+    values back in 0..1439 via _to_clock.
+    """
     days = defaultdict(list)
     for s in stamps:
         try:
             dt = datetime.fromisoformat(str(s).replace("Z", "+00:00")).astimezone(tz)
         except Exception:
             continue
-        days[dt.date()].append(dt.hour * 60 + dt.minute)
+        mins = dt.hour * 60 + dt.minute
+        if dt.hour < DAY_BOUNDARY_HOUR:
+            # belongs to yesterday, and sorts after yesterday's evening
+            key  = dt.date() - timedelta(days=1)
+            mins += 24 * 60
+        else:
+            key = dt.date()
+        days[key].append(mins)
     return days
+
+
+def _to_clock(mins: int) -> int:
+    """Back to a real clock time after the boundary shift."""
+    return int(mins) % (24 * 60)
 
 
 def _centre_and_spread(values: list) -> tuple:
@@ -136,7 +168,13 @@ def observe(user_id: str) -> list:
         return []
 
     firsts = [min(v) for v in days.values() if v]
-    lasts  = [max(v) for v in days.values() if v]
+
+    # A day's last message is only a sleep signal if it is plausibly evening.
+    # On a quiet day where someone messaged once at 8am, that 8am is when they
+    # stopped talking, not when they went to bed — counting it drags the centre
+    # into the afternoon and inflates the spread past any usable threshold.
+    EVENING_FROM = 18 * 60
+    lasts = [max(v) for v in days.values() if v and max(v) >= EVENING_FROM]
 
     derived = []
     for kind, values in (("wake", firsts), ("sleep", lasts)):
@@ -146,7 +184,7 @@ def observe(user_id: str) -> list:
         derived.append({
             "kind":         kind,
             "label":        None,
-            "observed_at":  _mins_to_time(centre),
+            "observed_at":  _mins_to_time(_to_clock(centre)),
             "spread_min":   spread,
             "observations": len(values),
             "confidence":   _confidence(len(days), spread),
@@ -158,7 +196,7 @@ def observe(user_id: str) -> list:
         derived.append({
             "kind":         "active_window",
             "label":        None,
-            "observed_at":  _mins_to_time(int(median(firsts))),
+            "observed_at":  _mins_to_time(_to_clock(int(median(firsts)))),
             "spread_min":   int(median(lasts) - median(firsts)),
             "observations": len(days),
             "confidence":   _confidence(len(days), 0),
@@ -205,7 +243,13 @@ def _upsert(user_id: str, d: dict) -> dict:
         drift = observed - declared
         # Only a drift larger than their own variability counts. Someone whose
         # mornings range over two hours has not "drifted" by forty minutes.
-        if abs(drift) >= max(MIN_DRIFT_MIN, d["spread_min"]):
+        # Confidence gates this, not just spread. They measure different
+        # things: spread is how variable someone is, confidence also accounts
+        # for how few days it is based on. Four consistent days give spread 0
+        # and confidence 0.26 — enough for the spread test to pass and not
+        # nearly enough to tell someone their routine has changed.
+        confident = d["confidence"] >= MIN_DRIFT_CONFIDENCE
+        if confident and abs(drift) >= max(MIN_DRIFT_MIN, d["spread_min"]):
             row["drift_min"] = drift
             if not (prev and prev.get("drift_since")):
                 row["drift_since"] = datetime.now(timezone.utc).isoformat()
