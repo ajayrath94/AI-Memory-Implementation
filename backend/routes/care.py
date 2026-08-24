@@ -10,7 +10,8 @@ maintains, distinct from the proactive-messaging engine in schedule.py.
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, List
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -255,3 +256,182 @@ def get_wellbeing(user_id: str, days: int = 7):
         "care_schedule":  schedule,
         "range_days":     days,
     }
+
+
+# ── Patterns: the anchor a day is measured against ─────────────────────────
+# Declared here, observed in memory/patterns.py, never conflated: the
+# divergence between what someone says their routine is and what it has
+# become is the signal worth having.
+
+class RoutineItem(BaseModel):
+    label: str                       # as they typed it, any script
+    at:    str                       # "06:45"
+
+
+class PatternsIn(BaseModel):
+    wake:     Optional[str] = None                     # "06:30"
+    sleep:    Optional[str] = None
+    meals:    Optional[Dict[str, str]] = None          # {"lunch": "13:00"}
+    routines: Optional[List[RoutineItem]] = None
+
+
+def _norm_time(t: Optional[str]) -> Optional[str]:
+    """Accept 06:30 or 06:30:00, store the latter."""
+    if not t:
+        return None
+    parts = str(t).strip().split(":")
+    if len(parts) < 2:
+        return None
+    try:
+        h, m = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if not (0 <= h < 24 and 0 <= m < 60):
+        return None
+    return f"{h:02d}:{m:02d}:00"
+
+
+def _canonicalise(label: str) -> str:
+    """A canonical English label for a routine written in any script.
+
+    The extractor already produces this — it returns canonical English
+    alongside the surface form — so no separate translation step is needed. It
+    expects sentences though, and a bare label sometimes comes back as "self",
+    so the label is wrapped in the minimal sentence that gives it the shape it
+    is built for.
+    """
+    text = (label or "").strip()
+    if not text:
+        return ""
+    try:
+        from memory.profile_enricher import _extract_propositions
+        # Bare, not wrapped in a sentence. Wrapping was meant to give the
+        # extractor the shape it expects, and did the opposite: with a full
+        # sentence it identifies the SPEAKER as the subject and the routine as
+        # the object, so "roz main ਸਵੇਰ ਦੀ ਪੂਜਾ karti hoon" returns "self"
+        # while the bare label returns "morning prayer".
+        props = _extract_propositions(text, "canon") or []
+        for p in props:
+            subj = (p.get("subject") or "").strip()
+            if subj and subj.lower() not in ("self", "user", ""):
+                return subj
+            obj = (p.get("object") or "").strip()
+            if obj:
+                return obj
+    except Exception as e:
+        print(f"[Patterns] canonicalise failed for {text!r}: {e}")
+    return text          # fall back to their own words rather than nothing
+
+
+def _upsert_declared(user_id: str, kind: str, at: str,
+                     label: Optional[str] = None,
+                     label_native: Optional[str] = None):
+    """Write what they declared, leaving anything observed untouched."""
+    db = _db()
+    row = {
+        "user_id":      user_id,
+        "kind":         kind,
+        "label":        label,
+        "label_native": label_native,
+        "declared_at":  at,
+        "source":       "declared",
+        "updated_at":   datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        q = (db.table("user_patterns").select("id")
+             .eq("user_id", user_id).eq("kind", kind))
+        # Match on what they typed, not on the canonical label. Canonicalisation
+        # is a model call, so the same input can come back slightly differently
+        # between runs — matching on it turns an edit into a duplicate, which is
+        # exactly what happened: one routine became two rows, "ਸਵੇਰ ਦੀ ਪੂਜਾ" and
+        # "morning prayer", for the same 06:45 puja.
+        if label is None:
+            q = q.is_("label", "null")
+        elif label_native:
+            q = q.eq("label_native", label_native)
+        else:
+            q = q.eq("label", label)
+        existing = q.limit(1).execute().data or []
+
+        if existing:
+            db.table("user_patterns").update(row).eq("id", existing[0]["id"]).execute()
+        else:
+            db.table("user_patterns").insert(row).execute()
+    except Exception as e:
+        print(f"[Patterns] upsert failed ({kind}/{label}): {e}")
+
+
+@router.get("/patterns/{user_id}")
+def get_patterns(user_id: str):
+    """Everything known about their day. Both screens read this — the elder's
+    view and the caregiver's — because a routine held silently and reported to
+    family is a different thing from one shown to the person it describes."""
+    try:
+        rows = (_db().table("user_patterns").select("*")
+                .eq("user_id", user_id).order("kind").execute()).data or []
+    except Exception as e:
+        raise HTTPException(500, f"read failed: {e}")
+
+    out = {"wake": None, "sleep": None, "meals": [], "routines": [], "drifting": []}
+    for r in rows:
+        item = {
+            "declared_at":  r.get("declared_at"),
+            "observed_at":  r.get("observed_at"),
+            "label":        r.get("label"),
+            "label_native": r.get("label_native"),
+            "confidence":   r.get("confidence"),
+            "spread_min":   r.get("spread_min"),
+        }
+        kind = r.get("kind")
+        if kind in ("wake", "sleep"):
+            out[kind] = item
+        elif kind == "meal":
+            out["meals"].append(item)
+        elif kind == "routine":
+            out["routines"].append(item)
+
+        # Surfaced separately so a screen can show it without hunting: this is
+        # the actionable part, and the caregiver view is built around it.
+        if r.get("drift_min"):
+            out["drifting"].append({
+                "kind": kind, "label": r.get("label"),
+                "drift_min": r.get("drift_min"),
+                "since": r.get("drift_since"),
+                "note": r.get("drift_note"),
+            })
+    return out
+
+
+@router.post("/patterns/{user_id}")
+def set_patterns(user_id: str, body: PatternsIn):
+    """What the onboarding form submits. Every field optional — a form that
+    traps someone on first launch is worse than no form, and anything left
+    blank simply gets asked in conversation later."""
+    written = 0
+
+    wake = _norm_time(body.wake)
+    if wake:
+        _upsert_declared(user_id, "wake", wake)
+        written += 1
+
+    sleep = _norm_time(body.sleep)
+    if sleep:
+        _upsert_declared(user_id, "sleep", sleep)
+        written += 1
+
+    for name, t in (body.meals or {}).items():
+        at = _norm_time(t)
+        if at:
+            _upsert_declared(user_id, "meal", at, label=name.strip().lower())
+            written += 1
+
+    for item in (body.routines or []):
+        at = _norm_time(item.at)
+        if not at or not item.label.strip():
+            continue
+        native = item.label.strip()
+        _upsert_declared(user_id, "routine", at,
+                         label=_canonicalise(native), label_native=native)
+        written += 1
+
+    return {"status": "ok", "written": written}
