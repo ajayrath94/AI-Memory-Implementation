@@ -33,12 +33,18 @@ function isLightHex(hex: string): boolean {
 }
 
 import { syncReminderNotifications, registerPushToken } from '../services/notificationService'
+import { loadLanguage } from '../hooks/useT'
 
 export default function RootLayout() {
   // ── All hooks at top, no conditionals before them ──
   const router   = useRouter()
   const pathname = usePathname()
   const bgColor  = useAppStore(s => s.bgColor)
+
+  // Stored choice applies immediately; the profile is reconciled after, since
+  // a caregiver may have changed it from the dashboard.
+  const langUserId = useAppStore(s => s.userId)
+  useEffect(() => { loadLanguage(langUserId) }, [langUserId])
   const [open, setOpen] = useState(false)
   const anim     = useRef(new Animated.Value(COLLAPSED_W)).current
   const fadeAnim = useRef(new Animated.Value(0)).current

@@ -19,6 +19,9 @@ interface AppState {
   // When the app last went to background. Drives whether the companion opens
   // the conversation on return — see the proactive-open effect in index.tsx.
   lastSeenAt:  number | null
+  // Kept locally so the first frame renders in the right language rather than
+  // waiting on a network call. Reconciled with the profile at startup.
+  language:    string
   userId:      string
   bgColor:     string
   lastMeta:    { core: string; emotion: string; functional: string } | null
@@ -29,6 +32,7 @@ interface AppState {
   setLoading:    (v: boolean) => void
   setSessionId:  (id: string | null) => void
   setLastSeenAt: (t: number) => void
+  setLanguage:   (l: string) => void
   setUserId:     (id: string) => void
   setBgColor:    (color: string) => void
   setLastMeta:   (meta: any) => void
@@ -44,6 +48,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   loading:    false,
   sessionId:  null,
   lastSeenAt: null,
+  language:   'hinglish',
   userId:     'default',
   bgColor:    '#0a0a0a',
   lastMeta:   null,
@@ -54,6 +59,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLoading:    (v)     => set({ loading: v }),
   setSessionId:  (id)    => set({ sessionId: id }),
   setLastSeenAt: (t)     => set({ lastSeenAt: t }),
+  setLanguage:   (l)     => set({ language: l }),
   setUserId:     (id)    => set({ userId: id }),
   setBgColor:    (color) => set({ bgColor: color }),
   setLastMeta:   (meta)  => set({ lastMeta: meta }),

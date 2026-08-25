@@ -108,17 +108,20 @@ def _resolve_incoming(updates: dict, existing: dict, user_id: str) -> dict:
     return out
 
 
-def save_user_profile(user_id: str, updates: dict):
+def save_user_profile(user_id: str, updates: dict, declared: bool = False):
     """
     Merge updates into existing profile.
     Never overwrites a field with empty/None — only enriches.
+
+    Set `declared` when the update came from the person rather than from the
+    extractor. The caller knows which it is; the merge cannot tell.
     """
     db       = get_client()
     existing = get_user_profile(user_id) or {}
 
     owner   = updates.get("name") or existing.get("name") or ""
     updates = _resolve_incoming(updates, existing, user_id)
-    merged  = _deep_merge(existing, updates, owner, user_id)
+    merged  = _deep_merge(existing, updates, owner, user_id, declared)
     merged["user_id"]    = user_id
     merged["updated_at"] = "now()"
 
@@ -280,12 +283,21 @@ def _merge_list(existing, new, cap: int = 25, owner: str = "", user_id: str = ""
     return [best[k] for k in order][:cap]
 
 
-def _deep_merge(base: dict, updates: dict, owner: str = "", user_id: str = "") -> dict:
+def _deep_merge(base: dict, updates: dict, owner: str = "", user_id: str = "",
+                declared: bool = False) -> dict:
     """
     Deep merge updates into base.
-    - Scalars: only update if base is empty/None
+    - Scalars: only update if base is empty/None, UNLESS declared
     - Dicts: merge recursively
     - Lists: union (no duplicates)
+
+    `declared` marks an update the user made deliberately rather than one the
+    extractor inferred. Never overwriting is right for inference — a guess
+    should not clobber a known fact — but it made a stated choice impossible to
+    record: picking English on the language screen returned {"status": "ok"} and
+    changed nothing, because language_pref already said hinglish. Every profile
+    in the database said hinglish for the same reason: it was the value set at
+    creation and nothing had ever been able to replace it.
     """
     result = dict(base)
     for key, new_val in updates.items():
@@ -297,15 +309,15 @@ def _deep_merge(base: dict, updates: dict, owner: str = "", user_id: str = "") -
             continue  # Never overwrite with empty
 
         if isinstance(new_val, dict) and isinstance(existing_val, dict):
-            result[key] = _deep_merge(existing_val, new_val, owner, user_id)
+            result[key] = _deep_merge(existing_val, new_val, owner, user_id, declared)
         elif isinstance(new_val, list) and isinstance(existing_val, list):
             result[key] = _merge_list(existing_val, new_val, owner=owner, user_id=user_id)
         else:
-            # For scalars: update if existing is empty
-            if not existing_val:
+            # For scalars: update if existing is empty, or if they told us
+            if declared or not existing_val:
                 result[key] = new_val
             else:
-                result[key] = existing_val  # Keep existing, don't overwrite
+                result[key] = existing_val  # inference must not overwrite
 
     return result
 

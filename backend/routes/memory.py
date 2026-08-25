@@ -104,5 +104,7 @@ def user_profile(user_id: str = "default"):
 def update_profile(user_id: str, data: dict):
     """Manually update a user profile field."""
     from memory.profile_store import save_user_profile
-    save_user_profile(user_id, data)
+    # This route exists for the app and the caregiver dashboard — a person
+    # editing their own profile. The extractor writes through its own path.
+    save_user_profile(user_id, data, declared=True)
     return {"status": "ok"}

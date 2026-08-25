@@ -22,6 +22,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY } from '../../constants'
 import { useAppStore } from '../../store/appStore'
+import { setLanguage } from '../../hooks/useT'
+import { Lang as AppLang } from '../../i18n/strings'
 
 type Lang = {
   code: string          // what the backend stores as language_pref
@@ -93,6 +95,10 @@ export default function LanguageScreen() {
       const pref = selected.code === 'english'
         ? 'english'
         : (allowMix ? (MIXED[selected.code] || selected.code) : selected.code)
+
+      // Locally first: the next screen renders before any network call
+      // returns, and it should already be in their language.
+      await setLanguage(selected.code as AppLang)
 
       await fetch(`${API_BASE}/memory/profile/${userId}`, {
         method: 'POST',
