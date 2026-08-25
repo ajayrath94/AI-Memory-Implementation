@@ -52,7 +52,10 @@ export default function OnboardingScreen() {
     if (result.success && result.user) {
       setUserId(result.user.id)
       setStep('done')
-      setTimeout(() => router.replace('/'), 1500)
+      // Straight into setup rather than home. Asking for a routine while
+      // someone is already in the app feels like an interruption; asking it
+      // as the next step of signing up does not.
+      setTimeout(() => router.replace('/setup/language'), 1200)
     } else {
       setError(result.error || 'Invalid OTP')
     }

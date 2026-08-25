@@ -168,7 +168,7 @@ export default function CalendarScreen() {
                   const cs = catStyle(it)
                   return (
                     <View
-                      key={`${it.kind}-${it.id}`}
+                      key={`${it.kind}-${it.id}-${it.at}`}
                       style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}
                     >
                       <View style={[styles.stripe, { backgroundColor: cs.color }]} />

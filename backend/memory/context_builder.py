@@ -357,7 +357,9 @@ def compose(user_id: str, intent: str = "check_in",
         return spec["fixed"]
 
     ctx = build_context(user_id, include=["persona", "language"] + spec["sources"])
-    persona = ctx.pop("persona", "You are a warm companion.")
+    persona  = ctx.pop("persona", "You are a warm companion.")
+    # Held back deliberately — see where it is placed below.
+    language = ctx.pop("language", "")
     task = spec["task"]
 
     slot_note = {
@@ -414,6 +416,13 @@ RULES:
 - If you have little to go on, a short warm greeting is the right answer.
 - NEVER address the operator, ask for more context, or explain what you do or
   do not know. You are speaking TO the person. There is no one else to ask.
+
+{language}
+The blocks above are stored notes, not a style guide. They were written in
+whatever language they happened to be recorded in — usually Hinglish — and the
+recent messages are there so you avoid repeating yourself, not so you copy how
+they were phrased. Write in the language named directly above this line,
+whatever the notes look like.
 
 Write only the message. No preamble, no quotation marks."""
 

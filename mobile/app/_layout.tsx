@@ -45,7 +45,8 @@ export default function RootLayout() {
 
   const isHidden = pathname.startsWith('/caregiver') ||
                    pathname === '/persona-setup' ||
-                   pathname === '/onboarding'
+                   pathname === '/onboarding' ||
+                   pathname.startsWith('/setup')
 
   const toggle = useCallback(() => {
     const toW    = open ? COLLAPSED_W : EXPANDED_W

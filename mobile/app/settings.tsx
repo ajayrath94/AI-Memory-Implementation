@@ -131,7 +131,7 @@ export default function SettingsScreen() {
         <SectionHeader title="🤖 Companion" theme={theme} />
         <TouchableOpacity
           style={styles.personaCard}
-          onPress={() => router.push('/persona-setup')}
+          onPress={() => router.push('/setup/language')}
           activeOpacity={0.8}
         >
           <View style={styles.personaAvatar}>
