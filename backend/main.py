@@ -19,6 +19,7 @@ from routes.location import router as location_router
 from routes.debug import router as debug_router
 from routes.push import router as push_router
 from routes.memory_view import router as memory_view_router
+from routes.snapshot import router as snapshot_router
 from utils.auth import require_api_key
 import os
 
@@ -36,6 +37,7 @@ app.add_middleware(
 
 # All routes protected by API key
 app.include_router(chat_router,     prefix="/chat",     tags=["chat"],     dependencies=[Depends(require_api_key)])
+app.include_router(snapshot_router, prefix="/snapshot", tags=["snapshot"], dependencies=[Depends(require_api_key)])
 app.include_router(memory_router,   prefix="/memory",   tags=["memory"],   dependencies=[Depends(require_api_key)])
 app.include_router(voice_router,    prefix="/voice",    tags=["voice"],    dependencies=[Depends(require_api_key)])
 app.include_router(schedule_router, prefix="/schedule", tags=["schedule"], dependencies=[Depends(require_api_key)])
