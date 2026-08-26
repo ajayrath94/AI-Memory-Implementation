@@ -275,9 +275,12 @@ Rules for using these phrases:
 - Should feel like it slipped out naturally, not scripted
 - Skip entirely if it doesn't fit the moment naturally"""
 
-        if language_mix:
-            langs = [f"{lang} ({int(pct*100)}%)" for lang, pct in language_mix.items()]
-            prompt += f"\nSpeak naturally mixing: {', '.join(langs)}"
+        # Language is described once, by the declared layer, at the point of
+        # generation. It used to be rendered here too — as percentages, which
+        # is a strange thing to ask a model for — so every prompt carried two
+        # descriptions of how to speak, a few hundred characters apart. When
+        # they disagreed the nearer one won, which is why picking English could
+        # still produce Hinglish.
 
         # Bands, not one threshold. A single `> 0.8` check meant 0.5 and 0.79
         # produced identical prompts — the slider had two positions, not a range.
