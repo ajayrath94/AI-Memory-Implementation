@@ -96,19 +96,23 @@ def _interests(user_id: str) -> str:
 
 
 def _language(user_id: str) -> str:
-    """How they speak. Without this the model defaults to English whenever the
-    profile is thin — an Indian eldercare product should never open in English
-    unless the person actually does."""
-    try:
-        from memory.profile_store import get_user_profile
-        pref = ((get_user_profile(user_id) or {}).get("language_pref") or "").strip()
-    except Exception:
-        pref = ""
+    """How they speak — from the declared layer, which owns it.
 
-    if not pref:
-        pref = "hinglish"          # the floor, not an assumption about them
-    return (f"They speak {pref}. Write in {pref} — this is not optional, and "
-            f"applies to the short greeting as much as to a long one.")
+    This used to build the sentence itself from language_pref, and ignored
+    language_mix entirely: a persona configured as 60% Hindi and 40% Gujarati
+    got a flat "they speak hinglish" instruction, while the persona block said
+    something different a few hundred characters earlier. Two places describing
+    one thing is how a person could pick English and still be answered in
+    Hinglish.
+    """
+    try:
+        from memory.declared import get_declared
+        return get_declared(user_id).language.instruction
+    except Exception as e:
+        print(f"[Context] language read failed: {e}")
+        return ("They speak hinglish. Write in hinglish — this is not "
+                "optional, and applies to a short greeting as much as to a "
+                "long reply.")
 
 
 def _patterns(user_id: str) -> str:

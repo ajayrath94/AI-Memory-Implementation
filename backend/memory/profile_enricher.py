@@ -393,8 +393,11 @@ def enrich_profile_from_message(text: str, classified, user_id: str, session_id:
     if living:
         updates["life_context"] = living
 
-    if classified.language == "hi":
-        updates["language_pref"] = "hinglish"
+    # Language is declared, not inferred. This used to set hinglish whenever
+    # the classifier saw Hindi in a message, which is unreliable on its own —
+    # a Punjabi speaker writing one Hinglish sentence would be reclassified,
+    # and someone may deliberately want English replies while writing in Hindi.
+    # It is now set only from the language picker, through the declared path.
 
     # ── Path 2: Haiku micro-extraction ────────────────────────────────────────
     should_run, context_hint = _should_run_haiku(classified)
