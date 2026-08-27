@@ -140,7 +140,47 @@ def _proactive(user_id: str, limit: int = 15) -> list:
         return [{"error": str(e)[:200]}]
 
 
-@router.get("/snapshot/{user_id}")
+# Declared before the catch-all below. FastAPI matches routes in order, so
+# with /{user_id} first, a request to /snapshot/overview was read as a user
+# called "overview" and the list was unreachable.
+@router.get("/overview")
+def overview():
+    """Everyone, one row each, ordered so the rows that need a look come first.
+
+    Deliberately does not call detect_alerts — that makes a model call per user
+    when it finds a candidate, which is fine on demand and wasteful for a list
+    that gets refreshed. It reads the alert count already stored on the
+    fingerprint instead.
+    """
+    from datetime import datetime, timezone
+    try:
+        users = (_db().table("user_memory")
+                 .select("user_id,session_count")
+                 .order("updated_at", desc=True).execute()).data or []
+    except Exception as e:
+        return {"users": [], "error": str(e)[:200]}
+
+    rows = []
+    for u in users:
+        try:
+            rows.append(_summary_for(u["user_id"], u.get("session_count") or 0))
+        except Exception as e:
+            rows.append({"user_id": u["user_id"], "error": str(e)[:120]})
+
+    order = {"attention": 0, "watch": 1, None: 2}
+    rows.sort(key=lambda r: (order.get(r.get("flag"), 2),
+                             -(r.get("days_since") or 0)))
+
+    return {
+        "taken_at": datetime.now(timezone.utc).isoformat(),
+        "count":    len(rows),
+        "attention": sum(1 for r in rows if r.get("flag") == "attention"),
+        "quiet":     sum(1 for r in rows if r.get("quiet")),
+        "users":    rows,
+    }
+
+
+@router.get("/{user_id}")
 def snapshot(user_id: str, include_alerts: bool = False):
     """
     Everything stored about one person.
@@ -166,7 +206,7 @@ def snapshot(user_id: str, include_alerts: bool = False):
     return out
 
 
-@router.get("/snapshot")
+@router.get("")
 def list_users():
     """Who there is to look at. user_memory rather than user_profile: a row
     here means a conversation actually happened, where the profile table holds
@@ -309,39 +349,3 @@ def _summary_for(user_id: str, session_count: int) -> dict:
 
     return row
 
-
-@router.get("/overview")
-def overview():
-    """Everyone, one row each, ordered so the rows that need a look come first.
-
-    Deliberately does not call detect_alerts — that makes a model call per user
-    when it finds a candidate, which is fine on demand and wasteful for a list
-    that gets refreshed. It reads the alert count already stored on the
-    fingerprint instead.
-    """
-    from datetime import datetime, timezone
-    try:
-        users = (_db().table("user_memory")
-                 .select("user_id,session_count")
-                 .order("updated_at", desc=True).execute()).data or []
-    except Exception as e:
-        return {"users": [], "error": str(e)[:200]}
-
-    rows = []
-    for u in users:
-        try:
-            rows.append(_summary_for(u["user_id"], u.get("session_count") or 0))
-        except Exception as e:
-            rows.append({"user_id": u["user_id"], "error": str(e)[:120]})
-
-    order = {"attention": 0, "watch": 1, None: 2}
-    rows.sort(key=lambda r: (order.get(r.get("flag"), 2),
-                             -(r.get("days_since") or 0)))
-
-    return {
-        "taken_at": datetime.now(timezone.utc).isoformat(),
-        "count":    len(rows),
-        "attention": sum(1 for r in rows if r.get("flag") == "attention"),
-        "quiet":     sum(1 for r in rows if r.get("quiet")),
-        "users":    rows,
-    }

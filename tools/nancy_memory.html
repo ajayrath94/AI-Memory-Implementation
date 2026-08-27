@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nancy — Memory</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<!--
+  Replaces nancy_memory_dashboard, _live and _visualizer. All three called
+  endpoints that no longer exist — /memory/stm, /memory/user, /memory/state,
+  /alerts/detected — and none of them sent an API key, so they would have 401'd
+  even if the routes had survived. Read surfaces assembled ad hoc drift out of
+  existence; this one reads the two endpoints that are meant to be read.
+
+  Open it from disk. The key is asked for once and kept in localStorage, so the
+  file is safe to commit.
+-->
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f8f8f6;
+  --surface: #ffffff;
+  --surface2: #f1f0ec;
+  --border: rgba(0,0,0,0.1);
+  --text: #1a1a1a;
+  --text2: #666;
+  --text3: #999;
+  --accent: #4a7fd9;
+  --danger: #c4463f;
+  --danger-bg: rgba(196,70,63,0.08);
+  --warn: #b8792a;
+  --warn-bg: rgba(184,121,42,0.08);
+  --good: #2f8a5b;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1a1a;
+    --surface: #242424;
+    --surface2: #2e2e2e;
+    --border: rgba(255,255,255,0.1);
+    --text: #f0f0f0;
+    --text2: #aaa;
+    --text3: #666;
+    --accent: #6b9ae8;
+    --danger: #e8756d;
+    --danger-bg: rgba(232,117,109,0.12);
+    --warn: #d9a05b;
+    --warn-bg: rgba(217,160,91,0.12);
+    --good: #5cbd8a;
+  }
+}
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: 24px; max-width: 1100px; margin: 0 auto;
+}
+h1 { font-size: 20px; font-weight: 600; margin-bottom: 2px; }
+.sub { color: var(--text2); font-size: 13px; margin-bottom: 20px; }
+.row { display: flex; align-items: center; gap: 12px; }
+.spacer { flex: 1; }
+button {
+  font: inherit; padding: 6px 12px; border-radius: var(--radius-md);
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); cursor: pointer;
+}
+button:hover { background: var(--surface2); }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px,1fr));
+         gap: 10px; margin-bottom: 18px; }
+.tile { background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-lg); padding: 12px 14px; }
+.tile .l { font-size: 12px; color: var(--text2); }
+.tile .v { font-size: 22px; font-weight: 500; margin-top: 2px; }
+
+table { width: 100%; border-collapse: collapse; background: var(--surface);
+        border: 1px solid var(--border); border-radius: var(--radius-lg);
+        overflow: hidden; }
+th { text-align: left; font-size: 12px; font-weight: 500; color: var(--text2);
+     padding: 10px 14px; background: var(--surface2); }
+td { padding: 12px 14px; border-top: 1px solid var(--border); font-size: 13px; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: var(--surface2); }
+tr.attention td { background: var(--danger-bg); color: var(--danger); }
+tr.attention:hover td { background: var(--danger-bg); }
+tr.watch td { background: var(--warn-bg); color: var(--warn); }
+tr.watch:hover td { background: var(--warn-bg); }
+.muted { color: var(--text3); }
+.good { color: var(--good); }
+.small { font-size: 12px; opacity: 0.8; }
+
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+@media (max-width: 760px) { .cards { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-lg); padding: 14px 16px; }
+.card h3 { font-size: 12px; font-weight: 500; color: var(--text2);
+           margin-bottom: 10px; text-transform: none; }
+.kv { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13px; }
+.kv span:first-child { color: var(--text2); }
+
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 56px; }
+.bars div { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 2px; }
+.bars div.low { background: var(--danger); }
+
+.empty { color: var(--text3); font-size: 13px; padding: 8px 0; }
+pre { background: var(--surface2); padding: 10px; border-radius: var(--radius-md);
+      font-size: 12px; overflow-x: auto; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<div class="row">
+  <div>
+    <h1 id="title">Nancy — Memory</h1>
+    <div class="sub" id="subtitle">Loading…</div>
+  </div>
+  <div class="spacer"></div>
+  <button id="back" style="display:none">← All people</button>
+  <button id="refresh">Refresh</button>
+</div>
+
+<div id="view"></div>
+
+<script>
+const BASE = 'https://ai-memory-implementation-production.up.railway.app';
+// Which person is open, if any. Refresh used to read the page title and
+// fetch /snapshot/Nancy%20—%20Memory, which is not a user id.
+let current = null;
+
+function key() {
+  let k = localStorage.getItem('nancyKey');
+  if (!k) {
+    k = prompt('API key');
+    if (k) localStorage.setItem('nancyKey', k);
+  }
+  return k;
+}
+
+async function get(path) {
+  const res = await fetch(BASE + path, { headers: { 'X-API-Key': key() } });
+  if (res.status === 401 || res.status === 403) {
+    localStorage.removeItem('nancyKey');
+    throw new Error('Key rejected — reload and enter it again');
+  }
+  if (!res.ok) throw new Error(path + ' → ' + res.status);
+  return res.json();
+}
+
+const el  = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+const hhmm = t => t ? String(t).slice(0,5) : '—';
+
+// ── overview ─────────────────────────────────────────────────────────────────
+
+async function showOverview() {
+  current = null;
+  el('back').style.display = 'none';
+  el('title').textContent = 'Nancy — Memory';
+  el('view').innerHTML = '<div class="empty">Loading…</div>';
+
+  let d;
+  try { d = await get('/snapshot/overview'); }
+  catch (e) { el('view').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+
+  el('subtitle').textContent = new Date(d.taken_at).toLocaleString();
+
+  const moodIcon = m => m === 'rising'  ? '<i class="ti ti-trending-up"></i> rising'
+                      : m === 'falling' ? '<i class="ti ti-trending-down"></i> falling'
+                      : m === 'steady'  ? '<i class="ti ti-minus"></i> steady'
+                      : '<span class="muted">not enough</span>';
+
+  // Only the things that would make someone open the detail. A column that is
+  // always empty trains people to stop reading the row.
+  const needs = u => {
+    const bits = [];
+    if (u.alerts) bits.push(u.alerts + ' alert' + (u.alerts > 1 ? 's' : ''));
+    if (u.unresolved_drift) bits.push('drift unexplained');
+    if (u.quiet) bits.push('unusually quiet');
+    return bits.join(' · ') || '<span class="muted">—</span>';
+  };
+
+  el('view').innerHTML = `
+    <div class="tiles">
+      <div class="tile"><div class="l">People</div><div class="v">${d.count}</div></div>
+      <div class="tile"><div class="l">Need attention</div>
+        <div class="v" style="color:${d.attention ? 'var(--danger)' : 'inherit'}">${d.attention}</div></div>
+      <div class="tile"><div class="l">Unusually quiet</div><div class="v">${d.quiet}</div></div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Person</th><th>Last seen</th><th>Mood</th><th>Needs a look</th><th>Talks about</th>
+      </tr></thead>
+      <tbody>${d.users.map(u => `
+        <tr class="${u.flag || ''}" data-user="${esc(u.user_id)}">
+          <td>${esc(u.name || u.user_id)}
+            <div class="small">${esc(u.place || '—')}${u.away ? ' · away' : ''} · ${u.session_count} sessions</div></td>
+          <td>${u.days_since == null ? '—' : (u.days_since < 1 ? 'today' : u.days_since + ' days')}</td>
+          <td>${moodIcon(u.mood)}</td>
+          <td>${needs(u)}</td>
+          <td>${esc(u.talks_about || '—')}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  document.querySelectorAll('tbody tr').forEach(tr =>
+    tr.onclick = () => showPerson(tr.dataset.user));
+}
+
+// ── one person ───────────────────────────────────────────────────────────────
+
+async function showPerson(userId) {
+  current = userId;
+  el('back').style.display = '';
+  el('view').innerHTML = '<div class="empty">Loading…</div>';
+
+  let s;
+  try { s = await get('/snapshot/' + encodeURIComponent(userId)); }
+  catch (e) { el('view').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+
+  const dec = s.declared || {}, comp = dec.companion || {}, place = dec.place || {},
+        rh  = dec.rhythm || {},  mem = s.memory || {}, ints = s.interests || {};
+
+  el('title').textContent = dec.name || userId;
+  el('subtitle').textContent =
+    [dec.age_group, place.home && (place.away ? `${place.home}, away in ${place.current}` : place.home),
+     (dec.language||{}).pref, `${mem.session_count || 0} sessions`]
+    .filter(Boolean).join(' · ');
+
+  const routines = (rh.routines || [])
+    .map(r => `${esc(r.label_native || r.label)} ${hhmm(r.at)}`).join(' · ') || '—';
+
+  // Declared beside observed, because the gap between them is the interesting
+  // part — she says 06:30 and talks at 07:50, and that difference is either a
+  // routine change or a decline.
+  const wake  = (s.patterns || []).find(p => p.kind === 'wake')  || {};
+  const sleep = (s.patterns || []).find(p => p.kind === 'sleep') || {};
+  const drift = wake.drift_min
+    ? ` <span style="color:var(--warn)">${wake.drift_min > 0 ? '+' : ''}${wake.drift_min}m</span>` : '';
+
+  const health = (s.clusters || [])
+    .filter(c => c.pillar === 'HEALTH_WELLNESS')
+    .slice(0, 3)
+    .map(c => `<div class="kv"><span>${esc(c.label)}</span><span>${c.event_count} mentions${
+      c.trend && c.trend !== 'stable' && c.trend !== 'new'
+        ? ` · <span class="${c.trend === 'improving' ? 'good' : ''}">${c.trend}</span>` : ''}</span></div>`)
+    .join('') || '<div class="empty">nothing noted</div>';
+
+  const likes = Object.values(ints.likes || {}).flat().join(', ') || '—';
+  const dis   = (ints.dislikes || []).join(', ') || '—';
+
+  const mood = (s.mood || []).slice().reverse();
+  const bars = mood.length
+    ? `<div class="bars">${mood.map(m => {
+        const v = m.valence == null ? 0 : Number(m.valence);
+        const h = Math.max(4, Math.round((v + 1) / 2 * 100));
+        return `<div class="${v <= -0.3 ? 'low' : ''}" style="height:${h}%" title="${
+          new Date(m.created_at).toLocaleDateString()} · ${v}${
+          (m.soft_flags||[]).length ? ' · ' + m.soft_flags.join(', ') : ''}"></div>`;
+      }).join('')}</div>
+      <div class="small muted" style="margin-top:6px">${mood.length} sessions · hover a bar</div>`
+    : '<div class="empty">no mood recorded yet</div>';
+
+  const offers = (s.suggestions || []).length
+    ? `<table><tbody>${s.suggestions.slice(0, 8).map(o => {
+        const c = o.context || {};
+        const when = [c.hour != null ? c.hour + ':00' : null,
+                      c.temp_c != null ? c.temp_c + '°' : null,
+                      c.weather].filter(Boolean).join(' · ');
+        const colour = o.reaction === 'accepted' ? 'var(--good)'
+                     : o.reaction === 'declined_preference' ? 'var(--danger)' : 'var(--text2)';
+        return `<tr><td>${esc(o.label)}</td>
+                    <td class="muted">${esc(when || '—')}</td>
+                    <td style="text-align:right;color:${colour}">${esc(o.reaction || 'waiting')}</td></tr>`;
+      }).join('')}</tbody></table>`
+    : '<div class="empty">nothing offered yet</div>';
+
+  el('view').innerHTML = `
+    <div class="cards">
+      <div class="card">
+        <h3>She told us</h3>
+        <div class="kv"><span>Companion</span><span>${esc(comp.name)} · ${esc(comp.relationship)}</span></div>
+        <div class="kv"><span>Warmth / humour</span><span>${comp.warmth} / ${comp.humour}</span></div>
+        <div class="kv"><span>Voice</span><span>${esc(comp.voice_id || '—')}</span></div>
+        <div class="kv"><span>Wakes</span><span>${hhmm(rh.wake)}</span></div>
+        <div class="kv"><span>Sleeps</span><span>${hhmm(rh.sleep)}</span></div>
+        <div class="kv"><span>Meals</span><span>${
+          Object.entries(rh.meals || {}).map(([k,v]) => `${k} ${hhmm(v)}`).join(' · ') || '—'}</span></div>
+        <div class="kv"><span>Routines</span><span>${routines}</span></div>
+      </div>
+      <div class="card">
+        <h3>We noticed</h3>
+        <div class="kv"><span>Talks first at</span><span>${hhmm(wake.observed_at)}${drift}</span></div>
+        <div class="kv"><span>Goes quiet</span><span>${hhmm(sleep.observed_at)}</span></div>
+        <div class="kv"><span>Confidence</span><span class="${(wake.confidence||0) < 0.5 ? 'muted' : ''}">${
+          wake.confidence ?? '—'}${(wake.confidence||0) < 0.5 ? ' · thin' : ''}</span></div>
+        ${health}
+        <div class="kv"><span>Likes</span><span>${esc(likes)}</span></div>
+        <div class="kv"><span>Not for her</span><span>${esc(dis)}</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <h3>Mood, recent sessions</h3>
+      ${bars}
+    </div>
+
+    <div class="cards">
+      <div class="card"><h3>What we offered</h3>${offers}</div>
+      <div class="card">
+        <h3>What she talks about</h3>
+        <div class="kv"><span>Dominant</span><span>${esc((s.pillars||{}).dominant || '—')}</span></div>
+        ${Object.entries((s.pillars||{}).moving || {}).map(([p,t]) =>
+          `<div class="kv"><span>${esc(p)}</span><span>${esc(t)}</span></div>`).join('')
+          || '<div class="empty">all pillars steady</div>'}
+      </div>
+    </div>
+
+    ${mem.summary ? `<div class="card" style="margin-top:12px">
+      <h3>Running summary</h3><pre>${esc(mem.summary)}</pre></div>` : ''}`;
+}
+
+el('back').onclick    = showOverview;
+el('refresh').onclick = () => current ? showPerson(current) : showOverview();
+
+showOverview();
+</script>
+</body>
+</html>
