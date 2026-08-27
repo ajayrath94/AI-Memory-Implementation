@@ -51,11 +51,14 @@ export default function InterestsScreen() {
   const [listening, setListening] = useState<string | null>(null)
 
   const voice = useVoice((text: string) => {
+    console.log('[interests] transcript arrived:', JSON.stringify(text),
+                'target:', target.current)
     const cat = target.current
     if (!cat || !text) return
     // Append rather than replace: naming a second thing should not lose the
     // first.
     setVals(v => ({ ...v, [cat]: [v[cat], text].filter(Boolean).join(', ') }))
+    target.current = null
     setListening(null)
   })
 
@@ -87,7 +90,10 @@ export default function InterestsScreen() {
     console.log('[interests] mic', cat, 'listening:', listening,
                 'voice.isListening:', voice.isListening)
     const stopping = listening === cat
-    target.current = stopping ? null : cat
+    // Only set on the starting tap, never cleared here: the transcript arrives
+    // AFTER the stopping tap, and clearing the target first left it with
+    // nowhere to go. The callback clears it once it has written.
+    if (!stopping) target.current = cat
     setListening(stopping ? null : cat)
     voice.toggle()
   }
