@@ -4,6 +4,7 @@ import { Audio } from 'expo-av'
 import * as Haptics from 'expo-haptics'
 import * as FileSystem from 'expo-file-system'
 import { API_BASE, API_KEY } from '../constants'
+import { useAppStore } from '../store/appStore'
 
 export function useVoice(onTranscript: (text: string) => void) {
   const [isListening, setIsListening]   = useState(false)
@@ -65,6 +66,9 @@ export function useVoice(onTranscript: (text: string) => void) {
         type: 'audio/m4a',
         name: 'recording.m4a',
       } as any)
+      // So the transcription knows which script to expect — without it,
+      // "Mohammed Rafi" came back as محمد رفی.
+      formData.append('user_id', useAppStore.getState().userId)
 
       const res = await fetch(`${API_BASE}/voice/transcribe`, {
         method:  'POST',

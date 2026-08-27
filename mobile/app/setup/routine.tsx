@@ -118,7 +118,7 @@ export default function RoutineScreen() {
       console.log('[routine] save failed', e)
     }
     setSaving(false)
-    router.replace('/')
+    router.push('/setup/interests')
   }
 
   if (loading) {
@@ -206,7 +206,7 @@ export default function RoutineScreen() {
         <View style={styles.actions}>
           <TouchableOpacity
             style={styles.skip}
-            onPress={() => router.replace('/')}
+            onPress={() => router.push('/setup/interests')}
           >
             <Text style={styles.skipText}>{t('common.skip')}</Text>
           </TouchableOpacity>

@@ -435,3 +435,47 @@ def set_patterns(user_id: str, body: PatternsIn):
         written += 1
 
     return {"status": "ok", "written": written}
+
+
+# ── Declared interests ────────────────────────────────────────────────────────
+# What someone names on the setup screen, as distinct from what the system
+# notices them talking about. Both are real interests; only one was stated, and
+# the difference matters — a declared one should not have to accumulate
+# mentions before it counts, and should not be swept by the cluster cleaner for
+# only appearing once.
+
+class InterestsIn(BaseModel):
+    # {"sangeet": ["Lata Mangeshkar", "Kishore Kumar"], "khana": ["dal khichdi"]}
+    interests: Dict[str, List[str]]
+
+
+@router.post("/interests/{user_id}")
+def set_interests(user_id: str, body: InterestsIn):
+    from memory.categories import CATEGORIES, record_declared_interest
+
+    written, skipped = 0, []
+    for category, items in (body.interests or {}).items():
+        if category not in CATEGORIES:
+            skipped.append(category)
+            continue
+        for text in (items or []):
+            # Each entry is canonicalised separately, so "Lata, Rafi" typed as
+            # one line becomes one cluster rather than two. The screen splits on
+            # commas before sending.
+            if record_declared_interest(user_id, category, text):
+                written += 1
+
+    return {"status": "ok", "written": written,
+            **({"unknown_categories": skipped} if skipped else {})}
+
+
+@router.get("/interests/{user_id}")
+def get_interests(user_id: str):
+    """What they declared, for pre-filling the screen. Deliberately not what was
+    learned — that would put words in their mouth on a form asking what they
+    like."""
+    try:
+        from memory.declared import get_declared
+        return {"interests": get_declared(user_id).interests}
+    except Exception as e:
+        raise HTTPException(500, f"read failed: {e}")
