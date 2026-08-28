@@ -49,7 +49,8 @@
         {
           "locationWhenInUsePermission": "Nancy uses your location to give you accurate local weather and find nearby places like pharmacies and hospitals."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "newArchEnabled": true,
     "icon": "./assets/icon.png",
