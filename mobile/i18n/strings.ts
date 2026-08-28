@@ -30,6 +30,14 @@ export type Lang =
 type Dict = Record<string, string>
 
 const english: Dict = {
+  'settings.mine': 'Yours',
+  'settings.advanced': 'Advanced',
+  'settings.myday': 'My day',
+  'settings.whatienjoy': 'What I enjoy',
+  'settings.knows': 'What I know about you',
+  'settings.background': 'Background',
+  'settings.delete': 'Delete everything',
+  'settings.location': 'Use my live location',
   'common.save':        'Save',
   'common.cancel':      'Cancel',
   'common.next':        'Continue',
@@ -92,6 +100,14 @@ const english: Dict = {
 }
 
 const hinglish: Dict = {
+  'settings.mine': 'Aapke liye',
+  'settings.advanced': 'Advanced',
+  'settings.myday': 'Mera din',
+  'settings.whatienjoy': 'Mujhe kya pasand hai',
+  'settings.knows': 'Main aapke baare mein kya jaanti hoon',
+  'settings.background': 'Background',
+  'settings.delete': 'Sab kuch mita dein',
+  'settings.location': 'Meri location use karein',
   'common.save':    'Save karein',
   'common.cancel':  'Rehne dein',
   'common.next':    'Aage badhein',
@@ -154,6 +170,14 @@ const hinglish: Dict = {
 }
 
 const hindi: Dict = {
+  'settings.mine': 'आपके लिए',
+  'settings.advanced': 'उन्नत',
+  'settings.myday': 'मेरा दिन',
+  'settings.whatienjoy': 'मुझे क्या पसंद है',
+  'settings.knows': 'मैं आपके बारे में क्या जानती हूँ',
+  'settings.background': 'पृष्ठभूमि',
+  'settings.delete': 'सब कुछ मिटा दें',
+  'settings.location': 'मेरी लोकेशन इस्तेमाल करें',
   'common.save':    'सेव करें',
   'common.cancel':  'रहने दें',
   'common.next':    'आगे बढ़ें',
@@ -218,6 +242,14 @@ const hindi: Dict = {
 // ── unverified below ─────────────────────────────────────────────────────────
 
 const punjabi: Dict = {
+  'settings.mine': 'ਤੁਹਾਡੇ ਲਈ',
+  'settings.advanced': 'ਹੋਰ ਸੈਟਿੰਗਾਂ',
+  'settings.myday': 'ਮੇਰਾ ਦਿਨ',
+  'settings.whatienjoy': 'ਮੈਨੂੰ ਕੀ ਪਸੰਦ ਹੈ',
+  'settings.knows': 'ਮੈਂ ਤੁਹਾਡੇ ਬਾਰੇ ਕੀ ਜਾਣਦੀ ਹਾਂ',
+  'settings.background': 'ਪਿਛੋਕੜ',
+  'settings.delete': 'ਸਭ ਕੁਝ ਮਿਟਾ ਦਿਓ',
+  'settings.location': 'ਮੇਰੀ ਲੋਕੇਸ਼ਨ ਵਰਤੋ',
   'common.save':    'ਸੇਵ ਕਰੋ',
   'common.cancel':  'ਰਹਿਣ ਦਿਓ',
   'common.next':    'ਅੱਗੇ ਵਧੋ',
@@ -280,6 +312,14 @@ const punjabi: Dict = {
 }
 
 const gujarati: Dict = {
+  'settings.mine': 'તમારા માટે',
+  'settings.advanced': 'વધુ સેટિંગ્સ',
+  'settings.myday': 'મારો દિવસ',
+  'settings.whatienjoy': 'મને શું ગમે છે',
+  'settings.knows': 'હું તમારા વિશે શું જાણું છું',
+  'settings.background': 'પૃષ્ઠભૂમિ',
+  'settings.delete': 'બધું ભૂંસી નાખો',
+  'settings.location': 'મારું લોકેશન વાપરો',
   'common.save':    'સેવ કરો',
   'common.cancel':  'રહેવા દો',
   'common.next':    'આગળ વધો',
@@ -342,6 +382,14 @@ const gujarati: Dict = {
 }
 
 const marathi: Dict = {
+  'settings.mine': 'तुमच्यासाठी',
+  'settings.advanced': 'अधिक सेटिंग्ज',
+  'settings.myday': 'माझा दिवस',
+  'settings.whatienjoy': 'मला काय आवडतं',
+  'settings.knows': 'मी तुमच्याबद्दल काय जाणते',
+  'settings.background': 'पार्श्वभूमी',
+  'settings.delete': 'सर्व काही मिटवा',
+  'settings.location': 'माझं लोकेशन वापरा',
   'common.save':    'सेव्ह करा',
   'common.cancel':  'राहू द्या',
   'common.next':    'पुढे जा',
@@ -404,6 +452,14 @@ const marathi: Dict = {
 }
 
 const bengali: Dict = {
+  'settings.mine': 'আপনার জন্য',
+  'settings.advanced': 'আরও সেটিংস',
+  'settings.myday': 'আমার দিন',
+  'settings.whatienjoy': 'আমার কী ভালো লাগে',
+  'settings.knows': 'আমি আপনার সম্পর্কে কী জানি',
+  'settings.background': 'পটভূমি',
+  'settings.delete': 'সব মুছে ফেলুন',
+  'settings.location': 'আমার লোকেশন ব্যবহার করুন',
   'common.save':    'সেভ করুন',
   'common.cancel':  'থাক',
   'common.next':    'এগিয়ে যান',
@@ -466,6 +522,14 @@ const bengali: Dict = {
 }
 
 const tamil: Dict = {
+  'settings.mine': 'உங்களுக்காக',
+  'settings.advanced': 'மேலும் அமைப்புகள்',
+  'settings.myday': 'என் நாள்',
+  'settings.whatienjoy': 'எனக்கு எது பிடிக்கும்',
+  'settings.knows': 'நான் உங்களைப் பற்றி என்ன அறிவேன்',
+  'settings.background': 'பின்னணி',
+  'settings.delete': 'எல்லாவற்றையும் அழிக்கவும்',
+  'settings.location': 'என் இருப்பிடத்தைப் பயன்படுத்து',
   'common.save':    'சேமிக்கவும்',
   'common.cancel':  'வேண்டாம்',
   'common.next':    'தொடரவும்',
@@ -528,6 +592,14 @@ const tamil: Dict = {
 }
 
 const telugu: Dict = {
+  'settings.mine': 'మీ కోసం',
+  'settings.advanced': 'మరిన్ని సెట్టింగ్\u200cలు',
+  'settings.myday': 'నా రోజు',
+  'settings.whatienjoy': 'నాకు ఏమి ఇష్టం',
+  'settings.knows': 'నేను మీ గురించి ఏమి తెలుసు',
+  'settings.background': 'నేపథ్యం',
+  'settings.delete': 'అన్నీ తొలగించండి',
+  'settings.location': 'నా లొకేషన్ వాడండి',
   'common.save':    'సేవ్ చేయండి',
   'common.cancel':  'వద్దు',
   'common.next':    'ముందుకు',

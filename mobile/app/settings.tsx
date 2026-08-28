@@ -9,6 +9,7 @@ import { useTheme } from '../hooks/useTheme'
 import { isLocationEnabled, setLocationEnabled, requestLocationPermission, syncLocation } from '../services/locationService'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY, MODELS } from '../constants'
 import { useAppStore } from '../store/appStore'
+import { useT } from '../hooks/useT'
 
 const BACKGROUNDS = [
   { id: 'dark',       label: 'Black',    color: '#0a0a0a' },
@@ -29,6 +30,7 @@ const BACKGROUNDS = [
 
 export default function SettingsScreen() {
   const theme = useTheme()
+  const t = useT()
   const [locEnabled, setLocEnabled] = useState(false)
 
   useEffect(() => {
@@ -122,16 +124,32 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Settings</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{t('settings.title')}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Companion Persona */}
-        <SectionHeader title="🤖 Companion" theme={theme} />
+        {/* What she would actually change. The sections below this one —
+            model choice, pillar weights, caregiver access — are operator
+            tooling: nobody's grandmother is picking between Haiku and Sonnet
+            or tuning how much the system weights her FINANCE pillar. They stay
+            visible rather than hidden, because concealing them would sit badly
+            beside showing her everything the system knows, but they are not
+            translated and they are not first. */}
+        <SectionHeader title={t('settings.mine')} theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+          <SettingRow icon="language-outline" label={t('settings.language')}
+            onPress={() => router.push('/setup/language')} theme={theme} />
+          <SettingRow icon="sunny-outline" label={t('settings.myday')}
+            onPress={() => router.push('/setup/routine')} theme={theme} />
+          <SettingRow icon="heart-outline" label={t('settings.whatienjoy')}
+            onPress={() => router.push('/setup/interests')} theme={theme} />
+        </View>
+
+        <SectionHeader title={t('settings.persona')} theme={theme} />
         <TouchableOpacity
           style={styles.personaCard}
-          onPress={() => router.push('/setup/language')}
+          onPress={() => router.push('/persona-setup')}
           activeOpacity={0.8}
         >
           <View style={styles.personaAvatar}>
@@ -152,6 +170,71 @@ export default function SettingsScreen() {
         </TouchableOpacity>
 
         {/* AI Model */}
+        {/* Background */}
+        <SectionHeader title={t('settings.background')} theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+          <View style={styles.bgGrid}>
+            {BACKGROUNDS.map(bg => {
+              const r = parseInt(bg.color.replace('#','').substring(0,2),16)
+              const g = parseInt(bg.color.replace('#','').substring(2,4),16)
+              const b = parseInt(bg.color.replace('#','').substring(4,6),16)
+              const isLightSwatch = (0.299*r + 0.587*g + 0.114*b)/255 > 0.5
+              const labelColor    = isLightSwatch ? '#000000' : '#ffffff'
+              const checkColor    = isLightSwatch ? '#000000' : '#ffffff'
+              const borderColor   = background === bg.id ? (isLightSwatch ? '#000000' : Colors.accent) : 'transparent'
+              return (
+                <TouchableOpacity
+                  key={bg.id}
+                  style={[styles.bgSwatch, { backgroundColor: bg.color, borderWidth: 2, borderColor }]}
+                  onPress={() => { setBackground(bg.id); setBgColor(bg.color) }}
+                >
+                  {background === bg.id && (
+                    <Ionicons name="checkmark" size={18} color={checkColor} />
+                  )}
+                  <Text style={[styles.bgLabel, { color: labelColor }]}>{bg.label}</Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        </View>
+
+        {/* Data & Privacy */}
+        <SectionHeader title={t('settings.knows')} theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+          <View style={styles.settingRow}>
+            <Ionicons name="location-outline" size={20} color={theme.textMuted} />
+            <Text style={[styles.settingLabel, { color: theme.text }]}>{t('settings.location')}</Text>
+            <Switch value={locEnabled} onValueChange={toggleLocation} />
+          </View>
+          <SettingRow
+            icon="download-outline"
+            label="Export my data"
+            onPress={() => Alert.alert('Coming Soon', 'Data export will be available soon')}
+          theme={theme}
+          />
+          <SettingRow
+            icon="eye-off-outline"
+            label={t('settings.knows')}
+            onPress={() => router.push('/profile')}
+          theme={theme}
+          />
+          <SettingRow
+            icon="trash-outline"
+            label={t('settings.delete')}
+            color={Colors.accentRed}
+            onPress={() => Alert.alert(
+              'Delete everything?',
+              'This permanently removes all your conversations, memory, and profile. Cannot be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => {} }
+              ]
+            )}
+          theme={theme}
+          />
+        </View>
+
+        <SectionHeader title={t('settings.advanced')} theme={theme} />
         <SectionHeader title="🧠 AI Model" theme={theme} />
         <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
           <Text style={[styles.cardHint, { color: theme.textMuted }]}>
@@ -179,34 +262,6 @@ export default function SettingsScreen() {
           ))}
         </View>
 
-        {/* Background */}
-        <SectionHeader title="🎨 Background" theme={theme} />
-        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
-          <View style={styles.bgGrid}>
-            {BACKGROUNDS.map(bg => {
-              const r = parseInt(bg.color.replace('#','').substring(0,2),16)
-              const g = parseInt(bg.color.replace('#','').substring(2,4),16)
-              const b = parseInt(bg.color.replace('#','').substring(4,6),16)
-              const isLightSwatch = (0.299*r + 0.587*g + 0.114*b)/255 > 0.5
-              const labelColor    = isLightSwatch ? '#000000' : '#ffffff'
-              const checkColor    = isLightSwatch ? '#000000' : '#ffffff'
-              const borderColor   = background === bg.id ? (isLightSwatch ? '#000000' : Colors.accent) : 'transparent'
-              return (
-                <TouchableOpacity
-                  key={bg.id}
-                  style={[styles.bgSwatch, { backgroundColor: bg.color, borderWidth: 2, borderColor }]}
-                  onPress={() => { setBackground(bg.id); setBgColor(bg.color) }}
-                >
-                  {background === bg.id && (
-                    <Ionicons name="checkmark" size={18} color={checkColor} />
-                  )}
-                  <Text style={[styles.bgLabel, { color: labelColor }]}>{bg.label}</Text>
-                </TouchableOpacity>
-              )
-            })}
-          </View>
-        </View>
-
         {/* Pillar Weights */}
         <SectionHeader
           title="⚖️ Focus Areas"
@@ -232,42 +287,6 @@ export default function SettingsScreen() {
               />
             ))
           )}
-        </View>
-
-        {/* Data & Privacy */}
-        <SectionHeader title="🔒 Data & Privacy" theme={theme} />
-        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
-          <View style={styles.settingRow}>
-            <Ionicons name="location-outline" size={20} color={theme.textMuted} />
-            <Text style={[styles.settingLabel, { color: theme.text }]}>Use my live location</Text>
-            <Switch value={locEnabled} onValueChange={toggleLocation} />
-          </View>
-          <SettingRow
-            icon="download-outline"
-            label="Export my data"
-            onPress={() => Alert.alert('Coming Soon', 'Data export will be available soon')}
-          theme={theme}
-          />
-          <SettingRow
-            icon="eye-off-outline"
-            label="What Nancy knows about me"
-            onPress={() => router.push('/profile')}
-          theme={theme}
-          />
-          <SettingRow
-            icon="trash-outline"
-            label="Delete all my data"
-            color={Colors.accentRed}
-            onPress={() => Alert.alert(
-              'Delete everything?',
-              'This permanently removes all your conversations, memory, and profile. Cannot be undone.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: () => {} }
-              ]
-            )}
-          theme={theme}
-          />
         </View>
 
         {/* Caregiver */}
