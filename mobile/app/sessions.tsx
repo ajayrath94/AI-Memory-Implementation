@@ -6,6 +6,7 @@ import {
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../hooks/useTheme'
+import { useT } from '../hooks/useT'
 import { Colors, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
 import { useRouter, useFocusEffect } from 'expo-router'
@@ -34,6 +35,7 @@ export default function SessionsScreen() {
   const [loading,    setLoading]    = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const theme = useTheme()
+  const t = useT()
   const { loadSession } = useAppStore()
   const router = useRouter()
 
@@ -139,7 +141,7 @@ export default function SessionsScreen() {
         ) : (
           <View style={styles.noSummaryRow}>
             <ActivityIndicator size="small" color={Colors.textHint} />
-            <Text style={styles.cardNoSummary}>Summarizing...</Text>
+            <Text style={styles.cardNoSummary}>{t('sessions.summarising')}</Text>
           </View>
         )}
 
@@ -155,7 +157,7 @@ export default function SessionsScreen() {
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} size="large" />
-          <Text style={styles.loadingText}>Loading sessions...</Text>
+          <Text style={styles.loadingText}>{t('common.loadingSoft')}</Text>
         </View>
       </SafeAreaView>
     )
@@ -166,7 +168,7 @@ export default function SessionsScreen() {
       <StatusBar style="light" />
 
       <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
-        <Text style={styles.headerTitle}>Sessions</Text>
+        <Text style={styles.headerTitle}>{t('sessions.title')}</Text>
         <TouchableOpacity onPress={onRefresh}>
           <Ionicons name="refresh-outline" size={20} color={Colors.textMuted} />
         </TouchableOpacity>
@@ -180,8 +182,8 @@ export default function SessionsScreen() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="time-outline" size={48} color={Colors.textHint} />
-            <Text style={[styles.emptyText, { color: theme.textMuted }]}>No sessions yet</Text>
-            <Text style={styles.emptyHint}>Start a conversation to see it here</Text>
+            <Text style={[styles.emptyText, { color: theme.textMuted }]}>{t('sessions.empty')}</Text>
+            <Text style={styles.emptyHint}>{t('sessions.emptySub')}</Text>
           </View>
         }
       />

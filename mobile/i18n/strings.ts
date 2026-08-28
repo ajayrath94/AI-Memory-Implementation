@@ -30,6 +30,18 @@ export type Lang =
 type Dict = Record<string, string>
 
 const english: Dict = {
+  'common.loadingSoft': 'Just a moment…',
+  'reminders.empty': 'Nothing to remind you about yet',
+  'sessions.title': 'Our conversations',
+  'sessions.empty': 'Nothing here yet',
+  'sessions.emptySub': 'Say something and it will show up here',
+  'sessions.summarising': 'Writing it down…',
+  'profile.title': 'About you',
+  'profile.name': 'Name',
+  'profile.location': 'Where you live',
+  'profile.language': 'Language',
+  'profile.feeling': 'You seem to be feeling',
+  'profile.fromChats': 'From what you have told me',
   'settings.mine': 'Yours',
   'settings.advanced': 'Advanced',
   'settings.myday': 'My day',
@@ -100,6 +112,18 @@ const english: Dict = {
 }
 
 const hinglish: Dict = {
+  'common.loadingSoft': 'Ek minute…',
+  'reminders.empty': 'Abhi kuch yaad dilane ko nahi hai',
+  'sessions.title': 'Hamari baatein',
+  'sessions.empty': 'Abhi kuch nahi',
+  'sessions.emptySub': 'Kuch kahiye, yahan dikh jayega',
+  'sessions.summarising': 'Likh rahi hoon…',
+  'profile.title': 'Aapke baare mein',
+  'profile.name': 'Naam',
+  'profile.location': 'Aap kahan rehti hain',
+  'profile.language': 'Bhasha',
+  'profile.feeling': 'Lagta hai aap mehsoos kar rahi hain',
+  'profile.fromChats': 'Jo aapne bataya uske hisaab se',
   'settings.mine': 'Aapke liye',
   'settings.advanced': 'Advanced',
   'settings.myday': 'Mera din',
@@ -170,6 +194,18 @@ const hinglish: Dict = {
 }
 
 const hindi: Dict = {
+  'common.loadingSoft': 'एक मिनट…',
+  'reminders.empty': 'अभी कुछ याद दिलाने को नहीं है',
+  'sessions.title': 'हमारी बातें',
+  'sessions.empty': 'अभी कुछ नहीं',
+  'sessions.emptySub': 'कुछ कहिए, यहाँ दिख जाएगा',
+  'sessions.summarising': 'लिख रही हूँ…',
+  'profile.title': 'आपके बारे में',
+  'profile.name': 'नाम',
+  'profile.location': 'आप कहाँ रहती हैं',
+  'profile.language': 'भाषा',
+  'profile.feeling': 'लगता है आप महसूस कर रही हैं',
+  'profile.fromChats': 'जो आपने बताया उसके हिसाब से',
   'settings.mine': 'आपके लिए',
   'settings.advanced': 'उन्नत',
   'settings.myday': 'मेरा दिन',
@@ -242,6 +278,18 @@ const hindi: Dict = {
 // ── unverified below ─────────────────────────────────────────────────────────
 
 const punjabi: Dict = {
+  'common.loadingSoft': 'ਇੱਕ ਮਿੰਟ…',
+  'reminders.empty': 'ਹਾਲੇ ਯਾਦ ਕਰਵਾਉਣ ਲਈ ਕੁਝ ਨਹੀਂ',
+  'sessions.title': 'ਸਾਡੀਆਂ ਗੱਲਾਂ',
+  'sessions.empty': 'ਹਾਲੇ ਕੁਝ ਨਹੀਂ',
+  'sessions.emptySub': 'ਕੁਝ ਕਹੋ, ਇੱਥੇ ਦਿਖ ਜਾਵੇਗਾ',
+  'sessions.summarising': 'ਲਿਖ ਰਹੀ ਹਾਂ…',
+  'profile.title': 'ਤੁਹਾਡੇ ਬਾਰੇ',
+  'profile.name': 'ਨਾਮ',
+  'profile.location': 'ਤੁਸੀਂ ਕਿੱਥੇ ਰਹਿੰਦੇ ਹੋ',
+  'profile.language': 'ਭਾਸ਼ਾ',
+  'profile.feeling': 'ਲੱਗਦਾ ਹੈ ਤੁਸੀਂ ਮਹਿਸੂਸ ਕਰ ਰਹੇ ਹੋ',
+  'profile.fromChats': 'ਜੋ ਤੁਸੀਂ ਦੱਸਿਆ ਉਸ ਮੁਤਾਬਕ',
   'settings.mine': 'ਤੁਹਾਡੇ ਲਈ',
   'settings.advanced': 'ਹੋਰ ਸੈਟਿੰਗਾਂ',
   'settings.myday': 'ਮੇਰਾ ਦਿਨ',
@@ -312,6 +360,18 @@ const punjabi: Dict = {
 }
 
 const gujarati: Dict = {
+  'common.loadingSoft': 'એક મિનિટ…',
+  'reminders.empty': 'હજી યાદ કરાવવા જેવું કંઈ નથી',
+  'sessions.title': 'આપણી વાતો',
+  'sessions.empty': 'હજી કંઈ નથી',
+  'sessions.emptySub': 'કંઈક કહો, અહીં દેખાશે',
+  'sessions.summarising': 'લખી રહી છું…',
+  'profile.title': 'તમારા વિશે',
+  'profile.name': 'નામ',
+  'profile.location': 'તમે ક્યાં રહો છો',
+  'profile.language': 'ભાષા',
+  'profile.feeling': 'લાગે છે તમે અનુભવો છો',
+  'profile.fromChats': 'તમે જે કહ્યું તે પરથી',
   'settings.mine': 'તમારા માટે',
   'settings.advanced': 'વધુ સેટિંગ્સ',
   'settings.myday': 'મારો દિવસ',
@@ -382,6 +442,18 @@ const gujarati: Dict = {
 }
 
 const marathi: Dict = {
+  'common.loadingSoft': 'एक मिनिट…',
+  'reminders.empty': 'अजून आठवण करून द्यायला काही नाही',
+  'sessions.title': 'आपल्या गप्पा',
+  'sessions.empty': 'अजून काही नाही',
+  'sessions.emptySub': 'काहीतरी सांगा, इथे दिसेल',
+  'sessions.summarising': 'लिहीत आहे…',
+  'profile.title': 'तुमच्याबद्दल',
+  'profile.name': 'नाव',
+  'profile.location': 'तुम्ही कुठे राहता',
+  'profile.language': 'भाषा',
+  'profile.feeling': 'वाटतं तुम्हाला वाटतंय',
+  'profile.fromChats': 'तुम्ही सांगितलं त्यावरून',
   'settings.mine': 'तुमच्यासाठी',
   'settings.advanced': 'अधिक सेटिंग्ज',
   'settings.myday': 'माझा दिवस',
@@ -452,6 +524,18 @@ const marathi: Dict = {
 }
 
 const bengali: Dict = {
+  'common.loadingSoft': 'এক মিনিট…',
+  'reminders.empty': 'এখনও মনে করানোর কিছু নেই',
+  'sessions.title': 'আমাদের কথা',
+  'sessions.empty': 'এখনও কিছু নেই',
+  'sessions.emptySub': 'কিছু বলুন, এখানে দেখা যাবে',
+  'sessions.summarising': 'লিখছি…',
+  'profile.title': 'আপনার সম্পর্কে',
+  'profile.name': 'নাম',
+  'profile.location': 'আপনি কোথায় থাকেন',
+  'profile.language': 'ভাষা',
+  'profile.feeling': 'মনে হচ্ছে আপনি অনুভব করছেন',
+  'profile.fromChats': 'আপনি যা বলেছেন তা থেকে',
   'settings.mine': 'আপনার জন্য',
   'settings.advanced': 'আরও সেটিংস',
   'settings.myday': 'আমার দিন',
@@ -522,6 +606,18 @@ const bengali: Dict = {
 }
 
 const tamil: Dict = {
+  'common.loadingSoft': 'ஒரு நிமிடம்…',
+  'reminders.empty': 'இன்னும் நினைவூட்ட ஒன்றுமில்லை',
+  'sessions.title': 'நம் உரையாடல்கள்',
+  'sessions.empty': 'இன்னும் ஒன்றுமில்லை',
+  'sessions.emptySub': 'ஏதாவது சொல்லுங்கள், இங்கே தெரியும்',
+  'sessions.summarising': 'எழுதுகிறேன்…',
+  'profile.title': 'உங்களைப் பற்றி',
+  'profile.name': 'பெயர்',
+  'profile.location': 'நீங்கள் எங்கே வசிக்கிறீர்கள்',
+  'profile.language': 'மொழி',
+  'profile.feeling': 'நீங்கள் உணர்வது போல் தெரிகிறது',
+  'profile.fromChats': 'நீங்கள் சொன்னதிலிருந்து',
   'settings.mine': 'உங்களுக்காக',
   'settings.advanced': 'மேலும் அமைப்புகள்',
   'settings.myday': 'என் நாள்',
@@ -592,6 +688,18 @@ const tamil: Dict = {
 }
 
 const telugu: Dict = {
+  'common.loadingSoft': 'ఒక నిమిషం…',
+  'reminders.empty': 'ఇంకా గుర్తు చేయడానికి ఏమీ లేదు',
+  'sessions.title': 'మన మాటలు',
+  'sessions.empty': 'ఇంకా ఏమీ లేదు',
+  'sessions.emptySub': 'ఏదైనా చెప్పండి, ఇక్కడ కనిపిస్తుంది',
+  'sessions.summarising': 'రాస్తున్నాను…',
+  'profile.title': 'మీ గురించి',
+  'profile.name': 'పేరు',
+  'profile.location': 'మీరు ఎక్కడ ఉంటారు',
+  'profile.language': 'భాష',
+  'profile.feeling': 'మీరు అనుభవిస్తున్నట్టు అనిపిస్తుంది',
+  'profile.fromChats': 'మీరు చెప్పిన దాని నుండి',
   'settings.mine': 'మీ కోసం',
   'settings.advanced': 'మరిన్ని సెట్టింగ్\u200cలు',
   'settings.myday': 'నా రోజు',

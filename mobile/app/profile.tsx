@@ -7,6 +7,7 @@ import {
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../hooks/useTheme'
+import { useT } from '../hooks/useT'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
 
@@ -50,6 +51,7 @@ const api = async (path: string, method = 'GET', body?: any) => {
 
 export default function ProfileScreen() {
   const theme = useTheme()
+  const t = useT()
   const USER_ID = useAppStore(s => s.userId)
   const [profile,    setProfile]    = useState<UserProfile | null>(null)
   const [interests,  setInterests]  = useState<{ profile_interests: Interest[], ltm_interests: Interest[] } | null>(null)
@@ -147,7 +149,7 @@ export default function ProfileScreen() {
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} />
-          <Text style={styles.loadingText}>Loading your profile...</Text>
+          <Text style={styles.loadingText}>{t('common.loadingSoft')}</Text>
         </View>
       </SafeAreaView>
     )
@@ -164,7 +166,7 @@ export default function ProfileScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Your Profile</Text>
+        <Text style={styles.headerTitle}>{t('profile.title')}</Text>
         <TouchableOpacity onPress={onRefresh} style={styles.headerBtn}>
           <Ionicons name="refresh-outline" size={20} color={theme.textMuted} />
         </TouchableOpacity>
@@ -184,14 +186,14 @@ export default function ProfileScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <EditableRow
-              label="Name"
+              label={t('profile.name')}
               value={profile?.name || ''}
               placeholder="Not set yet"
               onEdit={() => startEdit('name', profile?.name || '')}
             theme={theme}
             />
             <EditableRow
-              label="Location"
+              label={t('profile.location')}
               value={profile?.location || ''}
               placeholder="Not set"
               onEdit={() => startEdit('location', profile?.location || '')}
@@ -199,7 +201,7 @@ export default function ProfileScreen() {
             theme={theme}
             />
             <EditableRow
-              label="Language"
+              label={t('profile.language')}
               value={profile?.language_pref || ''}
               placeholder="Auto-detected"
               onEdit={() => startEdit('language_pref', profile?.language_pref || '')}
@@ -212,9 +214,9 @@ export default function ProfileScreen() {
         {/* Emotional state — auto-detected, read-only */}
         {profile?.personality?.emotional_state && (
           <View style={styles.emotionCard}>
-            <Text style={styles.emotionLabel}>Nancy senses you're feeling</Text>
+            <Text style={styles.emotionLabel}>{t('profile.feeling')}</Text>
             <Text style={styles.emotionValue}>{profile.personality.emotional_state}</Text>
-            <Text style={styles.emotionHint}>Auto-detected from your conversations</Text>
+            <Text style={styles.emotionHint}>{t('profile.fromChats')}</Text>
           </View>
         )}
 
@@ -290,7 +292,7 @@ export default function ProfileScreen() {
               {/* Profile-extracted interests */}
               {interests?.profile_interests && interests.profile_interests.length > 0 && (
                 <View style={styles.interestGroup}>
-                  <Text style={styles.interestGroupLabel}>From your conversations</Text>
+                  <Text style={styles.interestGroupLabel}>{t('profile.fromChats')}</Text>
                   <View style={styles.chipRow}>
                     {interests.profile_interests.map((interest, i) => (
                       <InterestChip

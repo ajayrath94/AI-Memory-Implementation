@@ -12,13 +12,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useAppStore } from '../store/appStore'
 import { syncLocation } from '../services/locationService'
 import { useChat } from '../hooks/useChat'
+import { useT } from '../hooks/useT'
 import { MessageBubble } from '../components/chat/MessageBubble'
 import { ChatInput } from '../components/chat/ChatInput'
 
-function NancyAvatar({ size = 36 }: { size?: number }) {
+// Takes the companion's name rather than assuming it. Someone whose companion
+// is Shubham was seeing "Nancy" in the header and an N in the avatar, which
+// undoes the whole point of letting them name it.
+function CompanionAvatar({ size = 36, name = 'N' }: { size?: number; name?: string }) {
   return (
     <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
-      <Text style={[styles.avatarText, { fontSize: size * 0.4 }]}>N</Text>
+      <Text style={[styles.avatarText, { fontSize: size * 0.4 }]}>{name?.[0]?.toUpperCase() || 'N'}</Text>
     </View>
   )
 }
@@ -27,6 +31,21 @@ export default function ChatScreen() {
   const theme = useTheme()
   const { messages, loading, sessionId, endSession, clearChat, userId } = useAppStore()
   const { send, resend } = useChat()
+  const t = useT()
+
+  // The companion's own name, not the product's.
+  const [botName, setBotName] = useState('Nancy')
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/persona/${userId}`, {
+          headers: { 'X-API-Key': API_KEY },
+        })
+        const d = await res.json()
+        if (d?.bot_name) setBotName(d.bot_name)
+      } catch {}
+    })()
+  }, [userId])
   const listRef   = useRef<FlatList>(null)
   const appState  = useRef(AppState.currentState)
   const pulseAnim = useRef(new Animated.Value(1)).current
@@ -128,12 +147,12 @@ export default function ChatScreen() {
       {/* Header */}
       <View style={[styles.header, { backgroundColor: Colors.bg, borderBottomColor: theme.border }]}>
         <View style={styles.headerLeft}>
-          <NancyAvatar size={38} />
+          <CompanionAvatar size={38} name={botName} />
           <View style={styles.headerInfo}>
-            <Text style={[styles.headerName, { color: theme.text }]}>Nancy</Text>
+            <Text style={[styles.headerName, { color: theme.text }]}>{botName}</Text>
             <View style={styles.onlineRow}>
               <View style={styles.onlineDot} />
-              <Text style={[styles.onlineText, { color: theme.textMuted }]}>Your companion</Text>
+              <Text style={[styles.onlineText, { color: theme.textMuted }]}>{t('chat.online')}</Text>
             </View>
           </View>
         </View>
@@ -152,11 +171,10 @@ export default function ChatScreen() {
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={[styles.empty, { backgroundColor: Colors.bg }]}>
-            <NancyAvatar size={72} />
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>Hi, I'm Nancy</Text>
+            <CompanionAvatar size={72} name={botName} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>{t('chat.empty.title')}</Text>
             <Text style={[styles.emptySubtitle, { color: theme.textMuted }]}>
-              I'm here to listen, remember, and care.{'\n'}
-              Tell me how you're feeling today.
+              {t('chat.empty.sub')}
             </Text>
           </View>
         }
@@ -165,7 +183,7 @@ export default function ChatScreen() {
       {/* Typing indicator */}
       {loading && (
         <View style={styles.typingRow}>
-          <NancyAvatar size={24} />
+          <CompanionAvatar size={24} name={botName} />
           <View style={[styles.typingBubble, { backgroundColor: Colors.bgCard, borderColor: theme.border }]}>
             <Animated.View style={[styles.typingDot, { opacity: pulseAnim }]} />
             <Animated.View style={[styles.typingDot, { opacity: pulseAnim, marginHorizontal: 3 }]} />

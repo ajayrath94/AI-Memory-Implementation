@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { Colors } from '../../constants'
 import { useVoice } from '../../hooks/useVoice'
+import { useT } from '../../hooks/useT'
 
 interface Props {
   onSubmit: (text: string) => void
@@ -14,6 +15,7 @@ interface Props {
 
 export function ChatInput({ onSubmit, loading }: Props) {
   const [text, setText] = useState('')
+  const t = useT()
   const { isListening, isProcessing, toggle } = useVoice((transcript) => {
     onSubmit(transcript)
   })
@@ -66,7 +68,7 @@ export function ChatInput({ onSubmit, loading }: Props) {
         placeholder={
           isListening   ? '🎙️ Listening...' :
           isProcessing  ? '⏳ Transcribing...' :
-          'Type a message'
+          t('chat.placeholder')
         }
         placeholderTextColor={Colors.textHint}
         multiline

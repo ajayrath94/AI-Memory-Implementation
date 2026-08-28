@@ -7,6 +7,7 @@ import {
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../hooks/useTheme'
+import { useT } from '../hooks/useT'
 import { Colors, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
 
@@ -26,6 +27,7 @@ interface RemindersResponse {
 
 export default function RemindersScreen() {
   const theme = useTheme()
+  const t = useT()
   const { userId } = useAppStore()
   const [data,       setData]       = useState<RemindersResponse | null>(null)
   const [loading,    setLoading]    = useState(true)
@@ -80,7 +82,7 @@ export default function RemindersScreen() {
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} size="large" />
-          <Text style={styles.loadingText}>Loading reminders...</Text>
+          <Text style={styles.loadingText}>{t('common.loadingSoft')}</Text>
         </View>
       </SafeAreaView>
     )
@@ -112,7 +114,7 @@ export default function RemindersScreen() {
         {upcoming.length === 0 && past.length === 0 && (
           <View style={styles.empty}>
             <Ionicons name="notifications-outline" size={48} color={Colors.textMuted} />
-            <Text style={styles.emptyTitle}>No reminders yet</Text>
+            <Text style={styles.emptyTitle}>{t('reminders.empty')}</Text>
             <Text style={styles.emptyText}>
               Just tell Nancy in chat — like "kal 12 baje doctor yaad dilana" — and it'll show up here.
             </Text>

@@ -7,6 +7,7 @@ import {
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../hooks/useTheme'
+import { useT } from '../hooks/useT'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
 
@@ -81,6 +82,7 @@ function dayLabel(iso: string): string {
 
 export default function CalendarScreen() {
   const theme = useTheme()
+  const t = useT()
   const { userId } = useAppStore()
   const [data,       setData]       = useState<CalResponse | null>(null)
   const [loading,    setLoading]    = useState(true)
@@ -132,7 +134,7 @@ export default function CalendarScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={[styles.title, { color: theme.text }]}>Meri Calendar</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{t('calendar.title')}</Text>
           <Text style={[styles.subtitle, { color: theme.textMuted }]}>
             Agle 2 hafte
           </Text>
