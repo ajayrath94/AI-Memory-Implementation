@@ -159,6 +159,43 @@ def _recent_companion_lines(user_id: str, n: int = 6) -> list:
         return []
 
 
+def _their_recent_lines(user_id: str, n: int = 6) -> list:
+    """The last few things THEY wrote.
+
+    This is how register gets matched, and it replaces measuring it. Counting
+    scripts cannot tell romanised Hindi from English — "mujhe pasand hai" is
+    Latin characters either way — and a word list per language is nine lists to
+    maintain. Showing the model how someone actually writes does the job with
+    nothing to own: it will mirror "ਡਾਕਟਰ ਦੀ appointment" without being told
+    that this person mixes.
+    """
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        sess = (db.table("sessions").select("id")
+                .eq("user_id", user_id)
+                .order("updated_at", desc=True).limit(8).execute()).data or []
+        ids = [s["id"] for s in sess]
+        if not ids:
+            return []
+        rows = (db.table("messages").select("content,timestamp")
+                .in_("session_id", ids).eq("role", "user")
+                .order("timestamp", desc=True).limit(n).execute()).data or []
+        return [r.get("content", "") for r in rows if (r.get("content") or "").strip()]
+    except Exception as e:
+        print(f"[Context] their lines failed: {e}")
+        return []
+
+
+def _how_they_write(user_id: str) -> str:
+    lines = _their_recent_lines(user_id, n=5)
+    if not lines:
+        return ""
+    joined = "\n".join(f"  - {l[:140]}" for l in lines)
+    return ("How they write, in their own words. Match this — the script they "
+            "use, how much English they mix in, how long their sentences run. "
+            "Do not correct it or write more formally than they do:\n" + joined)
+
 def _recent(user_id: str) -> str:
     """What the companion has already said, so it stops asking the same thing.
 
@@ -277,6 +314,7 @@ _SOURCES = {
     "persona":      _persona,
     "language":     _language,
     "recent":       _recent,
+    "voice":        _how_they_write,
     "memory":       _memory,
     "routine":      _routine,
     "interests":    _interests,

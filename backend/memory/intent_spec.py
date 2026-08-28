@@ -23,7 +23,7 @@ simulation harness. A rule that is not checked drifts back within a week.
 
 SCOPE = {
     "check_in": {
-        "sources": ["memory", "routine", "interests", "patterns", "recent"],
+        "sources": ["memory", "routine", "interests", "patterns", "recent", "voice"],
         "task": ("You are starting the conversation — they have not said "
                  "anything yet. Write your opening line.\n"
                  "Do NOT mention any medicine, tablet, dose or dawai. A "

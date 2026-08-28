@@ -79,8 +79,22 @@ async def transcribe_audio(file: UploadFile = File(...),
         transcript = transcription if isinstance(transcription, str) else transcription.text
         print(f"[Voice] Transcribed: {transcript[:100]}")
 
+        # Into the script they read, before it reaches a field. Whisper renders
+        # what it hears, so one utterance can come back with names in Devanagari
+        # and English words in Latin — which for someone who reads only Gurmukhi
+        # is not untidy, it is unreadable.
+        display = transcript.strip()
+        if user_id:
+            try:
+                from memory.declared import get_declared
+                from memory.script import to_script
+                display = to_script(display, get_declared(user_id).language.pref)
+            except Exception as e:
+                print(f"[Voice] transliteration skipped: {e}")
+
         return {
-            "transcript": transcript.strip(),
+            "transcript": display,
+            "raw": transcript.strip(),
             "model":      "whisper-large-v3",
         }
 

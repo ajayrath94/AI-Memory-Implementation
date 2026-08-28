@@ -68,6 +68,11 @@ class Language:
             return (f"They speak {first} mixed with {second}. Write in that "
                     f"blend — mostly {first}, with {second} woven through the "
                     f"way someone bilingual actually talks.")
+        # Register is not stated here. It is shown instead — the composer sees
+        # their recent messages and mirrors how they write, which is the only
+        # approach that handles romanised Hinglish. Counting scripts cannot
+        # tell "mujhe pasand hai" from English, and a word list per language is
+        # nine lists to maintain.
         return (f"They speak {self.pref}. Write in {self.pref} — this is not "
                 f"optional, and applies to a short greeting as much as to a "
                 f"long reply.")
