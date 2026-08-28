@@ -100,6 +100,34 @@ export default function ChatScreen() {
 
     const openConversation = async () => {
       try {
+        // Resume before greeting. The screen started empty on every launch, so
+        // a proactive message read on the lock screen led to a blank chat when
+        // the notification was tapped — the thing she had just responded to was
+        // gone. More generally, a companion that forgets the conversation each
+        // time the app closes is a strange thing to be talking to.
+        try {
+          const res = await fetch(`${API_BASE}/memory/conversation/${userId}`, {
+            headers: { 'X-API-Key': API_KEY },
+          })
+          const conv = await res.json()
+          if (!cancelled && conv?.messages?.length) {
+            useAppStore.getState().setSessionId(conv.session_id)
+            for (const m of conv.messages) {
+              useAppStore.getState().addMessage({
+                id:        m.id || String(Math.random()),
+                role:      m.role,
+                content:   m.content,
+                model:     m.model || DEFAULT_MODEL,
+                timestamp: m.timestamp ? Date.parse(m.timestamp) : Date.now(),
+              })
+            }
+            return                    // there is a conversation; do not open a new one
+          }
+        } catch (e) {
+          // Not being able to resume is not a reason to say nothing.
+          console.log('[proactive-open] resume failed', e)
+        }
+
         // Read from disk, not the store: the store is in-memory only, so after a
         // cold start lastSeenAt is null and every launch looks like a 24-hour
         // absence — she would greet you five times in an afternoon.

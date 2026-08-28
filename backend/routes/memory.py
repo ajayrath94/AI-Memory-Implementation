@@ -28,12 +28,17 @@ def pillars():
     return {"dominant": get_dominant_pillars(), "correlations": get_correlations()}
 
 @router.get("/sessions")
-def sessions():
-    return get_stats()
+def sessions(user_id: str = "default"):
+    return get_stats(user_id)
+
 
 @router.get("/sessions/list")
-def sessions_list():
-    return {"sessions": get_all_sessions()}
+def sessions_list(user_id: str = "default"):
+    # These took no user and relied on the default argument, so every caller
+    # got "default"'s sessions regardless of who was asking. Invisible with one
+    # test account, and one person's conversation history shown to everyone
+    # else the moment there are two.
+    return {"sessions": get_all_sessions(user_id)}
 
 @router.get("/sessions/{session_id}/messages")
 def session_messages(session_id: str):
@@ -108,3 +113,52 @@ def update_profile(user_id: str, data: dict):
     # editing their own profile. The extractor writes through its own path.
     save_user_profile(user_id, data, declared=True)
     return {"status": "ok"}
+
+
+@router.get("/conversation/{user_id}")
+def current_conversation(user_id: str, limit: int = 12):
+    """The conversation as it stands, for the app to open into.
+
+    The chat screen started empty on every launch, so a companion that had just
+    sent a message on the lock screen showed nothing when the notification was
+    tapped — and more generally, one that forgets the conversation each time the
+    app closes is a strange thing to be talking to.
+
+    Capped: she should land near today rather than scrolling through yesterday.
+    """
+    from supabase_store import get_client, get_session_messages
+    db = get_client()
+    try:
+        sess = (db.table("sessions").select("id,updated_at")
+                .eq("user_id", user_id)
+                .order("updated_at", desc=True).limit(1).execute()).data or []
+        if not sess:
+            return {"session_id": None, "messages": []}
+
+        # Only resume something recent. A thread from last week is history,
+        # not where she left off — she should be greeted, not dropped into a
+        # conversation she has forgotten having.
+        from datetime import datetime, timezone, timedelta
+        updated = sess[0].get("updated_at")
+        if updated:
+            try:
+                dt = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) - dt > timedelta(hours=18):
+                    return {"session_id": None, "messages": []}
+            except Exception:
+                pass
+
+        sid = sess[0]["id"]
+        raw = get_session_messages(sid) or []
+        msgs = [{
+            "id":        m.get("id"),
+            "role":      m.get("role"),
+            "content":   m.get("content"),
+            "model":     m.get("model"),
+            "timestamp": m.get("timestamp"),
+        } for m in raw if m.get("content")]
+
+        return {"session_id": sid, "messages": msgs[-limit:]}
+    except Exception as e:
+        print(f"[Memory] conversation read failed: {e}")
+        return {"session_id": None, "messages": []}

@@ -160,6 +160,22 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
 
                         script = (generate_proactive_script(uid, action=action) or {}).get("script", "")
                         if script:
+                            # Write it to her session before pushing. A
+                            # proactive message currently exists only on the
+                            # lock screen — she reads it, opens the app, and
+                            # finds an empty chat, so the thing she just read
+                            # has vanished. It also belongs in the history:
+                            # the companion said it, and the next reply may be
+                            # about it.
+                            try:
+                                from supabase_store import (get_or_create_session,
+                                                            save_message)
+                                sess = get_or_create_session(None, "claude-haiku-4-5", uid)
+                                save_message(sess["id"], "assistant", script,
+                                             "claude-haiku-4-5")
+                            except Exception as _se:
+                                print(f"[Proactive] session write failed: {_se}")
+
                             n = send_push(
                                 uid,
                                 title=get_companion_name(uid),

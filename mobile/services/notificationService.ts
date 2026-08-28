@@ -14,6 +14,27 @@ Notifications.setNotificationHandler({
   }),
 })
 
+/**
+ * Tapping a notification opens the conversation.
+ *
+ * Nothing handled taps at all, so a message she had just read on the lock
+ * screen led nowhere — the app opened wherever it had been, and the thing she
+ * responded to was gone. The message itself is written to her session when
+ * pushed, so the chat already contains it by the time she arrives.
+ */
+Notifications.addNotificationResponseReceivedListener(response => {
+  try {
+    const data = response.notification.request.content.data as any
+    console.log('[notif] tapped', data?.type || 'unknown')
+    // expo-router is imported lazily: this module is loaded before the router
+    // is ready, and importing it at the top throws on a cold start.
+    const { router } = require('expo-router')
+    router.push('/')
+  } catch (e) {
+    console.log('[notif] tap handling failed', e)
+  }
+})
+
 let _permissionAsked = false
 
 /** Ask for notification permission (once). Returns true if granted. */

@@ -36,12 +36,13 @@ export default function SessionsScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const theme = useTheme()
   const t = useT()
+  const { userId } = useAppStore()
   const { loadSession } = useAppStore()
   const router = useRouter()
 
   const fetchSessions = async () => {
     try {
-      const res  = await fetch(`${API_BASE}/memory/sessions/list`, { headers: { "X-API-Key": API_KEY } })
+      const res  = await fetch(`${API_BASE}/memory/sessions/list?user_id=${userId}`, { headers: { "X-API-Key": API_KEY } })
       const data = await res.json()
       setSessions(data.sessions || [])
     } catch (err) {
