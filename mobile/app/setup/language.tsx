@@ -16,7 +16,7 @@
 import React, { useState } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SafeAreaView, ScrollView, ActivityIndicator, Switch,
+  SafeAreaView, ScrollView, ActivityIndicator,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -26,76 +26,58 @@ import { setLanguage } from '../../hooks/useT'
 import { Lang as AppLang } from '../../i18n/strings'
 
 type Lang = {
-  code: string          // what the backend stores as language_pref
-  native: string        // in its own script
+  code:    string       // stored as language_pref, and read into a prompt
+  native:  string       // in its own script
   english: string
-  mixLabel: string      // the code-mixing question, in that language
-  mixHint: string
 }
 
-// Punjabi is included because it was asked for, and because it is the language
-// where the microphone matters most — a large share of older Punjabi speakers
-// read Shahmukhi or do not read the script at all.
+// One row per language, one tap, no follow-up question.
+//
+// There used to be a toggle asking whether English words were acceptable —
+// which requires someone to reason about code-mixing before they have seen the
+// app. It is gone because register is no longer declared: the composer sees
+// their recent messages and mirrors how they actually write, so someone who
+// mixes gets mixing back without anyone asking.
+//
+// Hinglish keeps its own row even though Hindi would converge there anyway.
+// It is a word people recognise as their language, and picking it says
+// something Hindi-plus-drift does not.
 const LANGUAGES: Lang[] = [
-  { code: 'hindi',     native: 'हिन्दी',   english: 'Hindi',
-    mixLabel: 'अंग्रेज़ी शब्द ठीक हैं',
-    mixHint:  '"डॉक्टर", "टैबलेट" जैसे शब्द वैसे ही रहेंगे' },
-  { code: 'punjabi',   native: 'ਪੰਜਾਬੀ',   english: 'Punjabi',
-    mixLabel: 'ਅੰਗਰੇਜ਼ੀ ਸ਼ਬਦ ਠੀਕ ਹਨ',
-    mixHint:  '"ਡਾਕਟਰ", "ਟੈਬਲੇਟ" ਵਰਗੇ ਸ਼ਬਦ ਉਵੇਂ ਹੀ ਰਹਿਣਗੇ' },
-  { code: 'gujarati',  native: 'ગુજરાતી',  english: 'Gujarati',
-    mixLabel: 'અંગ્રેજી શબ્દો ઠીક છે',
-    mixHint:  '"ડૉક્ટર", "ટેબ્લેટ" જેવા શબ્દો એમ જ રહેશે' },
-  { code: 'marathi',   native: 'मराठी',    english: 'Marathi',
-    mixLabel: 'इंग्रजी शब्द ठीक आहेत',
-    mixHint:  '"डॉक्टर", "टॅब्लेट" सारखे शब्द तसेच राहतील' },
-  { code: 'bengali',   native: 'বাংলা',     english: 'Bengali',
-    mixLabel: 'ইংরেজি শব্দ ঠিক আছে',
-    mixHint:  '"ডাক্তার", "ট্যাবলেট" এমন শব্দ একই থাকবে' },
-  { code: 'tamil',     native: 'தமிழ்',    english: 'Tamil',
-    mixLabel: 'ஆங்கில வார்த்தைகள் சரி',
-    mixHint:  '"டாக்டர்", "டேப்லெட்" போன்ற வார்த்தைகள் அப்படியே இருக்கும்' },
-  { code: 'telugu',    native: 'తెలుగు',    english: 'Telugu',
-    mixLabel: 'ఇంగ్లీష్ పదాలు సరే',
-    mixHint:  '"డాక్టర్", "టాబ్లెట్" లాంటి పదాలు అలాగే ఉంటాయి' },
-  { code: 'english',   native: 'English',  english: '',
-    mixLabel: '', mixHint: '' },
+  { code: 'hinglish', native: 'Hinglish',  english: 'हिंदी + English' },
+  { code: 'hindi',    native: 'हिन्दी',     english: 'Hindi' },
+  { code: 'punjabi',  native: 'ਪੰਜਾਬੀ',     english: 'Punjabi' },
+  { code: 'gujarati', native: 'ગુજરાતી',    english: 'Gujarati' },
+  { code: 'marathi',  native: 'मराठी',      english: 'Marathi' },
+  { code: 'bengali',  native: 'বাংলা',       english: 'Bengali' },
+  { code: 'tamil',    native: 'தமிழ்',      english: 'Tamil' },
+  { code: 'telugu',   native: 'తెలుగు',      english: 'Telugu' },
+  { code: 'english',  native: 'English',   english: '' },
 ]
+
+// What the composer puts in a sentence. Naming the script matters: "Punjabi
+// mixed with English" came back as Hinglish, because an ambiguous instruction
+// resolves toward whichever mixed register the model knows best.
+const PREF: Record<string, string> = {
+  hinglish: 'hinglish',
+  hindi:    'Hindi, written in Devanagari',
+  punjabi:  'Punjabi, written in Gurmukhi script',
+  gujarati: 'Gujarati, written in the Gujarati script',
+  marathi:  'Marathi, written in Devanagari',
+  bengali:  'Bengali, written in the Bengali script',
+  tamil:    'Tamil, written in the Tamil script',
+  telugu:   'Telugu, written in the Telugu script',
+  english:  'english',
+}
 
 export default function LanguageScreen() {
   const { userId } = useAppStore()
   const [selected, setSelected] = useState<Lang | null>(null)
-  const [allowMix, setAllowMix] = useState(true)
   const [saving, setSaving]     = useState(false)
 
   const save = async () => {
     if (!selected) return
     setSaving(true)
     try {
-      // language and register are different questions. Someone may want pure
-      // Gujarati while their daughter's generation mixes freely, and storing
-      // one value for both loses that.
-      // The composer interpolates this into a sentence — "They speak
-      // {pref}. Write in {pref}." — so it has to read as a language name.
-      // "hindi-mixed" does not; "hinglish" does, and it is what all 81
-      // existing profiles already say.
-      const MIXED: Record<string, string> = {
-        hindi:    'hinglish',
-        // Naming the script matters. "Punjabi mixed with English" came out as
-        // Hinglish — an ambiguous instruction resolves toward the mixed
-        // register the model knows best. "Punjabi (Gurmukhi script)" does not
-        // leave that room.
-        punjabi:  'Punjabi, written in Gurmukhi script, with English words where natural',
-        gujarati: 'Gujarati script, with English words where natural',
-        marathi:  'Marathi in Devanagari, with English words where natural',
-        bengali:  'Bengali script, with English words where natural',
-        tamil:    'Tamil script, with English words where natural',
-        telugu:   'Telugu script, with English words where natural',
-      }
-      const pref = selected.code === 'english'
-        ? 'english'
-        : (allowMix ? (MIXED[selected.code] || selected.code) : selected.code)
-
       // Locally first: the next screen renders before any network call
       // returns, and it should already be in their language.
       await setLanguage(selected.code as AppLang)
@@ -103,7 +85,7 @@ export default function LanguageScreen() {
       await fetch(`${API_BASE}/memory/profile/${userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
-        body: JSON.stringify({ language_pref: pref }),
+        body: JSON.stringify({ language_pref: PREF[selected.code] || selected.code }),
       })
     } catch (e) {
       // Not worth blocking setup over. The companion falls back to Hinglish
@@ -139,18 +121,6 @@ export default function LanguageScreen() {
             </TouchableOpacity>
           )
         })}
-
-        {/* Asked in the language just chosen — a question about English words
-            written in English would be self-defeating. */}
-        {!!selected && !!selected.mixLabel && (
-          <View style={styles.mixBox}>
-            <View style={styles.mixRow}>
-              <Text style={styles.mixLabel}>{selected.mixLabel}</Text>
-              <Switch value={allowMix} onValueChange={setAllowMix} />
-            </View>
-            <Text style={styles.mixHint}>{selected.mixHint}</Text>
-          </View>
-        )}
 
         <TouchableOpacity
           style={[styles.btn, (!selected || saving) && { opacity: 0.5 }]}
@@ -188,12 +158,6 @@ const styles = StyleSheet.create({
   english:   { fontSize: 13, color: Colors.textMuted },
   englishOn: { color: Colors.accent },
 
-  mixBox:    { marginTop: Spacing.md, padding: 14, borderRadius: Radius.md,
-               backgroundColor: Colors.bgCard },
-  mixRow:    { flexDirection: 'row', alignItems: 'center',
-               justifyContent: 'space-between' },
-  mixLabel:  { fontSize: 15, color: Colors.text, flex: 1, marginRight: 12 },
-  mixHint:   { fontSize: 12, color: Colors.textMuted, marginTop: 6 },
 
   btn:       { marginTop: Spacing.lg, height: 52, borderRadius: Radius.md,
                alignItems: 'center', justifyContent: 'center',
