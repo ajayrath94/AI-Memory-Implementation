@@ -15,13 +15,16 @@ const EXPANDED_W  = 200
 const ANIM_MS     = 250
 
 const NAV_ITEMS = [
-  { path: '/',         icon: 'chatbubble-outline',    label: 'Chat'     },
-  { path: '/sessions', icon: 'time-outline',          label: 'Sessions' },
-  { path: '/memory',   icon: 'hardware-chip-outline', label: 'Memory'   },
-  { path: '/reminders', icon: 'alarm-outline',          label: 'Reminders'},
-  { path: '/calendar', icon: 'calendar-outline',       label: 'Calendar' },
-  { path: '/profile',  icon: 'person-outline',        label: 'Profile'  },
-  { path: '/settings', icon: 'settings-outline',      label: 'Settings' },
+  // Keys, not labels — the sidebar was the one surface left in English after
+  // everything else was translated, so someone who picked ਪੰਜਾਬੀ still
+  // navigated in a language they may not read.
+  { path: '/',          icon: 'chatbubble-outline',    label: 'nav.chat'      },
+  { path: '/sessions',  icon: 'time-outline',          label: 'nav.sessions'  },
+  { path: '/memory',    icon: 'hardware-chip-outline', label: 'nav.memory'    },
+  { path: '/reminders', icon: 'alarm-outline',         label: 'nav.reminders' },
+  { path: '/calendar',  icon: 'calendar-outline',      label: 'nav.calendar'  },
+  { path: '/profile',   icon: 'person-outline',        label: 'nav.profile'   },
+  { path: '/settings',  icon: 'settings-outline',      label: 'nav.settings'  },
 ]
 
 function isLightHex(hex: string): boolean {
@@ -33,13 +36,14 @@ function isLightHex(hex: string): boolean {
 }
 
 import { syncReminderNotifications, registerPushToken } from '../services/notificationService'
-import { loadLanguage } from '../hooks/useT'
+import { loadLanguage, useT } from '../hooks/useT'
 
 export default function RootLayout() {
   // ── All hooks at top, no conditionals before them ──
   const router   = useRouter()
   const pathname = usePathname()
   const bgColor  = useAppStore(s => s.bgColor)
+  const t        = useT()
 
   // Stored choice applies immediately; the profile is reconciled after, since
   // a caregiver may have changed it from the dashboard.
@@ -134,7 +138,7 @@ export default function RootLayout() {
                     style={[styles.navLabel, isActive && styles.navLabelActive, { opacity: fadeAnim }]}
                     numberOfLines={1}
                   >
-                    {item.label}
+                    {t(item.label)}
                   </Animated.Text>
                 </TouchableOpacity>
               )
