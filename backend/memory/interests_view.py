@@ -61,6 +61,14 @@ CATEGORY_BY_PILLAR = {
 
 
 def _category(cluster: dict, sub_pillar: Optional[str]) -> Optional[str]:
+    # What they said it was, first. A declared interest carries its category
+    # because a person chose which box to type it into — inferring one from the
+    # pillar threw that away, so films and music both became "entertainment"
+    # and everything under GENERAL (food, hobbies, faith) vanished entirely.
+    attrs = cluster.get("attributes") or {}
+    if isinstance(attrs, dict) and attrs.get("category"):
+        return attrs["category"]
+
     if sub_pillar and sub_pillar in CATEGORY_BY_TYPE:
         return CATEGORY_BY_TYPE[sub_pillar]
     return CATEGORY_BY_PILLAR.get(cluster.get("pillar") or "")
@@ -99,7 +107,10 @@ def computed_interests(user_id: str) -> dict:
         from supabase_store import get_client
         rows = (get_client().table("interest_clusters")
                 .select("id,label,pillar,relationship,current_state,"
-                        "event_count,strength")
+                        # attributes carries the category a person chose when
+                        # they typed it. Omitting it here meant _category never
+                        # saw one and fell back to guessing from the pillar.
+                        "event_count,strength,attributes")
                 .eq("user_id", user_id).eq("status", "active")
                 .order("strength", desc=True).execute()).data or []
     except Exception as e:
