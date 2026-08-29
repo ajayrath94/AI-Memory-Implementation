@@ -73,7 +73,10 @@ export function MessageBubble({ message, onResend }: Props) {
             {videoId && (
               <YouTubePlayer video={{
                 video_id:    videoId,
-                title:       'Nancy recommends',
+                // Blank rather than 'Nancy recommends': the companion may
+                // be called something else, and the message above already
+                // says what this is.
+                title:       '',
                 channel:     '',
                 youtube_url: `https://www.youtube.com/watch?v=${videoId}`,
               }} />

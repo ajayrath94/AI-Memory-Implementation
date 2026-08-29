@@ -143,9 +143,10 @@ def fetch_artefact(user_id: str, category: str, subject: str) -> Optional[dict]:
 def as_hint(artefact: Optional[dict], subject: str) -> str:
     """The line the composer is given.
 
-    Deliberately does not include the URL. A link inside a sentence reads as
-    an advertisement, and the app attaches it separately — the companion's job
-    is to say why she might like it, not to paste a URL at someone.
+    The URL goes in. I had assumed a link inside a sentence would read as an
+    advertisement — but MessageBubble already extracts the id, strips the URL
+    from the displayed text, and renders a tappable player. So including it is
+    what makes the offer actionable, and she never sees the raw link.
     """
     if not artefact:
         return (f"Offer this specifically: {subject}. Mention nothing else "
@@ -153,12 +154,17 @@ def as_hint(artefact: Optional[dict], subject: str) -> str:
 
     kind  = artefact.get("kind")
     title = (artefact.get("title") or "").strip()
+    url = artefact.get("url") or ""
+    tail = (f"\nEnd the message with this link on its own, nothing after it: "
+            f"{url}") if url else ""
+
     if kind == "song":
         return (f"Offer this one song: \"{title}\". They like {subject}. "
                 f"Say it the way someone would who thought of it just now — "
-                f"do not describe it as a recommendation.")
+                f"do not describe it as a recommendation." + tail)
     if kind == "clip":
-        return (f"Offer this: \"{title}\", from {subject}. Brief and warm.")
+        return (f"Offer this: \"{title}\", from {subject}. Brief and warm."
+                + tail)
     if kind == "recipe":
         note = artefact.get("note")
         return (f"Suggest making this: \"{title}\". They like {subject}."
