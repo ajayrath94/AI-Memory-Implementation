@@ -160,6 +160,18 @@ def overview():
     except Exception as e:
         return {"users": [], "error": str(e)[:200]}
 
+    # Synthetic users beside real ones is the problem this view exists to
+    # avoid. The detail endpoint still serves them by id, so a probe can be
+    # inspected directly.
+    try:
+        from memory.testing import test_user_ids, looks_like_test_id
+        marked = test_user_ids()
+        users = [u for u in users
+                 if u["user_id"] not in marked
+                 and not looks_like_test_id(u["user_id"])]
+    except Exception as e:
+        print(f"[Snapshot] test filter failed: {e}")
+
     rows = []
     for u in users:
         try:

@@ -369,6 +369,19 @@ def run_alert_engine(user_id: str) -> dict:
     """
     print(f"[AlertEngine] Running for user: {user_id}")
 
+    # A synthetic user must never reach a real caregiver. Detection still
+    # runs — the harness asserts on it — but delivery stops here.
+    try:
+        from memory.testing import test_user_ids, looks_like_test_id
+        if user_id in test_user_ids() or looks_like_test_id(user_id):
+            alerts = detect_alerts(user_id)
+            print(f"[AlertEngine] {user_id} is test data — detected "
+                  f"{len(alerts)}, sending none")
+            return {"alerts_detected": len(alerts), "sent": 0,
+                    "reason": "test_user"}
+    except Exception as e:
+        print(f"[AlertEngine] test check failed: {e}")
+
     alerts       = detect_alerts(user_id)
     relationships = get_caregivers_for_user(user_id)
 

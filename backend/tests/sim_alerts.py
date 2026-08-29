@@ -49,6 +49,11 @@ def seed_sessions(uid, convos, with_profile=True):
             "user_id": uid, "name": "AlertSim",
             "health": {"conditions": ["knee pain"]},
         }).execute()
+    try:
+        from memory.testing import mark_user_as_test
+        mark_user_as_test(uid)
+    except Exception:
+        pass
 
     from memory.user_memory_store import process_session_end
     for i, turns in enumerate(convos):

@@ -18,10 +18,22 @@ def get_client() -> Client:
         raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in .env")
     return create_client(url, key)
 
+def _session_source() -> str:
+    """Whether this session came from the app or from a probe. Three sessions
+    created in four minutes during a push test read, for a while, as runaway
+    creation in production — they were ours."""
+    try:
+        from memory.testing import session_source
+        return session_source()
+    except Exception:
+        return "app"
+
+
 def create_session(model: str, user_id: str = "default") -> dict:
     db = get_client()
     result = db.table("sessions").insert({
         "model": model, "user_id": user_id, "weight": 1.0, "title": None,
+            "source": _session_source(),
     }).execute()
     return result.data[0]
 

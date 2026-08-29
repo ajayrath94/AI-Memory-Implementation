@@ -46,6 +46,11 @@ def seed(uid, likes):
     db.table("user_profile").insert({
         "user_id": uid, "name": "SugSim", "language_pref": "hinglish",
     }).execute()
+    try:
+        from memory.testing import mark_user_as_test
+        mark_user_as_test(uid)
+    except Exception:
+        pass
     for m in likes:
         record_propositions(_extract_propositions(m, uid) or [],
                             classify_input(m), uid, "")
