@@ -119,7 +119,11 @@ def get_interest_scores(user_id: str, pillar: str = "", limit: int = 400,
         salience = float(r.get("salience") or 0.5)
         entry["score"]     += strength * sign * decay          # enjoy: signed
         entry["attention"] += strength * salience * decay      # attention: magnitude
-        entry["mentions"] += 1
+        # Reactions carry sentiment but are not mentions. Counting them meant
+        # every ignored offer made the system think she was more interested —
+        # the more it pushed something she disliked, the higher it ranked.
+        if r.get("source") != "suggestion_reaction":
+            entry["mentions"] += 1
         if exempt:
             entry["user_declared"] = True
 

@@ -83,7 +83,8 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
         from supabase_store import get_client
         db = get_client()
         rows = (db.table("interest_clusters")
-                .select("id,label,pillar,relationship,current_state,event_count,strength")
+                .select("id,label,pillar,relationship,current_state,"
+                        "event_count,strength,attributes")
                 .eq("user_id", user_id).eq("status", "active")
                 .order("strength", desc=True).limit(40).execute()).data or []
     except Exception as e:
@@ -129,8 +130,12 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
 
     if not best:
         return None
+    # The category comes along: it decides what kind of thing can be fetched
+    # for this — a song, a recipe, or nothing at all.
+    attrs = best.get("attributes")
     return {"cluster_id": best["id"], "label": best["label"],
-            "pillar": best.get("pillar")}
+            "pillar": best.get("pillar"),
+            "attributes": attrs if isinstance(attrs, dict) else {}}
 
 
 def record_suggestion(user_id: str, cluster_id: Optional[str], label: str,

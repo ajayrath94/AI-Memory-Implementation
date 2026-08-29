@@ -348,9 +348,18 @@ def generate_proactive_script(
             from memory.suggestions import pick_suggestion
             picked = pick_suggestion(user_id)
             if picked:
-                hints = (hints + "\n" if hints else "") + (
-                    f"Offer this specifically: {picked['label']}. "
-                    f"Mention nothing else they like.")
+                # Fetch something she can actually act on. Offering "Kishore
+                # Kumar" is a conversation about an interest; offering a song
+                # she can tap is an offer. Returns None often — no key, no
+                # result, or a category that should never fetch — and the hint
+                # falls back to naming the subject, which is what this did
+                # before.
+                from memory.artefacts import fetch_artefact, as_hint
+                cat = ((picked.get("attributes") or {}).get("category")
+                       if isinstance(picked.get("attributes"), dict) else None)
+                art = fetch_artefact(user_id, cat or "", picked["label"])
+                picked["artefact"] = art
+                hints = (hints + "\n" if hints else "") + as_hint(art, picked["label"])
         except Exception as e:
             print(f"[Schedule] pick_suggestion failed: {e}")
 
