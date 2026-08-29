@@ -166,6 +166,9 @@ def record_declared_interest(user_id: str, category: str, text: str) -> Optional
             1.0,
             res.get("embedding"),
             {"source": "declared", "category": category, "label_native": text},
+            # Its own cluster. Two entries merge only if she types the same
+            # thing twice, and the screen shows her what is already there.
+            resolve_into=False,
         )
         if cid:
             _mark_preference(user_id, cid, name, text, pillar)

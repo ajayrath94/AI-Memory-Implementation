@@ -633,7 +633,7 @@ def recompute_cluster_trajectory(user_id: str, cluster_id: str):
 
 def _upsert_cluster(user_id: str, label: str, pillar: str,
                     strength: float, embedding: list = None,
-                    attributes: dict = None) -> str:
+                    attributes: dict = None, resolve_into: bool = True) -> str:
     """
     Attach this event to the ongoing concern it belongs to, or start a new one.
 
@@ -651,7 +651,23 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
         from memory.cluster_resolver import find_cluster
         db = get_client()
 
-        cluster_id = find_cluster(user_id, label, pillar, embedding)
+        # resolve_into=False for anything a person named deliberately.
+        #
+        # The resolver exists because conversational mentions are ambiguous:
+        # "the knee thing", "ghutne ka dard" and "knee pain" are one ongoing
+        # situation phrased three ways, and merging them is the whole point.
+        # A form field has no such ambiguity — the text is already canonical
+        # because someone typed it on purpose.
+        #
+        # Asking anyway introduced a failure that could not otherwise exist:
+        # "Hum Aapke Hain Koun" was merged into a cluster holding Sholay and
+        # Gadar, on the reasoning that a specific film belongs to films. That
+        # is true of a cricket match belonging to cricket and false of three
+        # named works, which are siblings rather than instances — and it is a
+        # subtle enough distinction that relying on it holding, in every
+        # domain and nine languages, is worse than not asking.
+        cluster_id = (find_cluster(user_id, label, pillar, embedding)
+                      if resolve_into else None)
 
         if cluster_id:
             row = (db.table("interest_clusters")
