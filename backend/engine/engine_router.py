@@ -558,6 +558,13 @@ async def process_input(text: str, model: str,
             try:
                 from memory.suggestions import handle_reply
                 handle_reply(user_id, text, sid)
+                # Close the delivery loop. record_outcome has existed
+                # since the beginning, with a docstring about knowing
+                # what we SENT but not what LANDED — and nothing ever
+                # called it, so 0 of 33 events had responded_at set and
+                # the cadence budget had nothing to read.
+                from memory.cadence import mark_engaged
+                mark_engaged(user_id)
             except Exception as e:
                 print(f"[Suggest] reply handling failed: {e}")
         threading.Thread(target=_react, daemon=True).start()

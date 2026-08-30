@@ -153,6 +153,21 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                 # often the heartbeat runs.
                 if (action and action != "SILENCE"
                         and logged.get("logged") and not logged.get("duplicate")):
+                    # log_decision's idempotency already caps one of each kind
+                    # per day. What it cannot see is whether she is replying at
+                    # all: someone who has not answered in a week should be
+                    # hearing less, not the same amount forever. Checked before
+                    # composing so a held message costs no model call.
+                    try:
+                        from memory.cadence import may_send
+                        gate = may_send(uid, action)
+                    except Exception as _ge:
+                        print(f"[Cadence] gate failed: {_ge}")
+                        gate = {"allow": True, "reason": "gate_error"}
+                    if not gate["allow"]:
+                        print(f"[Scheduler] {uid}: {action} held — {gate['reason']}")
+                        continue
+
                     try:
                         from memory.schedule_engine import generate_proactive_script
                         from memory.push_sender import send_push
