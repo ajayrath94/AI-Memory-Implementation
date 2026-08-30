@@ -70,6 +70,48 @@ def _last_reaction_was_refusal(user_id: str, cluster_id: str) -> bool:
     return bool(rows) and rows[0].get("reaction") == "declined_preference"
 
 
+def _moment(user_id: str) -> dict:
+    """Everything about now that should bear on what is offered.
+
+    All of this already existed and none of it reached the picker, which is how
+    idli-dosa arrived at 8:41pm.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    out = {"now_min": 12 * 60, "rhythm": {}, "at_home": True, "weather": None}
+    try:
+        from memory.declared import get_declared
+        d = get_declared(user_id)
+        tz = ZoneInfo(d.place.timezone)
+        now = datetime.now(tz)
+        out["now_min"] = now.hour * 60 + now.minute
+        out["at_home"] = not d.place.away
+        out["rhythm"] = {
+            "wake":     d.rhythm.wake,
+            "sleep":    d.rhythm.sleep,
+            "meals":    d.rhythm.meals,
+            "routines": d.rhythm.routines,
+        }
+    except Exception as e:
+        print(f"[Suggest] moment read failed: {e}")
+
+    try:
+        from memory.fusion import _weather
+        out["weather"] = _weather(user_id)
+    except Exception:
+        pass
+    return out
+
+
+def _weather_blocks(category: str, weather: dict) -> bool:
+    """Rain does not stop a song. It does stop gardening."""
+    if not weather or category != "shauk":
+        return False
+    desc = (weather.get("description") or "").lower()
+    return any(w in desc for w in ("rain", "storm", "shower", "thunder"))
+
+
 def pick_suggestion(user_id: str) -> Optional[dict]:
     """
     Choose the cluster worth surfacing, rather than letting the composer reach
@@ -92,6 +134,15 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
         return None
 
     if not rows:
+        return None
+
+    # The moment. None of this reached the picker before, which is how a lunch
+    # dish was offered at 8:41pm: it ordered by strength and took the first
+    # thing not offered recently.
+    moment = _moment(user_id)
+    from memory.categories import offerable_now, busy_with_routine
+    if busy_with_routine(moment["now_min"], moment["rhythm"]):
+        print(f"[Suggest] {user_id} is mid-routine — staying quiet")
         return None
 
     # Anything offered in the last few days, whatever the outcome — repeating
@@ -125,6 +176,19 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
         rel = (r.get("relationship") or "").lower()
         if rel in ("concern", "person", "feeling", "action"):
             continue
+
+        # Wrong time is a hard no, not a ranking penalty. Food after dinner,
+        # a film at breakfast, gardening in the rain — each is worse than
+        # saying nothing, and saying nothing is a correct answer.
+        attrs = r.get("attributes") if isinstance(r.get("attributes"), dict) else {}
+        cat = attrs.get("category") or ""
+        if cat:
+            if not offerable_now(cat, moment["now_min"], moment["rhythm"],
+                                 moment["at_home"]):
+                continue
+            if _weather_blocks(cat, moment["weather"]):
+                continue
+
         best = r
         break
 

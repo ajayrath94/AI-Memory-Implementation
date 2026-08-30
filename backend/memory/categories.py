@@ -197,3 +197,103 @@ def _mark_preference(user_id: str, cluster_id: str, label: str,
         recompute_cluster_trajectory(user_id, cluster_id)
     except Exception as e:
         print(f"[Categories] preference event failed: {e}")
+
+# ── when each kind of thing can be offered ────────────────────────────────────
+# Against her declared rhythm, never a fixed clock. Someone who eats dinner at
+# 21:00 should get food suggestions at 20:00, and the reason user_patterns
+# exists is so that is knowable.
+#
+#   before_meal   the N minutes before a meal she declared
+#   waking        any time she is normally up
+#   evening       after her last meal, before wind-down
+#   daylight      and only when she is at home
+
+WHEN = {
+    "khana":   {"rule": "before_meal", "lead_min": 90},
+    # A song is three minutes and fits anywhere she is awake. This is why it is
+    # also the best category to experiment in.
+    "sangeet": {"rule": "waking"},
+    # Two hours of attention. Not before bed, not in the middle of her day.
+    "dekhna":  {"rule": "evening"},
+    # Gardening needs light, and a hobby suggestion at her daughter's house is
+    # useless — she is not there.
+    "shauk":   {"rule": "daylight", "home_only": True},
+    # Whatever she declared, whenever she declared it. Never adjacent, never
+    # inferred, and never at a time we chose for her.
+    "bhakti":  {"rule": "declared_only"},
+}
+
+
+def _mins(hhmm: str) -> int:
+    try:
+        h, m = str(hhmm)[:5].split(":")
+        return int(h) * 60 + int(m)
+    except Exception:
+        return -1
+
+
+def offerable_now(category: str, now_min: int, rhythm: dict,
+                  at_home: bool = True) -> bool:
+    """Can this category sensibly be offered at this minute of her day?
+
+    A hard filter rather than a ranking penalty: a wrong-time offer is worse
+    than no offer, and the cadence design treats silence as a correct answer.
+    """
+    spec = WHEN.get(category)
+    if not spec:
+        return True                       # unknown category: do not block it
+
+    rule = spec.get("rule")
+
+    if rule == "declared_only":
+        return False                      # only ever served, never suggested
+
+    if spec.get("home_only") and not at_home:
+        return False
+
+    wake  = _mins((rhythm or {}).get("wake") or "07:00")
+    sleep = _mins((rhythm or {}).get("sleep") or "22:00")
+    if sleep < wake:                      # someone who sleeps after midnight
+        sleep += 24 * 60
+
+    if rule == "waking":
+        # Not in the first hour after waking or the last before sleeping —
+        # she is getting the day started, or winding down.
+        return wake + 60 <= now_min <= sleep - 60
+
+    if rule == "daylight":
+        return max(wake + 60, 7 * 60) <= now_min <= min(sleep - 60, 18 * 60)
+
+    if rule == "before_meal":
+        lead  = int(spec.get("lead_min", 90))
+        meals = (rhythm or {}).get("meals") or {}
+        if not meals:
+            # No declared meals. Falling back to a fixed clock would be the
+            # thing this rule exists to avoid, so decline rather than guess.
+            return False
+        for at in meals.values():
+            m = _mins(at)
+            if m >= 0 and (m - lead) <= now_min <= m:
+                return True
+        return False
+
+    if rule == "evening":
+        # After her last meal, with an hour before sleep.
+        meals = [_mins(v) for v in ((rhythm or {}).get("meals") or {}).values()]
+        last  = max([m for m in meals if m >= 0] or [19 * 60])
+        return last <= now_min <= sleep - 60
+
+    return True
+
+
+def busy_with_routine(now_min: int, rhythm: dict, window: int = 30) -> bool:
+    """Is she in the middle of something she told us about?
+
+    Offering during her evening walk is not a timing error in the same way as
+    food at 9pm — it is interrupting.
+    """
+    for r in (rhythm or {}).get("routines") or []:
+        m = _mins(r.get("at") or "")
+        if m >= 0 and abs(now_min - m) <= window:
+            return True
+    return False
