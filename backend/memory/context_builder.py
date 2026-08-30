@@ -196,6 +196,20 @@ def _how_they_write(user_id: str) -> str:
             "use, how much English they mix in, how long their sentences run. "
             "Do not correct it or write more formally than they do:\n" + joined)
 
+def _tone(user_id: str) -> str:
+    """The shape of the moment — for HOW things are said, not what.
+
+    Everything else here decides content. This decides nothing and describes
+    the situation instead, because a companion does not withhold a song from
+    someone who seems low, it offers the same song more gently.
+    """
+    try:
+        from memory.tone import tone_context
+        return tone_context(user_id)
+    except Exception as e:
+        print(f"[Context] tone failed: {e}")
+        return ""
+
 def _recent(user_id: str) -> str:
     """What the companion has already said, so it stops asking the same thing.
 
@@ -314,6 +328,7 @@ _SOURCES = {
     "persona":      _persona,
     "language":     _language,
     "recent":       _recent,
+    "tone":         _tone,
     "voice":        _how_they_write,
     "memory":       _memory,
     "routine":      _routine,
