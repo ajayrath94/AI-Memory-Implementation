@@ -30,6 +30,69 @@ from typing import List, Optional
 _MODEL = "claude-haiku-4-5-20251001"
 
 
+# How many occurrences each level needs before it is worth telling anyone.
+#
+# Severity decides how many, not just how loud. Waiting for a pattern before
+# reporting "chalna mushkil ho raha hai" means waiting while it gets worse; and
+# one "thoda thak gayi hoon" is not news at any volume.
+THRESHOLD = {"high": 1, "medium": 2, "low": 3}
+
+# Enough smaller things in a week is a bigger thing. This is the pattern the
+# original rules were reaching for without being able to express it: someone
+# with knee pain, poor sleep and low mood in the same week is declining even
+# though nothing individually crossed a line.
+ESCALATE = {"medium": (3, "high"), "high": (2, "acute")}
+
+
+def _normalise_flags(session_flags) -> list:
+    """Sessions written before severity existed hold plain strings."""
+    out = []
+    for f in (session_flags or []):
+        if isinstance(f, str):
+            out.append({"flag": f, "severity": "medium", "quote": ""})
+        elif isinstance(f, dict) and f.get("flag"):
+            out.append({"flag": f["flag"],
+                        "severity": (f.get("severity") or "medium").lower(),
+                        "quote": f.get("quote") or ""})
+    return out
+
+
+def severity_candidates(sessions: list) -> dict:
+    """What crosses a threshold, and why. {} when nothing does.
+
+    Returns {"level": ..., "reason": ..., "flags": {...}, "quotes": [...]} so
+    the confirming model can be shown the actual words rather than a tally —
+    three mediums about one knee read differently from three about knee, sleep
+    and mood, and it can tell them apart where a rule cannot.
+    """
+    from collections import Counter, defaultdict
+
+    per_level = Counter()
+    per_flag  = defaultdict(Counter)
+    quotes    = defaultdict(list)
+
+    for s in sessions:
+        for f in _normalise_flags(s.get("soft_flags")):
+            per_level[f["severity"]] += 1
+            per_flag[f["flag"]][f["severity"]] += 1
+            if f.get("quote"):
+                quotes[f["severity"]].append(f["quote"])
+
+    # Escalation first: two highs in a week is acute whatever either was about.
+    for level, (count, becomes) in ESCALATE.items():
+        if per_level[level] >= count:
+            return {"level": becomes, "reason": f"{per_level[level]}x_{level}",
+                    "flags": dict(per_flag), "quotes": quotes[level][:4]}
+
+    # Then the plain thresholds, most serious first.
+    for level in ("high", "medium", "low"):
+        if per_level[level] >= THRESHOLD[level]:
+            return {"level": level, "reason": f"{per_level[level]}x_{level}",
+                    "flags": dict(per_flag), "quotes": quotes[level][:4]}
+
+    return {}
+
+
 def detect_decline_pattern(user_id: str, db) -> List[dict]:
     """Hybrid decline detection over a 7-day window — the early-warning brain.
 
@@ -72,8 +135,10 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
     # ── RULES pre-filter — is there a candidate pattern worth the LLM? ──────────
     flag_counter = Counter()
     for s in sessions:
-        for f in (s.get("soft_flags") or []):
-            flag_counter[f] += 1
+        # _normalise_flags handles both shapes: plain strings from every
+        # session written before severity existed, dicts from every one since.
+        for f in _normalise_flags(s.get("soft_flags")):
+            flag_counter[f["flag"]] += 1
     vals = [float(s["valence"]) for s in sessions if s.get("valence") is not None]
     avg_valence = sum(vals) / len(vals) if vals else 0.0
 
@@ -81,11 +146,33 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
     clustered  = len([f for f, ct in flag_counter.items() if ct >= 2]) >= 2  # 2+ flags recurring
     low_mood   = avg_valence <= -0.3 and len(vals) >= 2              # sustained low
 
-    if not (persistent or clustered or low_mood):
+    # Severity first: one "chalna mushkil ho raha hai" should not wait for a
+    # pattern, and three "thoda thak gayi hoon" should not be mistaken for one.
+    sev = severity_candidates(sessions)
+
+    # The count rules stay underneath rather than being replaced. Older people
+    # understate — "thoda dard hai" from someone who has not left the house in
+    # three days is a high dressed as a low — and accumulation is the only
+    # defence against that, since the classifier only ever sees one sentence.
+    if not (sev or persistent or clustered or low_mood):
         return []   # no candidate → no LLM call, no alert
+
+    if sev:
+        print(f"[AlertEngine] severity candidate: {sev['level']} ({sev['reason']})")
+        if sev["level"] == "acute":
+            return [{
+                "alert_type": "emergency", "severity": "critical",
+                "message": ("Several serious signs have appeared in the last few "
+                            "days. Please check on them today."),
+                "pillar": "HEALTH_WELLNESS",
+            }]
 
     # ── LLM confirm — is this genuinely a concerning decline pattern? ──────────
     flag_summary = ", ".join(f"{f}×{ct}" for f, ct in flag_counter.most_common()) or "none"
+    # Their own words, so the model can tell three mentions of one knee from
+    # three different things going wrong. A rule cannot make that distinction;
+    # something reading the sentences can.
+    quoted = "; ".join(f'"{q}"' for q in (sev.get("quotes") or [])[:4]) if sev else ""
     val_summary = ", ".join(
         f"{float(s['valence']):+.1f}" for s in reversed(sessions) if s.get("valence") is not None
     ) or "n/a"
@@ -97,6 +184,8 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
 Over the last 7 days ({len(sessions)} conversations), these early-warning signals
 appeared:
   soft signals (state × how many sessions): {flag_summary}
+  most serious level reached: {sev.get("level", "none") if sev else "none"}
+  what they actually said: {quoted or "nothing recorded"}
   mood trajectory (oldest→newest valence, -1 low .. +1 good): {val_summary}
 
 Is this a CONCERNING pattern of decline a caregiver should be told about — e.g.
@@ -247,7 +336,10 @@ def send_email_alert(
     user_id: str = "",
 ) -> bool:
     """Send ONE consolidated email covering all alerts via SendGrid."""
-    api_key = os.getenv("SENDGRID_API_KEY")
+    # Resend rather than SendGrid: the free tier expired and every alert
+    # since has failed with a 401, logged one line and gone nowhere. A
+    # caregiver alert that silently fails is worse than one never attempted.
+    api_key = os.getenv("RESEND_API_KEY")
 
     # Highest severity across all alerts determines subject emoji + color
     severity_rank = {"critical": 3, "high": 2, "medium": 1, "low": 0}
@@ -315,18 +407,21 @@ def send_email_alert(
         import urllib.request
 
         payload = json.dumps({
-            "personalizations": [{"to": [{"email": to_email, "name": caregiver_name}]}],
-            "from": {"email": os.getenv("SENDGRID_FROM_EMAIL", "nancy@nancyai.co"), "name": "Nancy AI"},
+            "from": os.getenv("ALERT_FROM_EMAIL", "Nancy <onboarding@resend.dev>"),
+            "to": [to_email],
             "subject": subject,
-            "content": [{"type": "text/html", "value": html}],
+            "html": html,
         }).encode()
 
         req = urllib.request.Request(
-            "https://api.sendgrid.com/v3/mail/send",
+            "https://api.resend.com/emails",
             data    = payload,
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type":  "application/json",
+                # Resend sits behind Cloudflare, which 403s urllib's default
+                # user agent with error 1010.
+                "User-Agent":    "NancyAI/1.0",
             },
             method = "POST",
         )

@@ -163,8 +163,21 @@ def extract_session_mood(messages: List[dict]) -> dict:
 
 valence: -1.0 very negative/distressed, 0 neutral, +1.0 very positive/content
 arousal: 0.0 flat/tired, 0.5 normal, 1.0 agitated/excited
-soft_flags: which of these EARLY-WARNING states the user shows THIS conversation
-  (only include ones genuinely present; [] if none): {vocab}
+soft_flags: which of these EARLY-WARNING states the user shows THIS
+  conversation, each with how severe it sounds and the words that show it.
+  Only include ones genuinely present; [] if none.
+  Available states: {vocab}
+  Format: [{{"flag": "<state>", "severity": "low|medium|high", "quote": "<their words, verbatim, max 12 words>"}}]
+
+  severity is about FUNCTION, not volume:
+    high   — it is stopping them doing something. "chalna mushkil ho raha hai",
+             "khana nahi kha pa rahi", "poori raat neend nahi aayi"
+    medium — notable, more than a passing remark. "ghutna kaafi dard kar raha
+             hai", "bahut akela lagta hai"
+    low    — worth noting, meaningless on its own. "thoda thak gayi hoon",
+             "aaj mann nahi laga"
+
+  Older people understate. Judge what they describe, not how calmly they say it.
 acute: true ONLY for an acute emergency needing immediate attention - chest pain,
   a fall, trouble breathing, self-harm thoughts, a medical crisis. Normal sadness
   or tiredness is NOT acute.
@@ -175,13 +188,32 @@ USER messages:
 {user_turns}"""
     try:
         import json as _json
-        raw = _call_haiku(prompt, max_tokens=150).strip()
+        raw = _call_haiku(prompt, max_tokens=400).strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1].replace("json", "", 1).strip()
         d = _json.loads(raw)
         v = max(-1.0, min(1.0, float(d.get("valence", 0.0))))
         a = max(0.0, min(1.0, float(d.get("arousal", 0.0))))
-        flags = [f for f in (d.get("soft_flags") or []) if f in SOFT_FLAG_VOCAB]
+        # Flags now carry a level and a quote. Bare strings are still accepted
+        # because every session written before this change has them, and a
+        # migration would have to guess the severity of sentences it no longer
+        # has — medium is the honest default for an unknown.
+        flags = []
+        for f in (d.get("soft_flags") or []):
+            if isinstance(f, str):
+                if f in SOFT_FLAG_VOCAB:
+                    flags.append({"flag": f, "severity": "medium", "quote": ""})
+                continue
+            if not isinstance(f, dict):
+                continue
+            name = (f.get("flag") or "").strip()
+            if name not in SOFT_FLAG_VOCAB:
+                continue
+            sev = (f.get("severity") or "medium").lower()
+            if sev not in ("low", "medium", "high"):
+                sev = "medium"
+            flags.append({"flag": name, "severity": sev,
+                          "quote": (f.get("quote") or "")[:120]})
         acute = bool(d.get("acute", False)) or kw_acute
         return {"valence": round(v, 3), "arousal": round(a, 3),
                 "soft_flags": flags, "acute": acute}

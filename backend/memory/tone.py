@@ -152,7 +152,16 @@ def _recent_mood(user_id: str) -> Optional[str]:
         return None
 
     avg = sum(vals) / len(vals)
-    flags = {f for r in rows for f in (r.get("soft_flags") or [])}
+    # Flags carry a severity now. Sessions written before that change hold
+    # plain strings, so both shapes have to be read — and this is a live break
+    # the moment a new session lands, not a future one.
+    flags = set()
+    for r in rows:
+        for f in (r.get("soft_flags") or []):
+            if isinstance(f, str):
+                flags.add(f)
+            elif isinstance(f, dict) and f.get("flag"):
+                flags.add(f["flag"])
 
     # Deliberately not "she is sad". The last few conversations have had a
     # certain weight to them; what that means is the composer's business, and
