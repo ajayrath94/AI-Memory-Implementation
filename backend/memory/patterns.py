@@ -202,10 +202,19 @@ def observe(user_id: str) -> list:
             "confidence":   _confidence(len(days), 0),
         })
 
-    return [_upsert(user_id, d) for d in derived]
+    # Travel breaks a routine without anything being wrong, and this is read
+    # once rather than per pattern.
+    away = False
+    try:
+        from memory.declared import get_declared
+        away = get_declared(user_id).place.away
+    except Exception as e:
+        print(f"[Patterns] away check failed: {e}")
+
+    return [_upsert(user_id, d, away) for d in derived]
 
 
-def _upsert(user_id: str, d: dict) -> dict:
+def _upsert(user_id: str, d: dict, away: bool = False) -> dict:
     """Write the observation WITHOUT touching what they declared.
 
     declared_at and observed_at are separate columns on purpose: recording what
@@ -249,7 +258,18 @@ def _upsert(user_id: str, d: dict) -> dict:
         # and confidence 0.26 — enough for the spread test to pass and not
         # nearly enough to tell someone their routine has changed.
         confident = d["confidence"] >= MIN_DRIFT_CONFIDENCE
-        if confident and abs(drift) >= max(MIN_DRIFT_MIN, d["spread_min"]):
+
+        # Not while they are away from home. Her puja does not happen at 6:30
+        # at her daughter's house, and reading a fortnight's visit as decline
+        # would have told a caregiver her mother was deteriorating while she
+        # was having a nice time. Existing drift is left standing rather than
+        # cleared — if her routine had genuinely shifted before she travelled,
+        # that is still true.
+        if away:
+            print(f"[Patterns] {user_id} is away — holding drift for {d['kind']}")
+            row.pop("drift_min", None)
+            row.pop("drift_since", None)
+        elif confident and abs(drift) >= max(MIN_DRIFT_MIN, d["spread_min"]):
             row["drift_min"] = drift
             if not (prev and prev.get("drift_since")):
                 row["drift_since"] = datetime.now(timezone.utc).isoformat()
