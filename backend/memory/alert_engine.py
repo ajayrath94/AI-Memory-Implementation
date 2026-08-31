@@ -195,7 +195,18 @@ signals clustering? Or is it normal ups-and-downs not worth alarming family over
 A single bad day is NOT concerning. Persistence or a worsening trend IS.
 
 Return ONLY JSON:
-{{"concerning": <true/false>, "severity": "low"|"medium"|"high", "message": "one warm, specific sentence for the caregiver about what you're noticing and a gentle suggestion"}}
+{{"concerning": <true/false>, "severity": "low"|"medium"|"high",
+  "alert_type": "health"|"stress"|"sadness",
+  "message": "one warm, specific sentence for the caregiver about what you're noticing and a gentle suggestion"}}
+
+alert_type is what this is ABOUT, and it decides which caregiver hears it:
+  health  — the body. Pain, sleep, appetite, mobility, medication.
+  stress  — worry, agitation, something weighing on them.
+  sadness — low mood, withdrawal, loneliness.
+Pick the one that fits what they actually said. A knee that stops someone
+walking is health, not sadness — and a daughter reading "Sadness Alert" about
+her mother's knee would rightly wonder what this thing is paying attention to.
+
 No prose, only JSON."""
         resp = client.messages.create(model=_MODEL, max_tokens=200,
                                       messages=[{"role": "user", "content": prompt}])
@@ -204,8 +215,14 @@ No prose, only JSON."""
             raw = raw.split("```")[1].replace("json", "", 1).strip()
         d = json.loads(raw)
         if d.get("concerning"):
+            # should_notify has always mapped health and stress; the
+            # detector simply never emitted them, so everything non-acute
+            # arrived as sadness whatever it was about.
+            atype = (d.get("alert_type") or "sadness").lower()
+            if atype not in ("health", "stress", "sadness"):
+                atype = "sadness"
             alerts.append({
-                "alert_type": "sadness",
+                "alert_type": atype,
                 "severity": d.get("severity", "medium"),
                 "message": d.get("message") or "A pattern of declining wellbeing has been noticed. A check-in may help.",
                 "pillar": "SADNESS",
