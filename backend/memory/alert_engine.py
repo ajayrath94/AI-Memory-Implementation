@@ -22,6 +22,7 @@ Delivery:
 import os
 import json
 from datetime import datetime, timezone, timedelta
+from memory.channels import BY_SEVERITY
 from typing import List, Optional
 
 
@@ -453,7 +454,7 @@ def send_email_alert(
 
 # ── Log alert to Supabase ──────────────────────────────────────────────────────
 
-def log_alert(user_id: str, caregiver_id: str, alert: dict, sent: bool):
+def log_alert(user_id: str, caregiver_id: str, alert: dict, sent, channels: str = ""):
     try:
         from supabase_store import get_client
         db = get_client()
@@ -464,7 +465,10 @@ def log_alert(user_id: str, caregiver_id: str, alert: dict, sent: bool):
             "severity":     alert["severity"],
             "message":      alert["message"],
             "pillar":       alert.get("pillar", ""),
-            "sent_via":     "email" if sent else "failed",
+            # Which channels actually worked. "email worked but WhatsApp did
+            # not" is exactly what you want to see when a caregiver says they
+            # never heard anything.
+            "sent_via":     channels or ("email" if sent else "failed"),
             "sent_at":      datetime.now(timezone.utc).isoformat(),
         }).execute()
     except Exception as e:
@@ -539,14 +543,33 @@ def run_alert_engine(user_id: str) -> dict:
         caregiver_name = caregiver.get("name", "Caregiver")
         caregiver_id   = caregiver.get("id")
 
-        if not email:
-            continue
+        # No longer skipped for want of an email: a caregiver with only a phone
+        # used to get nothing at all, and the whole point of the dispatcher is
+        # that severity picks the route.
+        rel_for_delivery = {**rel, "alert_email": email}
 
-        sent = send_email_alert(email, caregiver_name, user_name, caregiver_alerts, user_id)
+        # The most serious alert decides the channels. A batch containing one
+        # acute thing should reach a phone even if the rest are mild.
+        worst = "low"
+        for a in caregiver_alerts:
+            s = (a.get("severity") or "low").lower()
+            if BY_SEVERITY.get(s, []) and len(BY_SEVERITY[s]) > len(BY_SEVERITY.get(worst, [])):
+                worst = s
+
+        from memory.channels import deliver
+        result = deliver(
+            {"severity": worst},
+            rel_for_delivery,
+            user_name,
+            email_fn=lambda to: send_email_alert(
+                to, caregiver_name, user_name, caregiver_alerts, user_id),
+        )
+        sent = bool(result["sent"])
+        channels = ",".join(result["sent"]) or "failed"
 
         # Log each alert type individually for history, but only one email was sent
         for alert in caregiver_alerts:
-            log_alert(user_id, caregiver_id, alert, sent)
+            log_alert(user_id, caregiver_id, alert, sent, channels)
 
         if sent:
             sent_count += 1
