@@ -101,7 +101,7 @@ def run_enrichment():
     uid = PREFIX + "enrich"
     make_user(uid)
     declare(uid, "dekhna", "Sholay")
-    declare(uid, "sangeet", "Kishore Kumar")
+    kishore_id = declare(uid, "sangeet", "Kishore Kumar")
     declare(uid, "bhakti", "Hindu")
     declare(uid, "shauk", "gardening")
 
@@ -126,8 +126,10 @@ def run_enrichment():
 
     # 3. An artist has no film infobox at all, and their fields are wrapped in
     #    {{hlist|...}} — which a template-stripping regex removed entirely.
-    c2 = cluster_of(uid, "Kishore")
-    v2 = stateable(enrich_cluster(uid, c2["id"], force=True)) if c2 else {}
+    # By the id declare() returned rather than by label. Matching on the first
+    # eight characters found a different cluster once the resolver had renamed
+    # things, and the artist enrichment then ran against the wrong row.
+    v2 = stateable(enrich_cluster(uid, kishore_id, force=True)) if kishore_id else {}
     fails += check(bool(v2.get("years_active")),
                    "artist: years_active verified", str(v2.get("years_active")))
 
@@ -301,7 +303,9 @@ def run_offers():
         hint = axis_hint(art)
         # The connection is the whole point — an unexplained song is a
         # recommendation, a connected one is a thought.
-        fails += check("Kishore" in hint and str(art.get("via_fact"))[:4] in hint,
+        fact = art.get("via_fact")
+        fact = fact[0] if isinstance(fact, list) and fact else str(fact)
+        fails += check("Kishore" in hint and str(fact)[:4] in hint,
                        "the hint states the connection", hint[:110])
         fails += check("&#" not in hint,
                        "no HTML entities in what she will hear")
