@@ -56,7 +56,35 @@ def _omdb(title: str) -> Optional[dict]:
     if not key or not title:
         return None
     try:
-        url = _OMDB + "?" + urllib.parse.urlencode({"apikey": key, "t": title})
+        # Search first, then fetch. A direct lookup returns whatever OMDb ranks
+        # highest, which for "Gadar" is the 2023 sequel — so someone who has
+        # loved the 2001 film for twenty years would have been asked three
+        # questions about a film she has never seen.
+        #
+        # The oldest plausible match wins. For people in their sixties and
+        # seventies a bare title almost always means the film from their youth,
+        # not last year's remake. That is a prior rather than a certainty, and
+        # it is right far more often than "first result".
+        s_url = _OMDB + "?" + urllib.parse.urlencode(
+            {"apikey": key, "s": title, "type": "movie"})
+        with urllib.request.urlopen(s_url, timeout=10) as r:
+            found = json.loads(r.read()).get("Search") or []
+
+        best = None
+        for m in found:
+            yr = (m.get("Year") or "")[:4]
+            if not yr.isdigit():
+                continue
+            if best is None or int(yr) < int(best[0]):
+                best = (yr, m.get("imdbID"))
+
+        q = {"apikey": key}
+        if best and best[1]:
+            q["i"] = best[1]
+        else:
+            q["t"] = title
+
+        url = _OMDB + "?" + urllib.parse.urlencode(q)
         with urllib.request.urlopen(url, timeout=10) as r:
             d = json.loads(r.read())
     except Exception as e:
@@ -333,7 +361,13 @@ def _clean(value: str) -> List[str]:
     templates, HTML line breaks, footnotes — so this strips rather than parses.
     """
     v = _REF.sub("", value)
-    v = _TMPL.sub(" ", v)
+    # Strip template braces without removing what is inside them. Sholay's cast
+    # is a {{Plainlist|...}} wrapping the names, and a regex that removes whole
+    # templates took the names with it — leaving "{{Plainlist" as the value.
+    v = v.replace("{{Plainlist", "").replace("{{plainlist", "")
+    v = v.replace("{{ubl", "").replace("{{unbulleted list", "")
+    v = _TMPL.sub(" ", v)          # anything still nested and unwanted
+    v = v.replace("{{", " ").replace("}}", " ").replace("|", ",")
     v = v.replace("<br />", ",").replace("<br/>", ",").replace("<br>", ",")
     v = _LINK.sub(r"\1", v)
     v = _TAGS.sub(" ", v)
@@ -350,6 +384,10 @@ def _clean(value: str) -> List[str]:
             continue
         if ":" in p:
             p = p.split(":", 1)[1].strip()
+        # Wikipedia disambiguates in the title — "Amjad Khan (actor)", "Anil
+        # Sharma (director)" — and that suffix has no business in a sentence
+        # spoken to someone.
+        p = re.sub(r"\s*\([^)]*\)$", "", p).strip()
         if p:
             out.append(p)
     return out[:6]
@@ -372,14 +410,32 @@ def infobox(name: str, year: str = "") -> Optional[Dict]:
     facts: Dict[str, object] = {}
     # The infobox sits at the top. Reading the first 150 lines avoids parsing
     # 120KB of prose for four fields.
-    for line in text.split("\n")[:150]:
-        m = _FIELD.match(line.strip())
-        if not m:
-            continue
-        key = m.group(1).strip().lower().replace(" ", "_")
+    # Infobox values run over several lines. Sholay's cast is
+    # "| starring = {{Plainlist|" followed by one name per line, so reading
+    # line by line saw the opening brace and none of the names — which is why
+    # the cast came from OMDb's top three instead, and Hema Malini went
+    # missing from a film she is rather central to.
+    fields, key, buf = [], None, []
+    for line in text.split("\n")[:200]:
+        s = line.strip()
+        m = _FIELD.match(s)
+        if m:
+            if key:
+                fields.append((key, " ".join(buf)))
+            key = m.group(1).strip().lower().replace(" ", "_")
+            buf = [m.group(2)]
+        elif key and not s.startswith("}}") and s not in ("", "|"):
+            buf.append(s)
+        elif s.startswith("}}") and key:
+            fields.append((key, " ".join(buf)))
+            key, buf = None, []
+    if key:
+        fields.append((key, " ".join(buf)))
+
+    for key, raw in fields:
         if key not in _WANTED:
             continue
-        vals = _clean(m.group(2))
+        vals = _clean(raw)
         if not vals:
             continue
         out_key = _WANTED[key]
