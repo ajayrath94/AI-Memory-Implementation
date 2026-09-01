@@ -565,6 +565,19 @@ async def process_input(text: str, model: str,
                 # the cadence budget had nothing to read.
                 from memory.cadence import mark_engaged
                 mark_engaged(user_id)
+
+                # "Purani wali" — if a question about which film she meant is
+                # open, her reply settles it and enrichment can proceed. Cheap
+                # when nothing is pending, which is nearly always.
+                from memory.ambiguity import (needs_asking, match_answer,
+                                              resolve)
+                pend = needs_asking(user_id)
+                if pend:
+                    imdb = match_answer(pend, text)
+                    if imdb:
+                        resolve(user_id, pend["cluster_id"], imdb)
+                        from memory.enrich import enrich_cluster
+                        enrich_cluster(user_id, pend["cluster_id"], force=True)
             except Exception as e:
                 print(f"[Suggest] reply handling failed: {e}")
         threading.Thread(target=_react, daemon=True).start()

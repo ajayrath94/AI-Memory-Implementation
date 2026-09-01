@@ -51,6 +51,46 @@ _OMDB = "https://www.omdbapi.com/"
 
 # ── verified: OMDb ────────────────────────────────────────────────────────────
 
+def _omdb_fields(d: dict) -> Optional[dict]:
+    """OMDb's response to our field names. Shared, because the same mapping is
+    needed whether we looked the film up by title or by the id she chose."""
+    # OMDb answers "False" as a string, and "N/A" for anything it lacks.
+    if str(d.get("Response")) != "True":
+        return None
+
+    def clean(v):
+        v = (v or "").strip()
+        return "" if v in ("N/A", "") else v
+
+    def split(v):
+        return [x.strip() for x in clean(v).split(",") if x.strip()]
+
+    facts = {}
+    if clean(d.get("Actors")):   facts["cast"]     = split(d.get("Actors"))
+    if clean(d.get("Director")): facts["director"] = clean(d.get("Director"))
+    if clean(d.get("Genre")):    facts["genre"]    = split(d.get("Genre"))
+    if clean(d.get("Year")):     facts["year"]     = clean(d.get("Year"))
+    if clean(d.get("Language")): facts["language"] = split(d.get("Language"))
+    # The canonical title, so Wikipedia is searched for the film she chose
+    # rather than the ambiguous label she typed.
+    if clean(d.get("Title")):    facts["omdb_title"] = clean(d.get("Title"))
+    return facts or None
+
+
+def _omdb_by_id(imdb_id: str) -> Optional[dict]:
+    """The exact film, once she has said which one."""
+    key = os.getenv("OMDB_API_KEY")
+    if not (key and imdb_id):
+        return None
+    try:
+        url = _OMDB + "?" + urllib.parse.urlencode({"apikey": key, "i": imdb_id})
+        with urllib.request.urlopen(url, timeout=10) as r:
+            return _omdb_fields(json.loads(r.read()))
+    except Exception as e:
+        print(f"[Enrich] omdb id lookup failed for {imdb_id}: {e}")
+        return None
+
+
 def _omdb(title: str) -> Optional[dict]:
     key = os.getenv("OMDB_API_KEY")
     if not key or not title:
@@ -91,24 +131,7 @@ def _omdb(title: str) -> Optional[dict]:
         print(f"[Enrich] omdb failed for {title!r}: {e}")
         return None
 
-    # OMDb answers "False" as a string, and "N/A" for anything it lacks.
-    if str(d.get("Response")) != "True":
-        return None
-
-    def clean(v):
-        v = (v or "").strip()
-        return "" if v in ("N/A", "") else v
-
-    def split(v):
-        return [x.strip() for x in clean(v).split(",") if x.strip()]
-
-    facts = {}
-    if clean(d.get("Actors")):   facts["cast"]     = split(d.get("Actors"))
-    if clean(d.get("Director")): facts["director"] = clean(d.get("Director"))
-    if clean(d.get("Genre")):    facts["genre"]    = split(d.get("Genre"))
-    if clean(d.get("Year")):     facts["year"]     = clean(d.get("Year"))
-    if clean(d.get("Language")): facts["language"] = split(d.get("Language"))
-    return facts or None
+    return _omdb_fields(d)
 
 
 # ── inferred: the model ───────────────────────────────────────────────────────
@@ -221,12 +244,17 @@ def enrich_cluster(user_id: str, cluster_id: str, force: bool = False) -> Option
             except Exception as e:
                 print(f"[Enrich] ambiguity check failed: {e}")
 
-        verified = _omdb(name) or {}
+        # By the film she named, if she has told us which one. Storing her
+        # answer and then searching afresh gave 2001 from OMDb and the 2023
+        # sequel's composer from Wikipedia — facts from two different films in
+        # the same record.
+        chosen = attrs.get("resolved_imdb")
+        verified = (_omdb_by_id(chosen) if chosen else _omdb(name)) or {}
         year = str(verified.get("year") or "")[:4]
         # Wikipedia second, and it wins on any shared field: OMDb has no music
         # director at all, which is the field this was added for.
         try:
-            wiki = infobox(name, year) or {}
+            wiki = infobox(verified.get("omdb_title") or name, year) or {}
         except Exception as e:
             print(f"[Enrich] wiki failed for {name!r}: {e}")
             wiki = {}
