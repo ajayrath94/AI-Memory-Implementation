@@ -569,6 +569,12 @@ async def process_input(text: str, model: str,
                 # "Purani wali" — if a question about which film she meant is
                 # open, her reply settles it and enrichment can proceed. Cheap
                 # when nothing is pending, which is nearly always.
+                # An answer to a probe says which direction she follows —
+                # "haan, unke gaane ache hain" is worth more than the song
+                # itself, because it transfers to every film and singer.
+                from memory.axes import handle_probe_reply
+                handle_probe_reply(user_id, text, sid)
+
                 from memory.ambiguity import (needs_asking, match_answer,
                                               resolve)
                 pend = needs_asking(user_id)

@@ -108,8 +108,18 @@ def pick_probe(user_id: str) -> Optional[Dict]:
             continue
 
         asked = _asked(attrs)
+        try:
+            from memory.axes import dead_axes
+            dead = set(dead_axes(user_id))
+        except Exception:
+            dead = set()
+
         for probe in PROBES:
-            if cat not in probe["for"] or probe["axis"] in asked:
+            # Not a direction she has already answered about and does not
+            # follow. Asking again would be the same failure as offering
+            # something she declined.
+            if (cat not in probe["for"] or probe["axis"] in asked
+                    or probe["axis"] in dead):
                 continue
             value = verified.get(probe["field"])
             if not value:
@@ -165,6 +175,18 @@ def probe_instruction(user_id: str) -> str:
         return ""
 
     mark_probed(user_id, p["cluster_id"], p["axis"])
+
+    # Recorded as an open question, in the same table offers use. A question
+    # awaiting an answer is the same shape whether it offered something or
+    # asked something, and a second pending-question mechanism would be one
+    # more thing to keep in sync.
+    try:
+        from memory.suggestions import record_suggestion
+        record_suggestion(user_id, p["cluster_id"],
+                          f"{p['axis']}:{p['value']}", intent="probe")
+    except Exception as e:
+        print(f"[Probe] could not record: {e}")
+
     print(f"[Probe] {user_id}: {p['axis']} of {p['label']!r}")
 
     return (
