@@ -68,11 +68,22 @@ def seed_sessions(uid, convos, with_profile=True):
 
 
 def link_caregiver(uid, email="sim@example.invalid"):
+    """Reuse the caregiver if one survived a previous run.
+
+    Teardown cannot always remove it — care_alerts references it, and those
+    rows are keyed by user rather than caregiver — so inserting blindly meant
+    the harness ran exactly once and then died on a unique constraint.
+    """
     db = get_client()
-    cg = (db.table("caregivers").insert({
-        "name": "Sim Caregiver", "email": email, "org_type": "family",
-    }).execute()).data
-    cid = cg[0]["id"] if cg else None
+    found = (db.table("caregivers").select("id")
+             .eq("email", email).limit(1).execute()).data or []
+    if found:
+        cid = found[0]["id"]
+    else:
+        cg = (db.table("caregivers").insert({
+            "name": "Sim Caregiver", "email": email, "org_type": "family",
+        }).execute()).data
+        cid = cg[0]["id"] if cg else None
     db.table("care_relationships").insert({
         "user_id": uid, "caregiver_id": cid, "active": True,
     }).execute()
@@ -98,7 +109,21 @@ def teardown():
                     db.table(t).delete().eq("user_id", uid).execute()
                 except Exception:
                     pass
-        db.table("caregivers").delete().eq("name", "Sim Caregiver").execute()
+        # care_alerts and care_relationships both reference caregivers, and a
+        # delete that violates a foreign key leaves the row behind — which is
+        # what made the second run fail on a duplicate email.
+        cg = (db.table("caregivers").select("id")
+              .eq("name", "Sim Caregiver").execute()).data or []
+        for c_row in cg:
+            for t in ("care_alerts", "care_relationships"):
+                try:
+                    db.table(t).delete().eq("caregiver_id", c_row["id"]).execute()
+                except Exception:
+                    pass
+            try:
+                db.table("caregivers").delete().eq("id", c_row["id"]).execute()
+            except Exception as e:
+                print(f"  teardown: caregiver {c_row['id'][:8]} kept ({str(e)[:60]})")
     except Exception as e:
         print(f"  teardown: {str(e)[:80]}")
 
@@ -196,7 +221,7 @@ def run_delivery(really_send=False):
         # a) no caregiver — detected, not sent, no crash
         uid = PREFIX + "nocaregiver"
         seed_sessions(uid, DECLINING)
-        r = run_alert_engine(uid)
+        r = run_alert_engine(uid, allow_test=True)
         ok = r.get("sent") == 0 and r.get("reason") == "no_caregivers"
         failures += not ok
         print(f"{'ok  ' if ok else 'FAIL'} no caregiver linked -> {r}")
@@ -205,7 +230,7 @@ def run_delivery(really_send=False):
         uid2 = PREFIX + "withcaregiver"
         seed_sessions(uid2, DECLINING)
         link_caregiver(uid2)
-        r2 = run_alert_engine(uid2)
+        r2 = run_alert_engine(uid2, allow_test=True)
         ok2 = (r2.get("sent") or 0) >= 1
         failures += not ok2
         print(f"{'ok  ' if ok2 else 'FAIL'} caregiver linked   -> {r2}")
@@ -216,7 +241,7 @@ def run_delivery(really_send=False):
 
         # c) same pattern again — 24h cooldown must suppress it, or a scheduler
         #    running every fifteen minutes emails a daughter four times an hour
-        r3 = run_alert_engine(uid2)
+        r3 = run_alert_engine(uid2, allow_test=True)
         ok3 = (r3.get("sent") or 0) == 0
         failures += not ok3
         print(f"{'ok  ' if ok3 else 'FAIL'} second run (cooldown) -> {r3}")

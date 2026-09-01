@@ -477,7 +477,7 @@ def log_alert(user_id: str, caregiver_id: str, alert: dict, sent, channels: str 
 
 # ── Main runner ────────────────────────────────────────────────────────────────
 
-def run_alert_engine(user_id: str) -> dict:
+def run_alert_engine(user_id: str, allow_test: bool = False) -> dict:
     """
     Full alert cycle for a user.
     Called after session end + on demand.
@@ -489,7 +489,13 @@ def run_alert_engine(user_id: str) -> dict:
     # runs — the harness asserts on it — but delivery stops here.
     try:
         from memory.testing import test_user_ids, looks_like_test_id
-        if user_id in test_user_ids() or looks_like_test_id(user_id):
+        # allow_test is the harness saying "I know this is synthetic, run the
+        # delivery path anyway" — it intercepts the send itself. Production
+        # never passes it, so a fabricated decline still cannot reach a real
+        # caregiver. Without this the safety measure made the delivery tests
+        # untestable, which is its own kind of failure.
+        if not allow_test and (user_id in test_user_ids()
+                               or looks_like_test_id(user_id)):
             alerts = detect_alerts(user_id)
             print(f"[AlertEngine] {user_id} is test data — detected "
                   f"{len(alerts)}, sending none")
@@ -550,11 +556,14 @@ def run_alert_engine(user_id: str) -> dict:
 
         # The most serious alert decides the channels. A batch containing one
         # acute thing should reach a phone even if the rest are mild.
-        worst = "low"
-        for a in caregiver_alerts:
-            s = (a.get("severity") or "low").lower()
-            if BY_SEVERITY.get(s, []) and len(BY_SEVERITY[s]) > len(BY_SEVERITY.get(worst, [])):
-                worst = s
+        # Ranked explicitly. Comparing channel counts did not work — low and
+        # medium both reach one channel, so a high alert in a mixed batch never
+        # raised the batch above low and an acute one would not have reached a
+        # phone.
+        _RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3, "acute": 3}
+        worst = max(
+            ((a.get("severity") or "low").lower() for a in caregiver_alerts),
+            key=lambda s: _RANK.get(s, 0), default="low")
 
         from memory.channels import deliver
         result = deliver(
