@@ -354,12 +354,22 @@ def generate_proactive_script(
                 # result, or a category that should never fetch — and the hint
                 # falls back to naming the subject, which is what this did
                 # before.
-                from memory.artefacts import fetch_artefact, as_hint
+                from memory.artefacts import (fetch_artefact, as_hint,
+                                               fetch_along_axis, axis_hint)
                 cat = ((picked.get("attributes") or {}).get("category")
                        if isinstance(picked.get("attributes"), dict) else None)
-                art = fetch_artefact(user_id, cat or "", picked["label"])
+
+                # One step along a direction she follows, if there is one:
+                # another R. D. Burman song rather than Sholay again. Falls
+                # back to the thing itself, which is what this did before axes
+                # existed.
+                art = fetch_along_axis(user_id, picked)
+                if art:
+                    hints = (hints + "\n" if hints else "") + axis_hint(art)
+                else:
+                    art = fetch_artefact(user_id, cat or "", picked["label"])
+                    hints = (hints + "\n" if hints else "") + as_hint(art, picked["label"])
                 picked["artefact"] = art
-                hints = (hints + "\n" if hints else "") + as_hint(art, picked["label"])
         except Exception as e:
             print(f"[Schedule] pick_suggestion failed: {e}")
 

@@ -40,6 +40,9 @@ from typing import Dict, Optional
 # picker should not be steered by them.
 MIN_ANSWERS = 3
 
+# Every direction an offer could travel, proven or not.
+KNOWN_AXES = ("music", "cast", "director", "era")
+
 # Below this an axis is dead: asked several times, engaged with none.
 DEAD_BELOW = 0.2
 
@@ -112,7 +115,16 @@ def live_axes(user_id: str) -> list:
             continue                      # asked enough, never landed
         scored.append((axis, v["rate"] if v["rate"] is not None else 0.5))
     scored.sort(key=lambda x: -x[1])
-    return [a for a, _ in scored]
+    out = [a for a, _ in scored]
+
+    # Untried axes go last rather than being left out. An axis nobody has asked
+    # about is unknown, not rejected — and trying it is the only way to find
+    # out. Without this, someone whose only proven axis is music got nothing at
+    # all when the subject was a singer, since a singer has no composer.
+    known = set(axes)
+    dead = set(dead_axes(user_id))
+    out += [a for a in KNOWN_AXES if a not in known and a not in dead]
+    return out
 
 
 def dead_axes(user_id: str) -> list:

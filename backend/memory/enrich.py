@@ -262,6 +262,14 @@ def enrich_cluster(user_id: str, cluster_id: str, force: bool = False) -> Option
         if verified:
             facts["verified"] = verified
 
+    if cat == "sangeet":
+        try:
+            wiki = infobox(name, kind="artist") or {}
+            if wiki:
+                facts["verified"] = wiki
+        except Exception as e:
+            print(f"[Enrich] artist wiki failed for {name!r}: {e}")
+
     inferred = _model(cat, name)
     if inferred:
         facts["inferred"] = inferred
@@ -340,6 +348,18 @@ _UA = "NancyAI/1.0 (eldercare companion; contact via app)"
 
 # Only fields worth having. The infobox also carries budget, runtime,
 # cinematography and a dozen others that no offer would ever use.
+# A singer's infobox shares no fields with a film's, so it needs its own map.
+# Without this an artist had no verified facts at all, and adjacency could only
+# travel a film's composer — leaving "another Kishore Kumar song" as the best
+# an offer could do for someone whose interest IS a singer.
+_WANTED_ARTIST = {
+    "years_active": "years_active",
+    "occupation":   "occupation",
+    "genre":        "genre",
+    "birth_name":   "birth_name",
+    "other_names":  "other_names",
+}
+
 _WANTED = {
     "music":     "music",       # the reason this exists
     "director":  "director",
@@ -360,7 +380,7 @@ def _get(params: dict) -> dict:
         return json.loads(r.read())
 
 
-def _resolve_title(name: str, year: str = "") -> Optional[str]:
+def _resolve_title(name: str, year: str = "", kind: str = "film") -> Optional[str]:
     """Find the real article title.
 
     "Gadar" is a disambiguation page and searching it returned "Gadar 2" — the
@@ -409,8 +429,13 @@ def _clean(value: str) -> List[str]:
     # Strip template braces without removing what is inside them. Sholay's cast
     # is a {{Plainlist|...}} wrapping the names, and a regex that removes whole
     # templates took the names with it — leaving "{{Plainlist" as the value.
-    v = v.replace("{{Plainlist", "").replace("{{plainlist", "")
-    v = v.replace("{{ubl", "").replace("{{unbulleted list", "")
+    # Unwrap list templates rather than deleting them. Removing the whole
+    # {{...}} took the contents with it, so "occupation = {{hlist|Playback
+    # singer|actor}}" cleaned to nothing and Kishore Kumar came back with no
+    # verified facts at all despite every field being present.
+    for tmpl in ("{{Plainlist", "{{plainlist", "{{ubl", "{{unbulleted list",
+                 "{{hlist", "{{flatlist", "{{Hlist", "{{Flatlist"):
+        v = v.replace(tmpl, "")
     v = _TMPL.sub(" ", v)          # anything still nested and unwanted
     v = v.replace("{{", " ").replace("}}", " ").replace("|", ",")
     v = v.replace("<br />", ",").replace("<br/>", ",").replace("<br>", ",")
@@ -438,13 +463,13 @@ def _clean(value: str) -> List[str]:
     return out[:6]
 
 
-def infobox(name: str, year: str = "") -> Optional[Dict]:
+def infobox(name: str, year: str = "", kind: str = "film") -> Optional[Dict]:
     """Verified facts from the infobox, or None.
 
     Everything here may be STATED in a message — unlike model output, which may
     only choose what to offer.
     """
-    title = _resolve_title(name, year)
+    title = _resolve_title(name, year, kind)
     if not title:
         return None
 
@@ -478,12 +503,13 @@ def infobox(name: str, year: str = "") -> Optional[Dict]:
         fields.append((key, " ".join(buf)))
 
     for key, raw in fields:
-        if key not in _WANTED:
+        wanted = _WANTED_ARTIST if kind == "artist" else _WANTED
+        if key not in wanted:
             continue
         vals = _clean(raw)
         if not vals:
             continue
-        out_key = _WANTED[key]
+        out_key = wanted[key]
         facts[out_key] = vals[0] if out_key in ("music", "director", "gross") else vals
 
     if facts:
