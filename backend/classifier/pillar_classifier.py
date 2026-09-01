@@ -197,25 +197,56 @@ def _detect_language(text: str) -> str:
 
 # ── Embedding (Google gemini-embedding-001) ────────────────────────────────────
 
-def _embed_google(texts: List[str]) -> List[List[float]]:
+# The same strings are embedded again and again — "fatigue", "Kishore Kumar",
+# every cluster label on every comparison — and each was a fresh request. That
+# is most of what exhausted the per-minute quota.
+_EMBED_CACHE: dict = {}
+_CACHE_MAX = 2000
+
+
+def _embed_google(texts, _retry: int = 1):
+    import time
     from google import genai
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-    results = []
-    for text in texts:
-        result = client.models.embed_content(
-            model="models/gemini-embedding-001",
-            contents=text,
-        )
-        results.append(list(result.embeddings[0].values))
-    return results
+
+    hits = {t: _EMBED_CACHE[t] for t in texts if t in _EMBED_CACHE}
+    todo = [t for t in texts if t not in _EMBED_CACHE]
+
+    if todo:
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        try:
+            # One request for the batch. This looped per text even when called
+            # from embed_batch, so ten labels meant ten requests.
+            result = client.models.embed_content(
+                model="models/gemini-embedding-001", contents=todo)
+            for t, e in zip(todo, result.embeddings):
+                vec = list(e.values)
+                if len(_EMBED_CACHE) < _CACHE_MAX:
+                    _EMBED_CACHE[t] = vec
+                hits[t] = vec
+        except Exception as e:
+            # The limit is per MINUTE, so a burst that fails often succeeds a
+            # few seconds later.
+            if _retry > 0 and "RESOURCE_EXHAUSTED" in str(e):
+                print("[Embed] rate limited — retrying in 5s")
+                time.sleep(5)
+                return _embed_google(texts, _retry - 1)
+            raise
+
+    return [hits[t] for t in texts]
+
 
 
 def embed_text(text: str) -> List[float]:
     try:
         return _embed_google([text])[0]
     except Exception as e:
+        # None, not 3072 zeros. A zero vector is a lie the rest of the system
+        # believes: cosine against it is zero, so the classifier scored every
+        # pillar at zero and quietly fell back to GENERAL — and had one been
+        # stored as a cluster centroid, that cluster would never have matched
+        # anything again.
         print(f"[Embed] Failed: {e}")
-        return [0.0] * 3072
+        return None
 
 
 def embed_batch(texts: List[str]) -> List[List[float]]:
@@ -225,7 +256,10 @@ def embed_batch(texts: List[str]) -> List[List[float]]:
         return _embed_google(texts)
     except Exception as e:
         print(f"[Embed] Batch failed: {e}, trying one by one...")
-        return [embed_text(t) for t in texts]
+        # embed_text returns None on failure now, so a partial failure would
+        # put None into a list of vectors. Callers expect vectors.
+        out = [embed_text(t) for t in texts]
+        return [v for v in out if v]
 
 
 # ── Math helpers ───────────────────────────────────────────────────────────────
@@ -583,7 +617,7 @@ def classify_input(text: str) -> ClassifiedInput:
     # Score all embedding pillars
     scores = {}
     for pillar, centroid in centroids.items():
-        if centroid and len(centroid) == len(embedding):
+        if embedding and centroid and len(centroid) == len(embedding):
             scores[pillar] = cosine_similarity(embedding, centroid)
 
     if not scores:
