@@ -114,9 +114,14 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
     since = (now - timedelta(days=7)).isoformat()
     try:
         sessions = (db.table("sessions")
-                    .select("valence,soft_flags,acute,created_at,summary")
+                    .select("valence,soft_flags,acute,created_at,summary,source")
                     .eq("user_id", user_id).gte("created_at", since)
                     .order("created_at", desc=True).limit(20).execute()).data or []
+        # A seeded session is indistinguishable from a real one. One written to
+        # test the delivery path stayed in the seven-day window and alerted
+        # again the moment its cooldown expired — the test-data separation
+        # covers users, and this covers the sessions under a real one.
+        sessions = [s for s in sessions if (s.get("source") or "app") != "test"]
     except Exception as e:
         print(f"[AlertEngine] decline query failed: {e}")
         return []
