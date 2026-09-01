@@ -307,6 +307,30 @@ def curiosity_instruction(user_id: str) -> str:
     """
     import random
 
+    # Which film she meant comes first. Until she answers, that interest has no
+    # facts and nothing can be built on it — and the question is good
+    # conversation regardless.
+    try:
+        from memory.ambiguity import needs_asking, ask_instruction
+        pending = needs_asking(user_id)
+        if pending:
+            print(f"[Context] asking which {pending['label']!r} for {user_id}")
+            return ask_instruction(pending)
+    except Exception as e:
+        print(f"[Context] ambiguity check failed: {e}")
+
+    # Then a question built from something they already like. Better than a
+    # blank one: it is answerable, and the answer says which direction they
+    # follow rather than only adding another fact.
+    try:
+        from memory.probes import probe_instruction
+        probe = probe_instruction(user_id)
+        if probe and random.random() < 0.6:
+            return probe
+    except Exception as e:
+        print(f"[Context] probe failed: {e}")
+
+
     c = curiosity_score(user_id)
     if random.random() >= c["score"]:
         return ""

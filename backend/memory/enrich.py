@@ -204,6 +204,23 @@ def enrich_cluster(user_id: str, cluster_id: str, force: bool = False) -> Option
     # Verified first, so anything the model later claims about the same field
     # loses to a real source.
     if cat == "dekhna":
+        # Which film does she mean? Preferring the oldest match fixed Gadar and
+        # is a heuristic, not a rule. When two well-known films share a title,
+        # facts about the wrong one are worse than no facts — so this stores
+        # the choice and waits for her to make it.
+        if not attrs.get("resolved_imdb"):
+            try:
+                from memory.ambiguity import candidates, is_ambiguous, plausible
+                cands = candidates(name)
+                if is_ambiguous(cands):
+                    attrs["ambiguous"] = plausible(cands)
+                    db.table("interest_clusters").update(
+                        {"attributes": attrs}).eq("id", cluster_id).execute()
+                    print(f"[Enrich] {name!r} is ambiguous — asking before enriching")
+                    return None
+            except Exception as e:
+                print(f"[Enrich] ambiguity check failed: {e}")
+
         verified = _omdb(name) or {}
         year = str(verified.get("year") or "")[:4]
         # Wikipedia second, and it wins on any shared field: OMDb has no music

@@ -170,18 +170,36 @@ def ask_instruction(pending: Dict) -> str:
     Nobody remembers a release date. They remember who was in it, which is why
     the candidates carry a lead actor rather than only a year.
     """
+    cands = pending["candidates"][:3]
+    leads = {(c.get("lead") or "").strip() for c in cands}
+    # Naming the actor only helps when the actors differ. Both Gadar films
+    # star Sunny Deol, so "the one with Sunny Deol" distinguishes nothing —
+    # and an instruction that cannot be followed is why the model reached for
+    # something else entirely.
+    distinct = len(leads - {""}) == len(cands)
+
     lines = []
-    for c in pending["candidates"][:3]:
+    for c in cands:
         who = c.get("lead") or ""
-        lines.append(f"the {c['year']} one" + (f" with {who}" if who else ""))
+        if distinct and who:
+            lines.append(f"the one with {who} ({c['year']})")
+        else:
+            lines.append(f"the {c['year']} one")
+
+    hint = ("Name the actors rather than the years: nobody remembers a release "
+            "date, everyone remembers who was in it."
+            if distinct else
+            "They share a lead actor, so the year or old-versus-new is the only "
+            "thing that separates them — ask it the way a person would: "
+            "purani wali ya nayi wali.")
 
     return (
+        "THIS OVERRIDES THE CONTEXT BELOW. Ask this one thing and nothing "
+        "else.\n"
         f"They mentioned liking \"{pending['label']}\", and there is more than "
         f"one film by that name: " + ", or ".join(lines) + ".\n"
-        "Ask which they mean — lightly, the way you would if you had just "
-        "realised, not as a form to fill in. Name the actors rather than the "
-        "years if you can: nobody remembers a release date, everyone remembers "
-        "who was in it."
+        "Ask which they mean — lightly, as if you had just realised, not as a "
+        "form to fill in. " + hint
     )
 
 
