@@ -22,6 +22,16 @@ simulation harness. A rule that is not checked drifts back within a week.
 # implicit — every message needs both.
 
 SCOPE = {
+    "greeting": {
+        # No curiosity and no probe. Both ask, and a greeting gives — the first
+        # draft was hijacked by a probe and every register came out as a
+        # question with "good morning" bolted on.
+        "sources": ["memory", "routine", "tone"],
+        "task": ("Write their morning message. The instruction in the hints "
+                 "decides the register and is not optional."),
+        "forbid_medication": True,
+        "no_curiosity": True,
+    },
     "check_in": {
         "sources": ["memory", "routine", "interests", "patterns", "recent", "voice", "tone"],
         "task": ("You are starting the conversation — they have not said "

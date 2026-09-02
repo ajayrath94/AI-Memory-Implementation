@@ -89,6 +89,18 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
         return decision("SAFETY_INFO", "away_night_mode",
                         "unfamiliar place, night", "high")
 
+    # ── 2.5 Morning greeting ──
+    # Before the silence check-in on purpose. Someone quiet since yesterday
+    # evening would otherwise be met with "kahan gayab ho gaye" at seven in the
+    # morning, which is a reproach dressed as concern — where a greeting asks
+    # nothing and is the right first thing to read.
+    try:
+        from memory.greeting import due as greeting_due
+        if greeting_due(user_id):
+            return decision("GREETING", "morning", "", "low")
+    except Exception as e:
+        print(f"[Proactive] greeting check failed: {e}")
+
     # ── 3. Unusual silence -> gentle check-in ──
     if quiet:
         hrs = gap // 60 if gap else 0

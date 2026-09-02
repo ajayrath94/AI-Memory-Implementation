@@ -159,13 +159,33 @@ def update_user_location(user_id: str, location: str, location_type: str):
 
         elif location_type == "current":
             home = profile.get("home_location") or profile.get("location")
-
-            db.table("user_profile").update({
+            upd = {
                 "current_location": canonical,
                 "current_lat":      lat,
                 "current_lng":      lng,
                 "location_updated_at": "now()",
-            }).eq("user_id", user_id).execute()
+            }
+            # When she ARRIVED, not when a row was last touched.
+            # location_updated_at moves on every write, so it says nothing
+            # about how long she has been somewhere — and "day two at her
+            # daughter's" is what decides whether she needs orientation or her
+            # own life, locally.
+            #
+            # Compared by distance, not by name: reverse geocoding returns
+            # "Vyalikaval HBCS Layout" one call and "Malleshwaram" the next for
+            # the same spot, which would reset the clock every morning.
+            moved = True
+            try:
+                from routes.context import _km_between, NEW_PLACE_KM
+                d = _km_between(lat, lng, profile.get("current_lat"),
+                                profile.get("current_lng"))
+                if d >= 0:
+                    moved = d > NEW_PLACE_KM
+            except Exception:
+                moved = (profile.get("current_location") or "") != (canonical or "")
+            if moved:
+                upd["arrived_at"] = "now()"
+            db.table("user_profile").update(upd).eq("user_id", user_id).execute()
             print(f"[LocationEngine] Updated current location: {canonical} for {user_id}")
 
             # If traveling away from home — notify caregiver
@@ -177,6 +197,7 @@ def update_user_location(user_id: str, location: str, location_type: str):
                 "current_location": None,
                 "current_lat":      None,
                 "current_lng":      None,
+                "arrived_at":       None,
                 "location_updated_at": "now()",
             }).eq("user_id", user_id).execute()
             print(f"[LocationEngine] Cleared current location for {user_id}")
@@ -362,6 +383,14 @@ def update_location_from_gps(user_id: str, lat: float, lng: float) -> dict:
         }
         if canonical:
             updates["current_location"] = canonical
+        try:
+            from routes.context import _km_between, NEW_PLACE_KM
+            d = _km_between(lat, lng, profile.get("current_lat"),
+                            profile.get("current_lng"))
+            if d < 0 or d > NEW_PLACE_KM:
+                updates["arrived_at"] = "now()"
+        except Exception:
+            pass
 
         db.table("user_profile").update(updates).eq("user_id", user_id).execute()
 

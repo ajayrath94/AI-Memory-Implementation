@@ -36,6 +36,20 @@ class Place:
     home:    Optional[str] = None      # permanent — "main Surat mein rehti hoon"
     current: Optional[str] = None      # set only while travelling
     timezone: str = "Asia/Kolkata"
+    arrived_at: Optional[str] = None   # when the current stay began
+
+    @property
+    def days_away(self) -> Optional[int]:
+        """How long she has been where she is. Day two wants orientation; day
+        twenty wants her ordinary life, locally."""
+        if not (self.current and self.arrived_at):
+            return None
+        try:
+            from datetime import datetime, timezone as _tz
+            dt = datetime.fromisoformat(str(self.arrived_at).replace("Z", "+00:00"))
+            return (datetime.now(_tz.utc) - dt).days
+        except Exception:
+            return None
 
     @property
     def where_now(self) -> Optional[str]:
@@ -206,6 +220,7 @@ def get_declared(user_id: str) -> Declared:
             # older one it falls back to.
             home     = p.get("home_location") or p.get("location"),
             current  = p.get("current_location"),
+            arrived_at = p.get("arrived_at"),
             timezone = _timezone(user_id),
         ),
         language = Language(
