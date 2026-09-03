@@ -408,6 +408,9 @@ def process_session_end(session_id: str, user_id: str = "default"):
         "arousal":    mood["arousal"],
         "soft_flags": mood.get("soft_flags", []),
         "acute":      mood.get("acute", False),
+        # Recorded separately so a failed read is visible rather than looking
+        # like a conversation that was read and found fine.
+        "extraction_failed": bool(mood.get("extraction_failed")),
     }).eq("id", session_id).execute()
 
     # 2. Summarize. A session too short to summarise still had a mood.

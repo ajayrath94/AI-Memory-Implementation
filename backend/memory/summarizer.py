@@ -121,6 +121,10 @@ Summary:"""
 SOFT_FLAG_VOCAB = [
     "fatigue", "withdrawal", "loneliness", "pain", "sleep_trouble",
     "appetite_change", "confusion", "anxiety", "low_mood", "hopelessness",
+    # Added by us, not by the model: a conversation that scored -0.85 or worse
+    # and was still judged not-acute. The parser filters flags against this
+    # list, so without it the flag was silently dropped.
+    "severe_distress",
 ]
 
 # Acute keyword backstop — independent of the LLM so a broken call can NEVER
@@ -179,8 +183,11 @@ soft_flags: which of these EARLY-WARNING states the user shows THIS
 
   Older people understate. Judge what they describe, not how calmly they say it.
 acute: true ONLY for an acute emergency needing immediate attention - chest pain,
-  a fall, trouble breathing, self-harm thoughts, a medical crisis. Normal sadness
-  or tiredness is NOT acute.
+  a fall, trouble breathing, self-harm thoughts, heavy bleeding, or sudden
+  confusion about where they are or what is happening. That last one can be a
+  stroke and is a today problem, not a pattern to watch.
+  Normal sadness or tiredness is NOT acute. Nor is TALKING about a condition —
+  a neighbour who fell, a film plot, an illness from years ago.
 
 Judge the USER (the person), not the assistant. No prose, only JSON.
 
@@ -214,12 +221,49 @@ USER messages:
                 sev = "medium"
             flags.append({"flag": name, "severity": sev,
                           "quote": (f.get("quote") or "")[:120]})
-        acute = bool(d.get("acute", False)) or kw_acute
+        # The model decides. The keyword list used to override it, and on
+        # eight test cases it contributed nothing to the six real emergencies —
+        # Punjabi, Tamil, Bengali and romanised Hinglish were all caught with
+        # no keyword match at all — while forcing acute on both false
+        # positives: "meri padosan gir gayi thi" is a neighbour who fell, and
+        # "film mein hero ko heart attack aata hai" is a plot.
+        #
+        # It was there to protect against a broken call, and extraction_failed
+        # does that job honestly now.
+        acute = bool(d.get("acute", False))
+        # A keyword match the model disagreed with is usually someone TALKING
+        # about a condition rather than having one — a neighbour who fell, a
+        # film plot, a heart attack from last year. Flagging those was giving a
+        # high-severity signal to conversations scoring +0.3, which would
+        # accumulate toward a decline alert about nothing.
+        #
+        # It is only worth noting when the conversation was also unhappy.
+        if kw_acute and not acute and v <= -0.4:
+            flags.append({"flag": "severe_distress", "severity": "medium",
+                          "quote": ""})
+        # Read successfully, said not acute, and yet the conversation scored
+        # -0.85. That is not uncertainty, it is a judgement worth a second
+        # opinion — so it goes in as a flag the decline detector already knows
+        # how to weigh rather than as an alert of its own.
+        if not acute and v <= -0.85:
+            flags.append({"flag": "severe_distress", "severity": "high",
+                          "quote": ""})
+
         return {"valence": round(v, 3), "arousal": round(a, 3),
-                "soft_flags": flags, "acute": acute}
+                "soft_flags": flags, "acute": acute,
+                "extraction_failed": False}
     except Exception as e:
+        # A failed read is not "she is fine". acute=False here was
+        # indistinguishable from having read the conversation and found nothing
+        # wrong — the same shape as the embedding that returned 3072 zeros.
+        #
+        # The keyword list cannot be the safety net: it needs the phrase
+        # anticipated in advance, in the right language and script, and across
+        # nine languages it will always have holes nobody can see. Saying "I
+        # could not read this" is correct regardless of language.
         print(f"[Mood] extraction failed: {e}")
-        return {"valence": 0.0, "arousal": 0.0, "soft_flags": [], "acute": kw_acute}
+        return {"valence": 0.0, "arousal": 0.0, "soft_flags": [],
+                "acute": kw_acute, "extraction_failed": True}
 
 
 def extract_key_facts(summary: str) -> List[str]:
