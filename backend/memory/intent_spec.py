@@ -22,6 +22,15 @@ simulation harness. A rule that is not checked drifts back within a week.
 # implicit — every message needs both.
 
 SCOPE = {
+    "boundary": {
+        # Something just finished and something is coming. It has both a reason
+        # to exist and a direction, so curiosity would only displace one of
+        # them — which it did, three times, before the gate was inverted.
+        "sources": ["memory", "routine", "tone", "voice"],
+        "task": ("Continue the conversation. The hints say what just happened "
+                 "and what is next; both belong in the message."),
+        "forbid_medication": True,
+    },
     "greeting": {
         # No curiosity and no probe. Both ask, and a greeting gives — the first
         # draft was hijacked by a probe and every register came out as a
@@ -33,6 +42,10 @@ SCOPE = {
         "no_curiosity": True,
     },
     "check_in": {
+        # The only intent that asks about something it does not know. Every
+        # other kind of message has a reason to exist already — a boundary, a
+        # greeting, a reminder — and curiosity would displace it.
+        "curiosity": True,
         "sources": ["memory", "routine", "interests", "patterns", "recent", "voice", "tone"],
         "task": ("You are starting the conversation — they have not said "
                  "anything yet. Write your opening line.\n"

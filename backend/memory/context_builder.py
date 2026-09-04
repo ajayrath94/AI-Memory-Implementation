@@ -465,7 +465,16 @@ def compose(user_id: str, intent: str = "check_in",
     # When there is little to draw on, learning beats performing warmth at
     # something it does not know. Sampled on a score, so it fades as the
     # profile fills.
-    curiosity = curiosity_instruction(user_id) if intent == "check_in" else ""
+    # Opt-in, not opt-out. Curiosity returns an instruction that OVERRIDES
+    # everything below it, and gating on "is this a check_in" meant every new
+    # intent silently inherited it — the greeting came out as a probe question
+    # with "good morning" attached, and the boundary message lost its forward
+    # half three times running.
+    #
+    # Inverted, forgetting to opt in costs a slightly less inquisitive message.
+    # Forgetting to opt out cost the message its point.
+    curiosity = (curiosity_instruction(user_id)
+                 if (scope_for(intent) or {}).get("curiosity") else "")
 
     # Live context, but only where several sources agree it matters.
     try:

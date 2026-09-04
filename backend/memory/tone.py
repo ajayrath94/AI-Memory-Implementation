@@ -126,9 +126,18 @@ def _quiet_for(user_id: str) -> Optional[str]:
             return None
         days = mins / 1440.0
         if days >= 2:
-            return f"They have not written for about {int(days)} days."
+            # Stated as something to be gentle ABOUT, never something to
+            # remark on. Every composed message was opening with "kitne din ho
+            # gaye" — a reproach dressed as warmth, and the first thing someone
+            # reads after a hard few days should not be a complaint about
+            # their absence.
+            return (f"It has been about {int(days)} days since they wrote. Do "
+                    f"NOT mention this — no 'kitne din ho gaye', no 'kahan "
+                    f"gayab ho gaye'. Simply pick up as though you spoke "
+                    f"yesterday.")
         if tc.get("unusual_silence"):
-            return "They have been quieter today than they usually are."
+            return ("They have been quieter today than usual. Do not remark on "
+                "it.")
     except Exception as e:
         print(f"[Tone] silence read failed: {e}")
     return None
