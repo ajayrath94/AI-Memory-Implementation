@@ -41,6 +41,8 @@ WHAT THE STATUS MEANS
 Unknown is carried, not chased. One question, and then it is dropped — an
 elderly person asked twice about one meal is being supervised, not accompanied.
 """
+import os
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict
 
@@ -145,14 +147,17 @@ def rebuild(user_id: str) -> int:
     # "breakfast" and "Breakfast", the walk as both "Evening walk" and
     # "exercise". One event per time and kind, keeping the first, since a day
     # with two dinners produces two boundaries at the same hour.
-    seen, unique = set(), []
+    # Keep the most specific label. The rhythm calls the 17:30 routine
+    # "exercise" and the caregiver called it "Evening walk", and keeping
+    # whichever came first left the model unable to connect "sair achi rahi" to
+    # it — so that event could never be confirmed at all.
+    best = {}
     for r_ in rows:
         key = (r_["due_at"], r_["kind"])
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(r_)
-    rows = unique
+        cur = best.get(key)
+        if cur is None or len(r_.get("label") or "") > len(cur.get("label") or ""):
+            best[key] = r_
+    rows = list(best.values())
 
     if not rows:
         return 0
@@ -275,3 +280,177 @@ def boundary_hint(user_id: str, b: Dict) -> str:
         tail = ""
     return ("\n".join(parts) + tail +
             "\nThis may assume they know what you are talking about.")
+
+
+def _mins_now(user_id: str) -> int:
+    _, _, now_min = _today(user_id)
+    return now_min
+
+
+def open_events(user_id: str) -> List[Dict]:
+    """Past due and still unanswered. Usually empty, which is what makes the
+    check cheap enough to run on every message."""
+    now_min = _mins_now(user_id)
+    return [e for e in events(user_id)
+            if e.get("status") in ("pending", "sent")
+            and 0 <= _mins(e.get("due_at")) <= now_min]
+
+
+def _which(user_text: str, open_evs: List[Dict]) -> Optional[str]:
+    """Which of today's things is this message about? Nothing else.
+
+    Deliberately loose — it may say yes to a neighbour's walk or tomorrow's.
+    Whether it counts is the next question, and asking both at once is what
+    made the answers oscillate: four rewordings, each fixing some cases and
+    breaking others.
+    """
+    listing = "\n".join(f"- {e['label'] or e['kind']}" for e in open_evs)
+    prompt = f"""Someone wrote: "{user_text}"
+
+These are things from their daily routine:
+{listing}
+
+Is the message about any of them — in any way at all, whoever did it and
+whenever? Reply with ONLY the label, exactly as written above, or the single
+word NONE.
+
+They will not use these words. The labels were written in English by whoever
+set up their schedule; they speak their own language. "Sair" is the Evening
+walk, "nashta" is breakfast, "ਦਵਾਈ" is a medication. Match on what the thing
+IS.
+
+If several could equally fit, answer NONE.
+One line, nothing else."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        r = client.messages.create(model="claude-haiku-4-5-20251001",
+                                   max_tokens=30,
+                                   messages=[{"role": "user", "content": prompt}])
+        got = (r.content[0].text or "").strip().strip('"').strip()
+    except Exception as e:
+        print(f"[Day] which-event read failed: {e}")
+        return None
+    if not got or got.upper() == "NONE":
+        return None
+    return got.split(" (a ")[0].strip()
+
+
+def _happened(user_text: str, label: str) -> Optional[Dict]:
+    """Did THIS person do it TODAY, and is it already done?
+
+    One narrow question. All three conditions failed when they were conditions
+    inside a larger prompt — the neighbour's walk, tomorrow's walk and
+    yesterday's walk each got confirmed on different attempts.
+    """
+    prompt = f"""Someone wrote: "{user_text}"
+This is about: {label}
+
+Answer with ONE word.
+
+done      — they themselves did it, today, and it is finished
+not_done  — they themselves did not do it today, and the time has passed
+other     — anything else
+
+"other" covers more than it sounds. Someone else did it — "padosan sair karti
+hai" is the neighbour. It was another day — "kal sair achi rahi thi". Or it
+has not happened yet — "shaam ko sair karne jaungi" is a plan, "soch rahi hoon
+khichdi banaun" is a thought. None of those is a thing done.
+
+One word, nothing else."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        r = client.messages.create(model="claude-haiku-4-5-20251001",
+                                   max_tokens=10,
+                                   messages=[{"role": "user", "content": prompt}])
+        a = (r.content[0].text or "").strip().lower().strip(".")
+    except Exception as e:
+        print(f"[Day] happened read failed: {e}")
+        return None
+
+    if a == "done":
+        return {"label": label, "status": "confirmed", "detail": user_text[:120]}
+    if a == "not_done":
+        return {"label": label, "status": "denied", "detail": user_text[:120]}
+    return None
+
+
+def _read(user_text: str, open_evs: List[Dict]) -> Optional[Dict]:
+    """Two narrow questions rather than one loaded with conditions.
+
+    The second call only runs when the first found something, which is rare —
+    so this is usually no more expensive than the single call it replaces.
+    """
+    label = _which(user_text, open_evs)
+    if not label:
+        return None
+    return _happened(user_text, label)
+
+
+def note_from_message(user_id: str, user_text: str) -> Optional[str]:
+    """Called on every message she writes. Cheap when there is nothing open."""
+    if not (user_text or "").strip():
+        return None
+
+    open_evs = open_events(user_id)
+    if not open_evs:
+        return None
+
+    got = _read(user_text, open_evs)
+    if not got:
+        return None
+
+    match = next((e for e in open_evs
+                  if (e.get("label") or e.get("kind") or "").lower()
+                  == got["label"].lower()), None)
+    if not match:
+        return None
+
+    # A vague medication mention picks one anyway — "మాత్ర వేసుకున్నాను" with
+    # three tablets open resolved to Thyronorm on no evidence, and the prompt
+    # would not stop it. Recording the wrong tablet as taken is worse than
+    # recording nothing, so it is refused here instead.
+    if match.get("kind") == "medication":
+        meds_open = [e for e in open_evs if e.get("kind") == "medication"]
+        # What SHE said, not the model's summary of it — detail comes back
+        # empty on a plain confirmation, so the guard was refusing "thyroid ki
+        # goli le li" for naming nothing.
+        said = f"{user_text} {got.get('detail') or ''}".lower()
+        named = any(w for w in (match.get("label") or "").lower()
+                    .replace("(", " ").replace(")", " ").split()
+                    if len(w) > 3 and w in said)
+        if len(meds_open) > 1 and not named:
+            print(f"[Day] {user_id}: a tablet was mentioned but not which one")
+            return None
+
+    set_status(match["id"], got["status"], got.get("detail", ""))
+    print(f"[Day] {user_id}: {match['label'] or match['kind']} "
+          f"{got['status']}" + (f" — {got['detail']}" if got["detail"] else ""))
+
+    # A meal that named a dish is a food interest arriving through
+    # conversation. Stronger evidence than the setup form: someone who names
+    # South Indian food on a form is stating a preference, someone who cooked
+    # khichdi on Tuesday demonstrated one.
+    if (match.get("kind") == "meal" and got["status"] == "confirmed"
+            and got.get("detail")):
+        try:
+            from memory.categories import record_declared_interest
+            cid = record_declared_interest(user_id, "khana", got["detail"])
+            if cid:
+                from supabase_store import get_client
+                db = get_client()
+                rows = (db.table("interest_clusters").select("attributes")
+                        .eq("id", cid).limit(1).execute()).data or []
+                if rows:
+                    a = rows[0].get("attributes")
+                    a = a if isinstance(a, dict) else {}
+                    # Distinguished from declared and from observed: she made
+                    # it, which is the strongest of the three.
+                    a["source"] = "cooked"
+                    db.table("interest_clusters").update(
+                        {"attributes": a}).eq("id", cid).execute()
+        except Exception as e:
+            print(f"[Day] dish record failed: {e}")
+
+    return got["status"]
