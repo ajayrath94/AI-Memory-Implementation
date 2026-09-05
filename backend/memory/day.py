@@ -51,10 +51,13 @@ CONVERSATIONAL_KINDS = ("meal", "routine")
 
 # How long after an event before asking about it. At 17:31 it is checking; an
 # hour later it is conversation.
-LOOKBACK_MIN = 45
+# Half an hour after is checking; an hour is conversation. But 45 minutes
+# either side left gaps where nothing fired at all — 24 minutes after her walk
+# was too early to ask, and dinner 96 minutes off was too far to raise.
+LOOKBACK_MIN = 25
 
 # And how close to the next one before it is worth raising.
-LOOKAHEAD_MIN = 90
+LOOKAHEAD_MIN = 150
 
 
 def _db():
@@ -236,8 +239,19 @@ def boundary(user_id: str, now_min: Optional[int] = None) -> Optional[Dict]:
             coming = e
             break
 
-    if not (just_done or coming):
+    # A boundary needs something BEHIND it. Forward-only fired at 11:15 and
+    # again at 12:15 with the same "lunch is coming" and nothing to look back
+    # on — which is a manufactured opener, the thing this design exists to
+    # avoid. Twelve of fifteen waking hours qualified.
+    if not just_done:
         return None
+
+    # And once per event. Every pass saw the same window afresh, so the
+    # fifteen-minute scheduler would have asked about her walk four times.
+    if just_done.get("status") == "sent":
+        return None
+    set_status(just_done["id"], "sent")
+
     return {"done": just_done, "next": coming}
 
 
