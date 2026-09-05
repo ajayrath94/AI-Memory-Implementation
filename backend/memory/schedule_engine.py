@@ -317,6 +317,8 @@ def generate_proactive_script(
     # drug.
     intent = {
         "MEDICATION_REMINDER": "medication",
+        "GREETING":            "greeting",
+        "BOUNDARY":            "boundary",
         "SAFETY_INFO":         "safety",
         "EXPLORE_OFFER":       "recommendation",
         "RECOMMENDATION":      "recommendation",
@@ -342,6 +344,16 @@ def generate_proactive_script(
     # composer reach for whatever reads well. Two reasons: it skips anything
     # offered recently or already declined, and it means we know what was
     # offered when the reply comes back.
+    if intent == "greeting":
+        from memory.greeting import task_for
+        hints = (hints + "\n" if hints else "") + task_for(user_id)
+
+    if intent == "boundary":
+        from memory.day import boundary as day_boundary, boundary_hint
+        b = day_boundary(user_id)
+        if b:
+            hints = (hints + "\n" if hints else "") + boundary_hint(user_id, b)
+
     picked = None
     if intent == "recommendation":
         try:

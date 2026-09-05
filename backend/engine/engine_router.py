@@ -575,6 +575,13 @@ async def process_input(text: str, model: str,
                 from memory.axes import handle_probe_reply
                 handle_probe_reply(user_id, text, sid)
 
+                # "Aaj khichdi banayi thi" confirms lunch without answering
+                # anything, and that is where most confirmations come from.
+                # Costs nothing when nothing is past due and unanswered, which
+                # is most of the day.
+                from memory.day import note_from_message
+                note_from_message(user_id, text)
+
                 from memory.ambiguity import (needs_asking, match_answer,
                                               resolve)
                 pend = needs_asking(user_id)

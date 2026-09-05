@@ -101,6 +101,20 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
     except Exception as e:
         print(f"[Proactive] greeting check failed: {e}")
 
+    # ── 2.6 A boundary — something finished, something coming ──
+    # Before the silence check-in and before a recommendation: a message that
+    # refers to her actual day is better than either, and an offer inside a
+    # boundary is invited rather than interrupting.
+    try:
+        from memory.day import rebuild as day_rebuild, boundary
+        day_rebuild(user_id)
+        b = boundary(user_id)
+        if b:
+            label = ((b.get("done") or b.get("next") or {}).get("label") or "")
+            return decision("BOUNDARY", "day_boundary", label, "low")
+    except Exception as e:
+        print(f"[Proactive] boundary check failed: {e}")
+
     # ── 3. Unusual silence -> gentle check-in ──
     if quiet:
         hrs = gap // 60 if gap else 0
