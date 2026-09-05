@@ -200,6 +200,33 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                             )
                             entry["delivered"] = n
                             print(f"[Proactive] {action} sent to {uid}: {script[:60]}")
+
+                            if n:
+                                # record_outcome("delivered") has existed since
+                                # the beginning and nothing called it, so every
+                                # event stayed outcome=decided with
+                                # delivered_at null — and the cadence ledger,
+                                # which counts delivered events, was
+                                # permanently empty. Spacing and budget never
+                                # applied to anyone, which is why two check-ins
+                                # arrived an hour apart.
+                                try:
+                                    from memory.proactive_log import record_outcome
+                                    if logged.get("id"):
+                                        record_outcome(logged["id"], "delivered")
+                                except Exception as _re:
+                                    print(f"[Proactive] delivery stamp failed: {_re}")
+
+                                # And a boundary is spent once it has actually
+                                # gone out, not when it was composed.
+                                if action == "BOUNDARY":
+                                    try:
+                                        from memory.day import boundary as _b, set_status as _ss
+                                        _bd = _b(uid)
+                                        if _bd and _bd.get("done"):
+                                            _ss(_bd["done"]["id"], "sent")
+                                    except Exception as _be:
+                                        print(f"[Day] mark failed: {_be}")
                         else:
                             entry["delivered"] = 0
                             print(f"[Proactive] {action} for {uid} — no script, skipped")

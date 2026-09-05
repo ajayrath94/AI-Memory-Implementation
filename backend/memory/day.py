@@ -250,7 +250,9 @@ def boundary(user_id: str, now_min: Optional[int] = None) -> Optional[Dict]:
     # fifteen-minute scheduler would have asked about her walk four times.
     if just_done.get("status") == "sent":
         return None
-    set_status(just_done["id"], "sent")
+    # Marked by whoever DELIVERS it, not here. A dry run or a push that failed
+    # would otherwise burn the boundary silently — you trigger something,
+    # nothing arrives, and the retry does nothing because it is already spent.
 
     return {"done": just_done, "next": coming}
 
