@@ -27,6 +27,9 @@ function CompanionAvatar({ size = 36, name = 'N' }: { size?: number; name?: stri
   )
 }
 
+// Guards the proactive open against a double mount. See the effect below.
+let openingConversation = false
+
 export default function ChatScreen() {
   const theme = useTheme()
   const { messages, loading, sessionId, endSession, clearChat, userId } = useAppStore()
@@ -96,6 +99,15 @@ export default function ChatScreen() {
   useEffect(() => {
     console.log('[proactive-open] mount — messages:', messages.length, 'session:', sessionId)
     if (messages.length > 0 || sessionId) return
+    // Set BEFORE any await. Two mounts raced, both saw session=null because
+    // neither had finished, and she got two greetings in two different
+    // sessions — one in Devanagari and one in Latin Hinglish, so they did not
+    // even match each other.
+    //
+    // Module scope rather than a ref: a ref is per instance, and two mounts
+    // may be two instances.
+    if (openingConversation) return
+    openingConversation = true
     let cancelled = false
 
     const openConversation = async () => {
@@ -110,6 +122,8 @@ export default function ChatScreen() {
             headers: { 'X-API-Key': API_KEY },
           })
           const conv = await res.json()
+          console.log('[proactive-open] resume:', userId, res.status,
+                      conv?.messages?.length ?? 'none')
           if (!cancelled && conv?.messages?.length) {
             useAppStore.getState().setSessionId(conv.session_id)
             for (const m of conv.messages) {

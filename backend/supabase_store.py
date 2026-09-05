@@ -129,6 +129,24 @@ def save_message(session_id: str, role: str, content: str, model: str,
                  embedding: list = None) -> dict:
     """Save message with full pillar data + embedding vector."""
     db = get_client()
+
+    # A session's title. Nothing has ever written one — the column exists, the
+    # app falls back to "Untitled Conversation", and every session has read
+    # that way since the beginning.
+    #
+    # Her own words, not a summary of them. "Ghutne mein dard ho raha hai"
+    # tells her more about which conversation this was than any paraphrase,
+    # and it costs no model call.
+    if role == "user" and content and not is_summary:
+        try:
+            row = (db.table("sessions").select("title")
+                   .eq("id", session_id).limit(1).execute()).data or []
+            if row and not (row[0].get("title") or "").strip():
+                t = " ".join(str(content).split())[:60]
+                db.table("sessions").update({"title": t}).eq("id", session_id).execute()
+        except Exception as e:
+            print(f"[Store] title write failed: {e}")
+
     result = db.table("messages").insert({
         "session_id":        session_id,
         "role":              role,
