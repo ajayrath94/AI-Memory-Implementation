@@ -41,8 +41,12 @@ BASE_BUDGET = 4
 # Kinds that are conversation, and therefore budgeted. Care is not: a
 # medication reminder must never be dropped because the companion has already
 # chatted enough today.
-CONVERSATIONAL = {"CHECK_IN", "RECOMMENDATION", "QUESTION", "GREETING",
-                  "EXPLORE_OFFER", "DISPATCH"}
+# Conversation is what backs off when she stops answering. The day's STRUCTURE
+# does not: a greeting, a boundary and a reminder are the shape of her day, and
+# someone who has stopped replying — possibly because something is wrong — is
+# the last person who should lose it.
+CONVERSATIONAL = {"CHECK_IN", "RECOMMENDATION", "QUESTION", "EXPLORE_OFFER",
+                  "DISPATCH"}
 
 
 def _db():
@@ -105,6 +109,39 @@ def response_rate(user_id: str, days: int = 7) -> Dict:
     # Silence is measured from her last REPLY, not her last message — someone
     # who writes unprompted every day is engaged whatever the ratio says. That
     # is handled by mark_engaged stamping whatever preceded her message.
+    # Writing unprompted counts. Silence is not-chatting AND not-responding;
+    # either one alone means she is still there, and someone who writes every
+    # day but ignores notifications was reading as fully disengaged.
+    try:
+        # messages is keyed by session, not by user — without this every
+        # user inherited everyone else's activity, and two people six days
+        # silent both looked like they had written today.
+        sess = (_db().table("sessions").select("id")
+                .eq("user_id", user_id)
+                .gte("updated_at", since).execute()).data or []
+        ids = [s["id"] for s in sess]
+        own = []
+        if ids:
+            rows2 = (_db().table("messages")
+                     .select("timestamp,session_id,role")
+                     .in_("session_id", ids)
+                     .eq("role", "user")
+                     .gte("timestamp", since)
+                     .order("timestamp", desc=True).limit(50).execute()).data or []
+            own = [r for r in rows2 if r.get("timestamp")]
+    except Exception as e:
+        print(f"[Cadence] own-message read failed: {e}")
+        own = []
+
+    if own:
+        try:
+            latest_own = max(r["timestamp"] for r in own)
+            dt = datetime.fromisoformat(str(latest_own).replace("Z", "+00:00"))
+            d_own = (datetime.now(timezone.utc) - dt).days
+            out["days_since_wrote"] = d_own
+        except Exception:
+            pass
+
     if answered:
         latest = max(r["responded_at"] for r in answered)
         try:
@@ -129,7 +166,13 @@ def budget(user_id: str) -> int:
     if not rr["sent"]:
         return BASE_BUDGET
 
-    since = rr["days_since_reply"]
+    # The more recent of the two. Not chatting AND not responding is silence;
+    # doing either is not.
+    since = min([d for d in (rr.get("days_since_reply"),
+                             rr.get("days_since_wrote")) if d is not None]
+                or [None]) if any(
+        d is not None for d in (rr.get("days_since_reply"),
+                                rr.get("days_since_wrote"))) else None
     if since is not None:
         if since >= 7:
             return 0        # and the caregiver view should be saying so
