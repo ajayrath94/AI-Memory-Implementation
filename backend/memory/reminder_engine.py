@@ -40,6 +40,31 @@ def detect_and_store_reminder(user_id: str, text: str, session_id: str = "") -> 
         print(f"[Reminder] no anthropic client: {e}")
         return None
 
+    # One narrow question first. The long prompt below already says "only an
+    # explicit ask, NOT a general mention of a future plan" — and it created a
+    # reminder from "bas 1 ghante mein", which is a woman saying when she is
+    # leaving for the temple. An instruction buried in a longer prompt does not
+    # hold; the same thing happened with day-event confirmation, and splitting
+    # the question fixed it there too.
+    try:
+        gate = client.messages.create(
+            model="claude-haiku-4-5-20251001", max_tokens=10,
+            messages=[{"role": "user", "content":
+                       f'Did this person ASK to be reminded of something?\n\n'
+                       f'"{text}"\n\n'
+                       f'yes — they asked: "yaad dila dena", "remind me", '
+                       f'"bata dena", "alarm laga do".\n'
+                       f'no  — anything else. Mentioning a plan is not asking. '
+                       f'"Bas 1 ghante mein mandir jaungi" is telling you when '
+                       f'they are going, not asking to be reminded.\n\n'
+                       f'One word.'}])
+        if (gate.content[0].text or "").strip().lower().strip(".") != "yes":
+            return None
+    except Exception as e:
+        # A failed gate must not create reminders nobody asked for.
+        print(f"[Reminder] gate failed: {e}")
+        return None
+
     prompt = f"""The user's current local time is {now_local} ({tz_name}).
 
 User message: "{text}"
