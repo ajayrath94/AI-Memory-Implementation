@@ -20,7 +20,7 @@ is worded. They change for different reasons and should not be one function.
 import os
 from typing import Optional
 
-_MODEL = "claude-haiku-4-5-20251001"
+_MODEL = __import__("llm").model("claude-haiku-4-5-20251001")
 
 
 # ── sources ───────────────────────────────────────────────────────────────────
@@ -442,6 +442,15 @@ def compose(user_id: str, intent: str = "check_in",
     # Held back deliberately — see where it is placed below.
     language = ctx.pop("language", "")
     task = spec["task"]
+    # The medication rule belongs in the prompt, not only in the checker that
+    # reads a message after it has been written.
+    if spec.get("forbid_note"):
+        task = task + "\n" + spec["forbid_note"]
+    # And brevity. Gemini writes considerably longer than Haiku did — "bahut
+    # pyaari good morning aapko, aaj subah ki puja ke baad..." where the
+    # earlier version managed a line. She is reading this on a phone.
+    task = task + ("\nTwo short sentences at most. Shorter is better; she "
+                   "reads this on a phone, not on a page.")
 
     slot_note = {
         "morning":    "It is morning — they are starting their day.",
@@ -518,7 +527,7 @@ Write only the message. No preamble, no quotation marks."""
 
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = __import__("llm").client()
         resp = client.messages.create(
             model=_MODEL, max_tokens=200,
             messages=[{"role": "user", "content": prompt}],

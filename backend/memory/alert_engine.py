@@ -28,7 +28,7 @@ from typing import List, Optional
 
 # ── Alert detection ────────────────────────────────────────────────────────────
 
-_MODEL = "claude-haiku-4-5-20251001"
+_MODEL = __import__("llm").model("claude-haiku-4-5-20251001")
 
 
 # How many occurrences each level needs before it is worth telling anyone.
@@ -184,7 +184,7 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
     ) or "n/a"
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = __import__("llm").client()
         prompt = f"""You watch over an elderly person's wellbeing for their family.
 
 Over the last 7 days ({len(sessions)} conversations), these early-warning signals

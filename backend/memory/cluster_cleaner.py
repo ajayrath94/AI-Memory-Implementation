@@ -15,7 +15,7 @@ import os, json
 from itertools import combinations
 
 MERGE_COSINE = 0.82          # centroid similarity to become a merge CANDIDATE
-_MODEL = "claude-haiku-4-5-20251001"
+_MODEL = __import__("llm").model("claude-haiku-4-5-20251001")
 
 
 def _parse_centroid(c):
@@ -66,7 +66,7 @@ def _llm_plan(clusters, candidate_groups):
     """Ask Haiku to (a) confirm/reject each candidate merge + name it, and
     (b) flag any label that is a phrase/fragment, not an entity noun."""
     import anthropic
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = __import__("llm").client()
 
     lines = []
     for c in clusters:

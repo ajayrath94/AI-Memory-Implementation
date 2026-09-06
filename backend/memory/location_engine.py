@@ -113,7 +113,7 @@ def _extract_location_from_text(text: str) -> Optional[str]:
     """Use Haiku to extract location mention from text."""
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = __import__("llm").client()
         resp   = client.messages.create(
             model      = "claude-haiku-4-5",
             max_tokens = 50,

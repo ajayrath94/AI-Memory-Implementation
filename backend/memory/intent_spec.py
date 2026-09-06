@@ -30,6 +30,13 @@ SCOPE = {
         "task": ("Continue the conversation. The hints say what just happened "
                  "and what is next; both belong in the message."),
         "forbid_medication": True,
+        # In the prompt as well as the flag. The flag is only read by
+        # run_checks, which judges a message after it exists — nothing stopped
+        # one being written, and a greeting duly told her to take her
+        # Thyronorm. A separate reminder names the right drug at the right
+        # hour; a greeting that guesses gets it wrong.
+        "forbid_note": ("Do NOT mention any medicine, tablet, dose or dawai. "
+                        "Not one word about medication."),
     },
     "greeting": {
         # No curiosity and no probe. Both ask, and a greeting gives — the first
@@ -39,6 +46,13 @@ SCOPE = {
         "task": ("Write their morning message. The instruction in the hints "
                  "decides the register and is not optional."),
         "forbid_medication": True,
+        # In the prompt as well as the flag. The flag is only read by
+        # run_checks, which judges a message after it exists — nothing stopped
+        # one being written, and a greeting duly told her to take her
+        # Thyronorm. A separate reminder names the right drug at the right
+        # hour; a greeting that guesses gets it wrong.
+        "forbid_note": ("Do NOT mention any medicine, tablet, dose or dawai. "
+                        "Not one word about medication."),
         "no_curiosity": True,
     },
     "check_in": {
@@ -57,6 +71,13 @@ SCOPE = {
         # note into a medical instruction, and the drug named is often the wrong
         # one because nothing said which is due.
         "forbid_medication": True,
+        # In the prompt as well as the flag. The flag is only read by
+        # run_checks, which judges a message after it exists — nothing stopped
+        # one being written, and a greeting duly told her to take her
+        # Thyronorm. A separate reminder names the right drug at the right
+        # hour; a greeting that guesses gets it wrong.
+        "forbid_note": ("Do NOT mention any medicine, tablet, dose or dawai. "
+                        "Not one word about medication."),
     },
     "medication": {
         # Deliberately NOT "routine": the whole day's schedule is what made it
@@ -76,6 +97,13 @@ SCOPE = {
         # medication reminder.
         "fixed": "Bahar nikle hain? Kuch acha mile toh bataiyega.",
         "forbid_medication": True,
+        # In the prompt as well as the flag. The flag is only read by
+        # run_checks, which judges a message after it exists — nothing stopped
+        # one being written, and a greeting duly told her to take her
+        # Thyronorm. A separate reminder names the right drug at the right
+        # hour; a greeting that guesses gets it wrong.
+        "forbid_note": ("Do NOT mention any medicine, tablet, dose or dawai. "
+                        "Not one word about medication."),
     },
     "safety": {
         # Nothing but who they are and where they are. A safety check that
@@ -91,6 +119,13 @@ SCOPE = {
         "task": ("They are away from home and it is late. Check they are "
                  "alright. Calm and brief — do not alarm them."),
         "forbid_medication": True,
+        # In the prompt as well as the flag. The flag is only read by
+        # run_checks, which judges a message after it exists — nothing stopped
+        # one being written, and a greeting duly told her to take her
+        # Thyronorm. A separate reminder names the right drug at the right
+        # hour; a greeting that guesses gets it wrong.
+        "forbid_note": ("Do NOT mention any medicine, tablet, dose or dawai. "
+                        "Not one word about medication."),
     },
 }
 

@@ -28,7 +28,7 @@ import os
 import json
 from typing import Optional
 
-_MODEL = "claude-haiku-4-5-20251001"
+_MODEL = __import__("llm").model("claude-haiku-4-5-20251001")
 
 # Lists this pass will consider. "medications" is deliberately absent — see
 # the module docstring. Pass include_medications=True to override.
@@ -41,7 +41,7 @@ MIN_ITEMS = 4          # below this, fragmentation isn't worth an LLM call
 def _plan(list_name: str, section: str, items: list) -> dict:
     """Ask Haiku which entries are the same thing said differently."""
     import anthropic
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = __import__("llm").client()
 
     numbered = "\n".join(f"  [{i}] {it}" for i, it in enumerate(items))
 

@@ -14,7 +14,7 @@ import os, json
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-_MODEL = "claude-haiku-4-5-20251001"
+_MODEL = __import__("llm").model("claude-haiku-4-5-20251001")
 _MAX_NUDGES = 6   # hard safety cap regardless of what the LLM/user asks
 
 
@@ -35,7 +35,7 @@ def detect_and_store_reminder(user_id: str, text: str, session_id: str = "") -> 
 
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = __import__("llm").client()
     except Exception as e:
         print(f"[Reminder] no anthropic client: {e}")
         return None
@@ -48,7 +48,7 @@ def detect_and_store_reminder(user_id: str, text: str, session_id: str = "") -> 
     # the question fixed it there too.
     try:
         gate = client.messages.create(
-            model="claude-haiku-4-5-20251001", max_tokens=10,
+            model=__import__("llm").model("claude-haiku-4-5-20251001"), max_tokens=10,
             messages=[{"role": "user", "content":
                        f'Did this person ASK to be reminded of something?\n\n'
                        f'"{text}"\n\n'

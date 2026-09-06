@@ -2,107 +2,181 @@
 LLM — one client, so the provider is a setting rather than seventeen edits.
 
 anthropic.Anthropic(api_key=...) appeared in seventeen files. When the direct
-API ran out of credit mid-week, every one of them broke and switching to Vertex
-meant editing all seventeen — which is the sort of thing you discover at the
-worst moment.
+API ran out of credit mid-week every one of them broke — and Anthropic's
+billing would not take an Indian card, so topping up was not an option either.
 
-WHY VERTEX
-Anthropic's billing would not take an Indian card. Vertex bills through Google
-Cloud, which already works, and the model is the same one. Cache reads in
-us-east5 are twelve times cheaper than asia-east1 — INR 5.25 against INR 65.73
-per million tokens — which is worth 200ms of extra latency.
+WHY GEMINI
+Vertex was the obvious answer: the same model, billed through Google Cloud,
+which already works. Authentication and permissions were sorted; the quota was
+not. A project with no service history is refused Claude capacity outright —
+"enter a new quota value between 0 and 0" — with sales as the only route, which
+does not resolve in five days.
 
-IT FALLS BACK
-If Vertex is not configured, the direct API is used. So this works before the
-credentials exist and keeps working if the credit is topped up later, without
-another round of edits.
+So Gemini, which is already paid for and already used for embeddings.
 
-MODEL NAMES DIFFER
-Vertex uses claude-haiku-4-5@20251001 where the direct API uses
-claude-haiku-4-5-20251001 — an @ rather than a hyphen. Handled here so no
-caller has to know which provider it is talking to.
+WHAT IT COSTS
+Every prompt here was tuned against Haiku, and several are tight: "no question
+at all" in the greeting, the two-step day confirmation, the three registers.
+Those need checking rather than assuming.
+
+THE SHAPE STAYS
+Callers use client().messages.create(...) and read resp.content[0].text, so a
+Gemini call is wrapped to look the same. If Anthropic billing is sorted, or a
+Vertex quota is granted, this reverts to one environment variable.
 """
 import json
 import os
-from typing import Optional
+from typing import Optional, List
 
 _client = None
-_is_vertex = False
+_backend = None      # "anthropic" | "vertex" | "gemini"
 
+
+# ── making Gemini look like Anthropic ─────────────────────────────────────────
+
+class _Block:
+    """So resp.content[0].text keeps working."""
+    def __init__(self, text: str):
+        self.text = text
+        self.type = "text"
+
+
+class _Response:
+    def __init__(self, text: str):
+        self.content = [_Block(text)]
+
+
+class _Messages:
+    """Only the shape this codebase uses: some user messages, an optional
+    system prompt, text back. No tools, no streaming, no images."""
+
+    def __init__(self, model_name: str):
+        self._model = model_name
+
+    def create(self, model: str = "", max_tokens: int = 500,
+               messages: Optional[List[dict]] = None, system: str = "", **kw):
+        from google import genai
+        from google.genai import types
+
+        parts = []
+        for m in (messages or []):
+            c = m.get("content")
+            if isinstance(c, str):
+                parts.append(c)
+            elif isinstance(c, list):
+                parts.extend(b.get("text", "") for b in c
+                             if isinstance(b, dict) and b.get("type") == "text")
+        prompt = "\n\n".join(p for p in parts if p)
+
+        # A floor. This model spends budget on thinking before it emits text,
+        # so max_tokens=10 — which several one-word classifiers here use
+        # deliberately — returned an empty string with finish_reason STOP and
+        # no error at all. Ten worked on Haiku; it does not here.
+        cfg = types.GenerateContentConfig(
+            # And Devanagari costs more tokens per character than English,
+            # so limits sized against Haiku clip mid-word here.
+            # Generous because this model thinks before it writes, and the
+            # thinking comes out of the same budget — 200 doubled still clipped
+            # a two-line greeting mid-word.
+            max_output_tokens=max(max_tokens * 8, 1024),
+            # These prompts are instructions to follow rather than creative
+            # writing. A lower temperature follows them more closely, and the
+            # tight ones took several attempts to hold even on Haiku.
+            temperature=0.7,
+            system_instruction=system or None,
+        )
+        # Held in a local rather than chained: the client was being collected
+        # mid-call and the request failed with "client has been closed".
+        gc = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        r = gc.models.generate_content(
+            model=self._model, contents=prompt, config=cfg)
+        return _Response(getattr(r, "text", "") or "")
+
+
+class _GeminiClient:
+    def __init__(self, model_name: str):
+        self.messages = _Messages(model_name)
+
+
+# ── choosing a backend ────────────────────────────────────────────────────────
 
 def _vertex_credentials():
-    """Credentials from an environment variable rather than a file path.
-
-    A path does not survive a deploy — the JSON has to travel as configuration,
-    and the container has nowhere to put a file.
-    """
     raw = os.getenv("GOOGLE_VERTEX_CREDENTIALS")
     if not raw:
         return None
     try:
         from google.oauth2 import service_account
-        info = json.loads(raw)
         return service_account.Credentials.from_service_account_info(
-            info, scopes=["https://www.googleapis.com/auth/cloud-platform"])
+            json.loads(raw),
+            scopes=["https://www.googleapis.com/auth/cloud-platform"])
     except Exception as e:
         print(f"[LLM] vertex credentials unusable: {e}")
         return None
 
 
 def client():
-    """The Claude client. Vertex when configured, the direct API otherwise."""
-    global _client, _is_vertex
+    """LLM_BACKEND decides: gemini | vertex | anthropic. Defaults to whatever
+    is configured, preferring Vertex over the direct API."""
+    global _client, _backend
     if _client is not None:
         return _client
 
-    project = os.getenv("VERTEX_PROJECT_ID")
-    region = os.getenv("VERTEX_REGION", "us-east5")
-    creds = _vertex_credentials() if project else None
+    want = (os.getenv("LLM_BACKEND") or "").strip().lower()
 
-    if project and creds:
+    if want == "gemini":
+        _client = _GeminiClient(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+        _backend = "gemini"
+        print("[LLM] Gemini")
+        return _client
+
+    project = os.getenv("VERTEX_PROJECT_ID")
+    creds = _vertex_credentials() if project else None
+    if want != "anthropic" and project and creds:
         try:
             from anthropic import AnthropicVertex
-            _client = AnthropicVertex(project_id=project, region=region,
-                                      credentials=creds)
-            _is_vertex = True
-            print(f"[LLM] Vertex — {project} / {region}")
+            _client = AnthropicVertex(
+                project_id=project,
+                region=os.getenv("VERTEX_REGION", "us-east5"),
+                credentials=creds)
+            _backend = "vertex"
+            print(f"[LLM] Vertex — {project}")
             return _client
         except Exception as e:
-            print(f"[LLM] Vertex unavailable, falling back: {e}")
+            print(f"[LLM] Vertex unavailable: {e}")
 
     import anthropic
     _client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    _is_vertex = False
+    _backend = "anthropic"
     print("[LLM] direct Anthropic API")
     return _client
 
 
-# The names every caller uses. Kept here so a model change is one edit rather
-# than a search across the codebase.
 HAIKU = "claude-haiku-4-5-20251001"
 SONNET = "claude-sonnet-4-5-20250929"
 
 
 def model(name: str = HAIKU) -> str:
-    """The model string this provider expects.
+    """The model string for whichever provider is in use.
 
-    Vertex wants claude-haiku-4-5@20251001 where the direct API wants
-    claude-haiku-4-5-20251001. Callers should not have to care.
+    Gemini ignores it — the model is fixed on the client — but every caller
+    passes one and none of them should break.
     """
-    client()          # so _is_vertex is set
-    if not _is_vertex:
+    client()
+    if _backend == "gemini":
+        return os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    if _backend != "vertex":
         return name
-    # Last hyphen before the date becomes an @.
     parts = name.rsplit("-", 1)
     return f"{parts[0]}@{parts[1]}" if len(parts) == 2 else name
 
 
-def ask(prompt: str, max_tokens: int = 200, model_name: str = HAIKU) -> str:
-    """One prompt, one string back, empty on failure.
+def backend() -> str:
+    client()
+    return _backend or "unknown"
 
-    Most calls in this codebase are exactly this shape, and each was
-    constructing its own client and handling its own errors.
-    """
+
+def ask(prompt: str, max_tokens: int = 200, model_name: str = HAIKU) -> str:
+    """One prompt, one string back, empty on failure."""
     try:
         r = client().messages.create(
             model=model(model_name), max_tokens=max_tokens,

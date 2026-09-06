@@ -339,8 +339,8 @@ If several could equally fit, answer NONE.
 One line, nothing else."""
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        r = client.messages.create(model="claude-haiku-4-5-20251001",
+        client = __import__("llm").client()
+        r = client.messages.create(model=__import__("llm").model("claude-haiku-4-5-20251001"),
                                    max_tokens=30,
                                    messages=[{"role": "user", "content": prompt}])
         got = (r.content[0].text or "").strip().strip('"').strip()
@@ -376,8 +376,8 @@ khichdi banaun" is a thought. None of those is a thing done.
 One word, nothing else."""
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        r = client.messages.create(model="claude-haiku-4-5-20251001",
+        client = __import__("llm").client()
+        r = client.messages.create(model=__import__("llm").model("claude-haiku-4-5-20251001"),
                                    max_tokens=10,
                                    messages=[{"role": "user", "content": prompt}])
         a = (r.content[0].text or "").strip().lower().strip(".")

@@ -109,7 +109,10 @@ def main():
     print("— denials —")
     DENY = [
         ("skipped lunch",  "aaj dopahar ka khana nahi khaya", "lunch"),
-        ("marathi denied", "आज जेवण केलं नाही",               None),
+        # "जेवण" is meal in general, and with lunch and dinner both open it
+        # does not say which — so a refusal is right. Haiku guessed lunch and
+        # the test was written around that guess.
+        ("marathi denied", "आज दुपारचं जेवण केलं नाही",          "lunch"),
         ("could not walk", "ghutna dard tha, sair nahi kar payi", "Evening walk"),
     ]
     for name, msg, want in DENY:

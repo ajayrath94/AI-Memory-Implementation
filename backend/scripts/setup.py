@@ -75,8 +75,8 @@ def check_anthropic():
     print("\n── Anthropic API ─────────────────────────────────")
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        client.messages.create(model="claude-haiku-4-5", max_tokens=5,
+        client = __import__("llm").client()
+        client.messages.create(model=__import__("llm").model("claude-haiku-4-5-20251001"), max_tokens=5,
             messages=[{"role":"user","content":"OK"}])
         print("  ✅ Connected")
         return True

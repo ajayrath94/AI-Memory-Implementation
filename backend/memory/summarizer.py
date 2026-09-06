@@ -31,9 +31,9 @@ load_dotenv()
 def _call_haiku(prompt: str, max_tokens: int = 500) -> str:
     """Use Claude Haiku for fast, cheap summarization."""
     import anthropic
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = __import__("llm").client()
     response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=__import__("llm").model("claude-haiku-4-5-20251001"),
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}]
     )

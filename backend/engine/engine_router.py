@@ -172,9 +172,9 @@ def _summarize_group(messages: list, model: str) -> str:
     text = "\n".join(f"{m['role'].upper()}: {m['content'][:200]}" for m in messages)
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = __import__("llm").client()
         res    = client.messages.create(
-            model="claude-haiku-4-5-20251001", max_tokens=150,
+            model=__import__("llm").model("claude-haiku-4-5-20251001"), max_tokens=150,
             messages=[{"role": "user",
                        "content": f"Summarize in 2 sentences preserving key facts:\n\n{text}"}]
         )
@@ -397,7 +397,7 @@ def _generate_title(text: str, classified) -> str:
 
 def _call_anthropic(model, system, messages):
     import anthropic
-    c = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    c = __import__("llm").client()
     r = c.messages.create(model=model, max_tokens=1024, system=system, messages=messages)
     return r.content[0].text
 

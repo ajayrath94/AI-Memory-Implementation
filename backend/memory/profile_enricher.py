@@ -484,7 +484,7 @@ Rules:
 Return ONLY the JSON."""
 
     try:
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = __import__("llm").client()
         resp   = client.messages.create(
             model      = "claude-haiku-4-5",
             max_tokens = 150,
@@ -525,7 +525,7 @@ Rules:
 Return ONLY the JSON."""
 
     try:
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = __import__("llm").client()
         resp   = client.messages.create(
             model      = "claude-haiku-4-5",
             max_tokens = 150,

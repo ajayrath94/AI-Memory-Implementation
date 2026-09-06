@@ -164,9 +164,9 @@ missed         — they answered something else, or the reply is not about it
 One word, nothing else."""
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = __import__("llm").client()
         resp = client.messages.create(
-            model="claude-haiku-4-5-20251001", max_tokens=10,
+            model=__import__("llm").model("claude-haiku-4-5-20251001"), max_tokens=10,
             messages=[{"role": "user", "content": prompt}])
         answer = resp.content[0].text.strip().lower().strip(".")
         return answer if answer in ("engaged", "not_interested", "missed") else None
