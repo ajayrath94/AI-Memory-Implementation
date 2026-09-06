@@ -441,6 +441,17 @@ def compose(user_id: str, intent: str = "check_in",
     persona  = ctx.pop("persona", "You are a warm companion.")
     # Held back deliberately — see where it is placed below.
     language = ctx.pop("language", "")
+    # What a caregiver asked the companion to pay attention to. This reached
+    # only the chat path — a reply to something she typed — so every proactive
+    # message ignored the sliders entirely. Setting entertainment to Max and
+    # health to Low changed nothing about what arrived on her phone.
+    weights_note = ""
+    try:
+        from memory.pillar_weights import build_weights_prompt
+        weights_note = build_weights_prompt(user_id) or ""
+    except Exception as e:
+        print(f"[Context] weights failed: {e}")
+
     task = spec["task"]
     # The medication rule belongs in the prompt, not only in the checker that
     # reads a message after it has been written.
@@ -496,6 +507,7 @@ def compose(user_id: str, intent: str = "check_in",
     prompt = f"""{persona}
 
 {task}
+{weights_note}
 
 {slot_note}
 {urgency}
