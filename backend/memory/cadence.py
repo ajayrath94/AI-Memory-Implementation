@@ -207,9 +207,14 @@ def todays_ledger(user_id: str) -> Dict:
         print(f"[Cadence] ledger failed: {e}")
         return out
 
-    rows = [r for r in rows if r.get("action") in CONVERSATIONAL]
-    out["count"] = len(rows)
-    out["kinds"] = [r["action"] for r in rows]
+    # Spacing counts EVERYTHING; the budget counts conversation. Two
+    # different questions, and conflating them let a recommendation go
+    # seventeen minutes after a boundary — the boundary was not in the ledger,
+    # so there was nothing to space against. Her phone does not care which
+    # kind a message was.
+    conv = [r for r in rows if r.get("action") in CONVERSATIONAL]
+    out["count"] = len(conv)
+    out["kinds"] = [r["action"] for r in conv]
     if rows:
         out["last_at"] = rows[0]["created_at"]
         try:

@@ -149,8 +149,15 @@ def as_hint(artefact: Optional[dict], subject: str) -> str:
     what makes the offer actionable, and she never sees the raw link.
     """
     if not artefact:
+        # Which meal is coming. The picker allows a food offer in the ninety
+        # minutes before a declared meal — and then the composer said "lunch ke
+        # liye" at 18:18, when the meal 72 minutes away was dinner. It had no
+        # way to know.
+        meal = _next_meal_label(subject)
         return (f"Offer this specifically: {subject}. Mention nothing else "
-                f"they like.")
+                f"they like."
+                + (f" If you name a meal, it is {meal} — nothing else is close."
+                   if meal else ""))
 
     kind  = artefact.get("kind")
     title = (artefact.get("title") or "").strip()
@@ -307,3 +314,27 @@ def axis_hint(artefact: dict) -> str:
                 f"same time: \"{title}\". Mention the era, not the year."
                 + tail)
     return f"Offer this: \"{title}\"." + tail
+
+
+def _next_meal_label(subject: str = "") -> Optional[str]:
+    """The meal actually approaching, in her own schedule."""
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from memory.declared import get_declared
+        d = get_declared("default")
+        tz = ZoneInfo(d.place.timezone)
+        now = datetime.now(tz)
+        now_min = now.hour * 60 + now.minute
+        best, gap = None, 10 ** 6
+        for name, at in (d.rhythm.meals or {}).items():
+            try:
+                h, m = str(at)[:5].split(":")
+                mins = int(h) * 60 + int(m)
+            except Exception:
+                continue
+            if 0 <= mins - now_min < gap:
+                best, gap = name, mins - now_min
+        return best
+    except Exception:
+        return None

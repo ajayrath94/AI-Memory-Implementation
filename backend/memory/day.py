@@ -267,13 +267,46 @@ def boundary_hint(user_id: str, b: Dict) -> str:
     done = b.get("done")
     nxt  = b.get("next")
 
+    # What was offered before this event, and whether she took it up. An offer
+    # at 11:30 and a boundary at 13:30 are the same conversation an hour apart
+    # — "khichdi kaisi bani?" is the companion having listened, where "khana
+    # kaisa tha?" is the companion asking again.
+    #
+    # Only when she ACCEPTED. Raising something she declined, or ignored, is
+    # worse than never having offered it.
+    took_up = None
+    if done:
+        try:
+            from supabase_store import get_client
+            from datetime import timedelta
+            since = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+            rows = (get_client().table("suggestions")
+                    .select("label,reaction,intent")
+                    .eq("user_id", user_id).eq("reaction", "accepted")
+                    .neq("intent", "probe")
+                    .gte("created_at", since)
+                    .order("created_at", desc=True).limit(1).execute()).data or []
+            if rows:
+                took_up = rows[0].get("label")
+        except Exception as e:
+            print(f"[Day] offer lookup failed: {e}")
+
     parts = []
     if done:
-        parts.append(
-            f"Their {done['label'] or done['kind']} was at {done['due_at']} and "
-            f"they have not mentioned it. Ask how it went — once, lightly, the "
-            f"way you would ask a friend. Not whether they did it."
-        )
+        if took_up:
+            parts.append(
+                f"Earlier you suggested {took_up} and they said yes. Ask how "
+                f"THAT went — by name, not in general. They told you an hour "
+                f"ago; asking 'khana kaisa tha' as though you had forgotten is "
+                f"worse than not asking."
+            )
+        else:
+            parts.append(
+                f"Their {done['label'] or done['kind']} was at {done['due_at']} "
+                f"and they have not mentioned it. Ask how it went — once, "
+                f"lightly, the way you would ask a friend. Not whether they "
+                f"did it."
+            )
     if nxt:
         line = (f"Next is {nxt['label'] or nxt['kind']} at {nxt['due_at']}. "
                 f"Ask what they are planning.")
