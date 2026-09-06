@@ -352,7 +352,11 @@ function WeightRow({ pillar, value, onChange, theme }: {
   onChange: (v: number) => void
   theme: any
 }) {
-  const steps  = [0.1, 0.3, 0.5, 0.7, 1.0, 1.3, 1.5, 1.8, 2.0]
+  // Four steps, matching the four labels this already displays. Nine dots
+  // meant a touch target under twenty points — half what a thumb needs — so
+  // setting a level took several attempts. And nobody was ever aiming at the
+  // seventh of nine; they were aiming at "High".
+  const steps  = [0.3, 1.0, 1.5, 2.0]
   const label  = value < 0.5 ? 'Low' : value < 1.2 ? 'Normal' : value < 1.6 ? 'High' : 'Max'
   const lcolor = value < 0.5 ? theme.textMuted : value < 1.2 ? Colors.accentGreen : value < 1.6 ? Colors.accentWarm : Colors.accentRed
 
@@ -368,10 +372,16 @@ function WeightRow({ pillar, value, onChange, theme }: {
           {steps.map(v => (
             <TouchableOpacity
               key={v}
-              style={[styles.weightDot, { backgroundColor: theme.bgInput },
-                value >= v && { backgroundColor: pillar.color }]}
+              // Padding rather than a bigger bar: the target extends past
+              // what is drawn, so a thumb lands on it without the row
+              // getting taller.
+              style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 3 }}
+              hitSlop={{ top: 12, bottom: 12, left: 6, right: 6 }}
               onPress={() => onChange(v)}
-            />
+            >
+              <View style={[styles.weightDot, { backgroundColor: theme.bgInput },
+                value >= v && { backgroundColor: pillar.color }]} />
+            </TouchableOpacity>
           ))}
         </View>
       </View>

@@ -37,6 +37,7 @@ function isLightHex(hex: string): boolean {
 
 import { syncReminderNotifications, registerPushToken } from '../services/notificationService'
 import { loadLanguage, useT } from '../hooks/useT'
+import { loadModel } from '../store/appStore'
 
 export default function RootLayout() {
   // ── All hooks at top, no conditionals before them ──
@@ -49,6 +50,7 @@ export default function RootLayout() {
   // a caregiver may have changed it from the dashboard.
   const langUserId = useAppStore(s => s.userId)
   useEffect(() => { loadLanguage(langUserId) }, [langUserId])
+  useEffect(() => { loadModel() }, [])
   const [open, setOpen] = useState(false)
   const anim     = useRef(new Animated.Value(COLLAPSED_W)).current
   const fadeAnim = useRef(new Animated.Value(0)).current

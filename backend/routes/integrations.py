@@ -272,6 +272,26 @@ def get_music_recommendations(user_id: str, query: str = None):
         url     = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={encoded}&type=video&videoCategoryId=10&key={api_key}&maxResults=5&regionCode=IN"
         data    = http_get(url)
 
+        # Which of these will actually play in an embed. Search does not say,
+        # so it takes a second call — and without it the player appears, fails,
+        # and hands off to the YouTube app, which reads as a crash even though
+        # the fallback is working. Music is the most commonly blocked kind,
+        # which is most of what gets offered here.
+        embeddable = set()
+        try:
+            ids = ",".join(i.get("id", {}).get("videoId", "")
+                           for i in data.get("items", []) if i.get("id", {}).get("videoId"))
+            if ids:
+                st = http_get(
+                    f"https://www.googleapis.com/youtube/v3/videos"
+                    f"?part=status&id={ids}&key={api_key}")
+                for v in st.get("items", []):
+                    if (v.get("status") or {}).get("embeddable"):
+                        embeddable.add(v.get("id"))
+        except Exception as e:
+            print(f"[Integrations] embeddable check failed: {e}")
+            embeddable = None      # unknown: let everything through
+
         videos = []
         for item in data.get("items", []):
             snippet  = item.get("snippet", {})
@@ -283,6 +303,9 @@ def get_music_recommendations(user_id: str, query: str = None):
                 "youtube_url": f"https://www.youtube.com/watch?v={video_id}",
                 "thumbnail":   snippet.get("thumbnails", {}).get("medium", {}).get("url"),
                 "video_id":    video_id,
+                # The app shows a player when this is true and a tap-through
+                # card when it is not.
+                "embeddable":  (video_id in embeddable) if embeddable is not None else True,
             })
 
         return {

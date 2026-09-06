@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { create } from 'zustand'
 import { MODELS } from '../constants'
 
@@ -55,7 +56,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   memoryUsed: false,
 
   addMessage:    (msg)   => set(s => ({ messages: [...s.messages, msg] })),
-  setModel:      (model) => set({ model }),
+  setModel:      (model) => {
+    set({ model })
+    // Held in memory only, so every launch reverted to MODELS[0] — and when
+    // that was a model with no credits the app looked broken on opening.
+    AsyncStorage.setItem('model', model).catch(() => {})
+  },
   setLoading:    (v)     => set({ loading: v }),
   setSessionId:  (id)    => set({ sessionId: id }),
   setLastSeenAt: (t)     => set({ lastSeenAt: t }),
@@ -107,3 +113,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 }))
+
+// Read back on launch, beside loadLanguage(). Without this the persisted
+// choice is written and never used.
+export async function loadModel() {
+  try {
+    const saved = await AsyncStorage.getItem('model')
+    if (saved) useAppStore.getState().setModel(saved)
+  } catch {}
+}

@@ -113,13 +113,17 @@ export const API_BASE   = __DEV__ ? `https://${DEV_IP}` : 'https://ai-memory-imp
 export const API_KEY    = 'jSQ2qdMyXMJq4Y8dwcQuDjkc7zp_vB79uHvCvDTKVZA'
 
 // ── AI Models ──────────────────────────────────────────────────────────────────
+// Gemini first because it is what the backend is actually using — Anthropic
+// billing would not take an Indian card and Vertex refused a quota. With
+// Claude first, every launch reset to a model with no credits and the app
+// looked broken on opening.
 export const MODELS = [
+  { label: 'Gemini Flash',  value: 'gemini-flash-latest',        provider: 'Google'    },
   { label: 'Claude Haiku',  value: 'claude-haiku-4-5',           provider: 'Anthropic' },
   { label: 'Claude Sonnet', value: 'claude-sonnet-4-20250514',    provider: 'Anthropic' },
-  { label: 'Gemini Flash',  value: 'gemini-flash-latest',        provider: 'Google'    },
   { label: 'Gemini Pro',    value: 'gemini-pro-latest',          provider: 'Google'    },
   { label: 'DeepSeek',      value: 'deepseek-chat',              provider: 'DeepSeek'  },
   // GPT-4o Mini: gpt-4o-mini (OpenAI) — re-add once billing is added to the OpenAI account
 ]
 
-export const DEFAULT_MODEL = 'claude-haiku-4-5'
+export const DEFAULT_MODEL = 'gemini-flash-latest'

@@ -23,7 +23,7 @@ export function YouTubePlayer({ video }: Props) {
   const [playing,  setPlaying]  = useState(false)
   const [loading,  setLoading]  = useState(false)
 
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${video.video_id}?autoplay=1&playsinline=1&rel=0&modestbranding=1&fs=1`
+  const embedUrl = `https://www.youtube.com/embed/${video.video_id}?autoplay=1&playsinline=1&rel=0&modestbranding=1&fs=1&origin=https://www.youtube.com&enablejsapi=1`
 
   const handlePlay = () => {
     setPlaying(true)
@@ -43,7 +43,12 @@ export function YouTubePlayer({ video }: Props) {
           </View>
         )}
         <WebView
-          source={{ uri: embedUrl }}
+          // YouTube refuses an embed with no valid origin — that is error
+          // 153. A WebView sends null or file://, so the frame has to claim
+          // one and the request has to carry a matching referer.
+          source={{ uri: embedUrl,
+                    headers: { Referer: 'https://www.youtube.com' } }}
+          originWhitelist={['*']}
           style={styles.webview}
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
