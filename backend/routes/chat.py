@@ -14,7 +14,11 @@ class ProactiveContext(BaseModel):
 
 class ChatRequest(BaseModel):
     text:       str
-    model:      str = "claude-haiku-4-5"
+    # Gemini, because that is what has credit. The chat path goes through
+    # litellm rather than llm.py, so it uses whatever model string the app
+    # sends — and anything defaulting to Claude fails with a billing error
+    # while notifications, which do go through llm.py, keep working.
+    model:      str = "gemini-flash-latest"
     session_id: Optional[str] = None
     user_id:    str = "default"
     context:    Optional[ProactiveContext] = None
@@ -97,7 +101,7 @@ class EditRequest(BaseModel):
     old_message_id:  str
     old_reply_id:    Optional[str] = None
     new_text:        str
-    model:           str = "claude-haiku-4-5"
+    model:           str = "gemini-flash-latest"
     session_id:      Optional[str] = None
     user_id:         str = "default"
 
