@@ -10,7 +10,7 @@ The decision is logged immediately; outcomes are stamped on later as they happen
 from datetime import datetime, timezone
 
 
-def _idem_key(user_id: str, action: str) -> str:
+def _idem_key(user_id: str, action: str, detail: str = "") -> str:
     """user + THEIR-LOCAL-day + action — one fire per user's own day, so a
     redeploy/retry can't double-send. Uses the user's timezone (not UTC), or a
     daily reminder near midnight could double-fire across the UTC date boundary."""
@@ -21,7 +21,13 @@ def _idem_key(user_id: str, action: str) -> str:
         day = datetime.now(tz).strftime("%Y-%m-%d")
     except Exception:
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return f"{user_id}:{day}:{action}"
+    # The detail too, where there is one. user:day:action alone meant ONE
+    # boundary a day and ONE medication reminder a day — her Thyronorm at 07:00
+    # and her BP tablet at 20:00 collided, and four of the five daily
+    # boundaries were suppressed as duplicates of the first. Two boundaries
+    # about the same event still collapse, which is the point.
+    tail = f":{detail.strip()[:40]}" if detail else ""
+    return f"{user_id}:{day}:{action}{tail}"
 
 
 def log_decision(decision: dict, sources: dict = None) -> dict:
@@ -35,7 +41,8 @@ def log_decision(decision: dict, sources: dict = None) -> dict:
 
     action = decision.get("action", "UNKNOWN")
     outcome = "suppressed" if action == "SILENCE" else "decided"
-    idem = _idem_key(decision.get("user_id", ""), action)
+    idem = _idem_key(decision.get("user_id", ""), action,
+                     str(decision.get("detail") or ""))
 
     row = {
         "user_id":        decision.get("user_id"),
