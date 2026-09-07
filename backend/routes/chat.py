@@ -52,8 +52,12 @@ async def chat(req: ChatRequest):
             # puch rahe ho aur main aapko puch raha tha") and every proactive
             # open wrote a fake user turn into the session for the summarizer
             # and extractor to read back as something the user had said.
-            from supabase_store import get_or_create_session, save_message
-            session = get_or_create_session(req.session_id, req.model, req.user_id)
+            # session_for, not get_or_create_session. The app opens the
+            # conversation with no session_id, so this created a fresh one on
+            # every launch — refresh the app, get a new session, and the
+            # thread splits again.
+            from supabase_store import session_for, save_message
+            session = session_for(req.user_id, req.model, req.session_id)
             sid = session["id"]
             saved = save_message(sid, "assistant", script, req.model)
 

@@ -158,6 +158,7 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
         print(f"[Suggest] recent read failed: {e}")
 
     best = None
+    eligible = []
     for r in rows:
         if r["id"] in recent_ids:
             continue
@@ -189,11 +190,23 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
             if _weather_blocks(cat, moment["weather"]):
                 continue
 
-        best = r
-        break
+        eligible.append(r)
 
-    if not best:
+    if not eligible:
         return None
+
+    # Drawn by strength rather than taken in order. Ordering by strength and
+    # keeping the first survivor meant the same subject won every time until
+    # its three-day cooldown, then the next one did — ten picks in a row
+    # returned Kumar Sanu, and before that ten returned Shakira. Preference
+    # without variety is mechanical, and she notices.
+    #
+    # Squared, so a strong interest is clearly favoured without the weaker
+    # ones becoming unreachable: at 8.9 against 4.0, Kishore Kumar comes up
+    # about five times as often as Gadar, not always and not never.
+    import random
+    weights = [max(float(r.get("strength") or 1.0), 0.1) ** 2 for r in eligible]
+    best = random.choices(eligible, weights=weights, k=1)[0]
     # The category comes along: it decides what kind of thing can be fetched
     # for this — a song, a recipe, or nothing at all.
     attrs = best.get("attributes")
