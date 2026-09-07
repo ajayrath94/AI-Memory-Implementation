@@ -447,8 +447,14 @@ def compose(user_id: str, intent: str = "check_in",
     # health to Low changed nothing about what arrived on her phone.
     weights_note = ""
     try:
-        from memory.pillar_weights import build_weights_prompt
-        weights_note = build_weights_prompt(user_id) or ""
+        # Not for a reminder. The weights say "pay more attention to
+        # entertainment", the medication task says "only the dose that is
+        # due", and the two fought — the reminder arrived wrapped in Kishore
+        # Kumar. A caregiver adjusting focus is shaping conversation, not
+        # medication.
+        if intent not in ("medication", "safety"):
+            from memory.pillar_weights import build_weights_prompt
+            weights_note = build_weights_prompt(user_id) or ""
     except Exception as e:
         print(f"[Context] weights failed: {e}")
 

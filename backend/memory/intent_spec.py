@@ -84,8 +84,10 @@ SCOPE = {
         # pick lunch at 8pm. The due item comes in as a hint instead.
         "sources": ["memory", "patterns"],
         "task": ("A medication is due right now. Remind them warmly and name "
-                 "it. One line. Do not mention meals, walks, or anything else "
-                 "from their day — only the dose that is due."),
+                 "it. One line. Do not mention meals, walks, music, films, or anything "
+                 "else they like — only the dose that is due. Do not say how "
+                 "you feel about reminding them."
+                 ),
         "forbid_medication": False,
     },
     "recommendation": {
