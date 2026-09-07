@@ -48,6 +48,33 @@ def _call_haiku(prompt: str, max_tokens: int = 500) -> str:
 
 # ── Session summarizer ─────────────────────────────────────────────────────────
 
+def title_for(summary: str, user_id: str = "") -> str:
+    """A few words naming what the conversation was about.
+
+    The first user message was standing in for this, and as a label it does
+    not say much — "Haan le lungi" tells her nothing about which conversation
+    it was. Drawn from the summary rather than the transcript, so it costs one
+    small call rather than reading everything again.
+    """
+    if not (summary or "").strip():
+        return ""
+    try:
+        from llm import ask
+        t = ask(
+            "Here is a summary of a conversation:\n\n"
+            f"{summary[:1200]}\n\n"
+            "Give it a title of three to six words, in the same language the "
+            "summary is written in. Name what it was ABOUT — 'dawai aur shaam "
+            "ki sair', not 'baatcheet'. No quotes, no punctuation at the end, "
+            "nothing else.",
+            max_tokens=40)
+        t = " ".join(t.split()).strip(' "\'.')
+        return t[:60]
+    except Exception as e:
+        print(f"[Summary] title failed: {e}")
+        return ""
+
+
 def summarize_session(messages: List[dict], user_id: str = "") -> str:
     """
     Summarize a single session's messages into a concise summary.

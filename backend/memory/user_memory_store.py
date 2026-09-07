@@ -419,11 +419,24 @@ def process_session_end(session_id: str, user_id: str = "default"):
         return
 
     centroid = compute_session_centroid(session_id)
-    db.table("sessions").update({
+
+    # A title naming what it was about, replacing the first user message that
+    # stood in for one. "Haan le lungi" is what she said; it does not say
+    # which conversation this was.
+    upd = {
         "summary":              session_summary,
         "summary_generated_at": "now()",
         "pillar_centroid":      centroid,
-    }).eq("id", session_id).execute()
+    }
+    try:
+        from memory.summarizer import title_for
+        t = title_for(session_summary, user_id)
+        if t:
+            upd["title"] = t
+    except Exception as e:
+        print(f"[Session] title failed: {e}")
+
+    db.table("sessions").update(upd).eq("id", session_id).execute()
 
     # 4. Get existing user memory
     existing         = get_user_memory(user_id)
