@@ -200,7 +200,11 @@ def todays_ledger(user_id: str) -> Dict:
         rows = (_db().table("proactive_events")
                 .select("action,created_at,delivered_at")
                 .eq("user_id", user_id)
-                .not_.is_("delivered_at", "null")
+                # Not filtered on delivered_at. A user with no push token —
+                # Kamala — never had anything marked delivered, so her ledger
+                # was permanently empty and she got MORE messages, not fewer.
+                # A failure to deliver is not permission to send again.
+                .neq("action", "SILENCE")
                 .gte("created_at", start.astimezone(timezone.utc).isoformat())
                 .order("created_at", desc=True).execute()).data or []
     except Exception as e:
