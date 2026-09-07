@@ -183,11 +183,11 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                             # the companion said it, and the next reply may be
                             # about it.
                             try:
-                                from supabase_store import (get_or_create_session,
+                                from supabase_store import (session_for,
                                                             save_message)
-                                sess = get_or_create_session(None, "claude-haiku-4-5", uid)
+                                sess = session_for(uid)
                                 save_message(sess["id"], "assistant", script,
-                                             "claude-haiku-4-5")
+                                             "gemini-flash-latest")
                             except Exception as _se:
                                 print(f"[Proactive] session write failed: {_se}")
 

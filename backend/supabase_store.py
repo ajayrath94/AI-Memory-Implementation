@@ -49,6 +49,28 @@ def get_session(session_id: str) -> Optional[dict]:
 # session begins. This is what makes cross-session memory build correctly.
 CONTINUATION_WINDOW_HOURS = 4
 
+def session_for(user_id: str = "default", model: str = "gemini-flash-latest",
+                session_id: Optional[str] = None) -> dict:
+    """The session a message belongs in. Use this; do not call
+    get_or_create_session(None, ...) directly.
+
+    Passing None to get_or_create_session ALWAYS creates, so every caller that
+    did so opened a fresh session — three within six minutes on one afternoon,
+    and her conversation fragmented into single-line pieces. It was fixed once
+    in the scheduler and came back twice, because the knowledge lived at the
+    call site rather than in one place.
+
+    Continues the most recent session when she was here within the window, and
+    starts one otherwise.
+    """
+    if session_id:
+        return get_or_create_session(session_id, model, user_id)
+    latest = get_latest_session(user_id)
+    if latest and _hours_since(latest.get("updated_at", "")) < CONTINUATION_WINDOW_HOURS:
+        return latest
+    return get_or_create_session(None, model, user_id)
+
+
 def get_latest_session(user_id: str = "default") -> Optional[dict]:
     """Most recent session for this user (by updated_at)."""
     db = get_client()

@@ -6,7 +6,7 @@ uses the real environment rather than an approximation of it.
 """
 
 import os, json
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 from typing import List
 
@@ -134,10 +134,21 @@ def debug_proactive(user_id: str, hour: int = None):
 
 
 @router.get("/scheduler-pass")
-def debug_scheduler_pass(dry_run: bool = True):
-    """Run one scheduler pass. dry_run=true (default) decides but does NOT log."""
+def debug_scheduler_pass(background: BackgroundTasks, dry_run: bool = True,
+                         wait: bool = False):
+    """Run one scheduler pass. dry_run=true (default) decides but does NOT log.
+
+    Returns immediately unless wait=true. The pass composes a message per user
+    through the model, which takes well over the thirty seconds cron-job.org
+    allows before it gives up — so every scheduled run was recorded as a
+    timeout and the work was abandoned partway. Deciding and delivering
+    continues server-side; the caller only needs to know it started.
+    """
     from memory.scheduler import run_scheduler_pass
-    return run_scheduler_pass(dry_run=dry_run)
+    if wait:
+        return run_scheduler_pass(dry_run=dry_run)
+    background.add_task(run_scheduler_pass, dry_run=dry_run)
+    return {"status": "started", "dry_run": dry_run}
 
 
 @router.get("/memory-trace/{user_id}")
