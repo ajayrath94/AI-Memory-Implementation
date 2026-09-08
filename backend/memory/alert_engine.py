@@ -114,7 +114,7 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
     since = (now - timedelta(days=7)).isoformat()
     try:
         sessions = (db.table("sessions")
-                    .select("valence,soft_flags,acute,created_at,summary,source")
+                    .select("id,valence,soft_flags,acute,created_at,summary,source")
                     .eq("user_id", user_id).gte("created_at", since)
                     .order("created_at", desc=True).limit(20).execute()).data or []
         # A seeded session is indistinguishable from a real one. One written to
@@ -131,7 +131,26 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
     alerts = []
 
     # ── ACUTE — any acute session in the window → immediate critical ────────────
-    acute = next((s for s in sessions if s.get("acute")), None)
+    # An acute session alerts ONCE. The window is seven days and the cooldown
+    # is one, so a single mention of chest pain would email a caregiver every
+    # night for a week — which is how the seeded test session sent a real
+    # alert about invented data, and how a real incident becomes noise.
+    acute = None
+    for s in sessions:
+        if not s.get("acute"):
+            continue
+        try:
+            from supabase_store import get_client
+            done = (get_client().table("care_alerts").select("id")
+                    .eq("user_id", user_id).eq("source_session", s["id"])
+                    .limit(1).execute()).data or []
+            if done:
+                continue
+        except Exception:
+            pass          # no such column yet: fall back to alerting
+        acute = s
+        break
+
     if acute:
         # Her own words. The message said only "an acute concern was detected",
         # so a son received something alarming with no idea what he was being
@@ -156,6 +175,7 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
             "alert_type": "emergency", "severity": "critical",
             "message": msg + " Please check on them right away.",
             "pillar": "HEALTH_WELLNESS",
+            "source_session": acute["id"],
         }]
 
     # ── RULES pre-filter — is there a candidate pattern worth the LLM? ──────────
@@ -494,6 +514,9 @@ def log_alert(user_id: str, caregiver_id: str, alert: dict, sent, channels: str 
             # not" is exactly what you want to see when a caregiver says they
             # never heard anything.
             "sent_via":     channels or ("email" if sent else "failed"),
+            # So one incident does not alert every night for a week: the
+            # window is seven days and the cooldown is one.
+            "source_session": alert.get("source_session"),
             "sent_at":      datetime.now(timezone.utc).isoformat(),
         }).execute()
     except Exception as e:

@@ -407,11 +407,19 @@ def update_location_from_gps(user_id: str, lat: float, lng: float) -> dict:
 
         # Reuse existing travel-detection / caregiver notification
         home = profile.get("home_location") or profile.get("location")
-        if home and canonical and home.lower() not in canonical.lower():
+        # Only on arrival. The conversational path was guarded and this one
+        # was not, so the caregiver kept being told she is away from home
+        # every time the app sent a GPS update — she moved weeks ago. Uses
+        # the same arrived_at the distance check writes: if this update did
+        # not set one, she has not just arrived.
+        if (home and canonical and home.lower() not in canonical.lower()
+                and updates.get("arrived_at")):
             try:
                 _notify_caregiver_travel(user_id, canonical, home, profile)
             except Exception as e:
                 print(f"[LocationEngine] caregiver notify failed: {e}")
+        elif home and canonical and home.lower() not in canonical.lower():
+            print(f"[LocationEngine] {user_id} still away — not renotifying")
 
         return {"ok": True, "location": resolved, "lat": lat, "lng": lng}
 

@@ -173,7 +173,13 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                         from memory.push_sender import send_push
                         from memory.persona_names import get_companion_name
 
-                        script = (generate_proactive_script(uid, action=action) or {}).get("script", "")
+                        try:
+                            _r = generate_proactive_script(uid, action=action)
+                        except Exception as _ge:
+                            # "no script, skipped" was hiding the reason.
+                            print(f"[Proactive] compose failed for {uid}: {_ge}")
+                            _r = None
+                        script = (_r or {}).get("script", "")
                         if script:
                             # Write it to her session before pushing. A
                             # proactive message currently exists only on the
