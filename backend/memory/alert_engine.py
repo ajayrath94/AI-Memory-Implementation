@@ -203,6 +203,24 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
     if not (sev or persistent or clustered or low_mood):
         return []   # no candidate → no LLM call, no alert
 
+    # Which conversation is this pattern actually ABOUT? The newest one that
+    # contributed a signal. Everything below attaches it as source_session so
+    # the same evidence cannot alert twice.
+    #
+    # Without this, one incident alerted three times. Her chest pain tripped the
+    # acute branch (which dedups per session), the valence branch, AND
+    # severity_candidates below — three detectors, three emails, one event. And
+    # because the window is seven days while the cooldown is one, the pattern
+    # alerts would have re-sent daily for a week off a single conversation.
+    def _contributed(s):
+        if _normalise_flags(s.get("soft_flags")):
+            return True
+        v = s.get("valence")
+        return v is not None and float(v) <= -0.3
+
+    signal_sid = next((s["id"] for s in sessions if _contributed(s)),
+                      sessions[0]["id"] if sessions else None)
+
     if sev:
         print(f"[AlertEngine] severity candidate: {sev['level']} ({sev['reason']})")
         if sev["level"] == "acute":
@@ -211,6 +229,7 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
                 "message": ("Several serious signs have appeared in the last few "
                             "days. Please check on them today."),
                 "pillar": "HEALTH_WELLNESS",
+                "source_session": signal_sid,
             }]
 
     # ── LLM confirm — is this genuinely a concerning decline pattern? ──────────
@@ -222,6 +241,21 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
     val_summary = ", ".join(
         f"{float(s['valence']):+.1f}" for s in reversed(sessions) if s.get("valence") is not None
     ) or "n/a"
+
+    # When the signals happened. Handed only flags and quotes, the model assumed
+    # everything was current and wrote "they mentioned experiencing chest pain
+    # today" about a conversation from the previous afternoon — sent to a son
+    # who would reasonably act on the word today.
+    def _age(ts):
+        try:
+            d = (now - datetime.fromisoformat(str(ts).replace("Z", "+00:00"))).days
+        except Exception:
+            return "recently"
+        return "today" if d <= 0 else ("yesterday" if d == 1 else f"{d} days ago")
+
+    when_summary = ", ".join(
+        _age(s.get("created_at")) for s in sessions[:5]) or "unknown"
+    newest_age = _age(sessions[0].get("created_at")) if sessions else "unknown"
     try:
         import anthropic
         client = __import__("llm").client()
@@ -233,6 +267,13 @@ appeared:
   most serious level reached: {sev.get("level", "none") if sev else "none"}
   what they actually said: {quoted or "nothing recorded"}
   mood trajectory (oldest→newest valence, -1 low .. +1 good): {val_summary}
+  when these conversations happened (newest first): {when_summary}
+  the most recent of them was {newest_age}
+
+TIME: the signals above are NOT necessarily from today. The most recent one was
+{newest_age}. Never write "today" unless it says today — a caregiver reading
+"they mentioned chest pain today" about something said two days ago will act on
+the wrong information. Say when it actually happened, or leave the timing out.
 
 Is this a CONCERNING pattern of decline a caregiver should be told about — e.g.
 persistent fatigue, growing withdrawal or loneliness, a steady mood drop, several
@@ -272,6 +313,7 @@ No prose, only JSON."""
                 "severity": d.get("severity", "medium"),
                 "message": d.get("message") or "A pattern of declining wellbeing has been noticed. A check-in may help.",
                 "pillar": "SADNESS",
+                "source_session": signal_sid,
             })
     except Exception as e:
         print(f"[AlertEngine] decline LLM confirm failed: {e}")
@@ -281,6 +323,7 @@ No prose, only JSON."""
                 "alert_type": "sadness", "severity": "medium",
                 "message": "Recent conversations suggest a possible dip in wellbeing. A check-in may help.",
                 "pillar": "SADNESS",
+                "source_session": signal_sid,
             })
     return alerts
 
@@ -317,25 +360,36 @@ def detect_alerts(user_id: str) -> List[dict]:
 
     # 2. A single strongly-negative recent session → immediate distress signal
     try:
-        recent = (db.table("sessions").select("valence,created_at")
+        # id included so the alert can be tied to the incident that caused it.
+        # Without it this branch emitted source_session=None, which no dedup
+        # could match: the chest-pain conversation alerted here seven minutes
+        # after she spoke (valence -0.7 is read straight off the session, no
+        # summarisation needed), that untracked alert occupied the 24h
+        # type-level cooldown, and the acute alert for the SAME conversation
+        # was suppressed until the cooldown expired — arriving a day later,
+        # reading as a fresh emergency.
+        recent = (db.table("sessions").select("id,valence,created_at")
                   .eq("user_id", user_id).not_.is_("valence", "null")
                   .order("created_at", desc=True).limit(3).execute()).data or []
     except Exception:
         recent = []
-    vals = [float(s["valence"]) for s in recent if s.get("valence") is not None]
-    if vals:
-        latest = vals[0]
+    scored = [s for s in recent if s.get("valence") is not None]
+    if scored:
+        latest_row = scored[0]
+        latest = float(latest_row["valence"])
         if weighted_ok("STRESS") and latest <= -0.8 and not any(a["severity"] == "critical" for a in alerts):
             alerts.append({
                 "alert_type": "emergency", "severity": "critical",
                 "message": f"A recent conversation showed significant emotional distress. Please reach out soon.{(' Noted conditions: ' + ', '.join(conditions[:2])) if conditions else ''}",
                 "pillar": "STRESS",
+                "source_session": latest_row.get("id"),
             })
         elif weighted_ok("SADNESS") and latest <= -0.6 and not any(a["alert_type"] in ("sadness", "emergency") for a in alerts):
             alerts.append({
                 "alert_type": "sadness", "severity": "high" if lonely else "medium",
                 "message": f"A recent conversation showed low mood{' — and they appear to live alone' if lonely else ''}. Emotional support or a call from family may help.",
                 "pillar": "SADNESS",
+                "source_session": latest_row.get("id"),
             })
 
     return alerts
@@ -371,8 +425,43 @@ def should_notify(relationship: dict, alert_type: str) -> bool:
     return relationship.get(field, True)
 
 
+def already_alerted_for_session(user_id: str, source_session: str) -> bool:
+    """Has this exact incident already been sent to a caregiver?
+
+    The right granularity for dedup is the conversation that caused the alert,
+    not the alert's type. One incident, one email — no matter which detector
+    noticed it or how many times the heartbeat re-runs.
+    """
+    if not source_session:
+        return False
+    try:
+        from supabase_store import get_client
+        rows = (get_client().table("care_alerts").select("id")
+                .eq("user_id", user_id)
+                .eq("source_session", source_session)
+                .limit(1).execute()).data or []
+        return bool(rows)
+    except Exception as e:
+        # No such column, or the query failed. Fall through to the time-based
+        # check rather than silently suppressing — a duplicate email is
+        # recoverable, a missed emergency is not.
+        print(f"[AlertEngine] session dedup check failed: {e}")
+        return False
+
+
 def was_recently_notified(user_id: str, alert_type: str, hours: int = 24) -> bool:
-    """Prevent duplicate alerts within X hours."""
+    """Prevent repeat alerts of the same TYPE within X hours.
+
+    This is the right rule for pattern alerts — "she has seemed withdrawn this
+    week" should not arrive nightly. It is the wrong rule for an incident, and
+    applying it to both is what delayed a chest-pain alert by twenty-four
+    hours: a valence alert about the same conversation had gone out minutes
+    earlier under the same type, so the acute alert was suppressed until the
+    window expired and then delivered as though it were new.
+
+    Callers must therefore check already_alerted_for_session FIRST and use
+    this only for alerts with no incident to key on.
+    """
     try:
         from supabase_store import get_client
         db        = get_client()
@@ -568,12 +657,40 @@ def run_alert_engine(user_id: str, allow_test: bool = False) -> dict:
     profile   = get_user_profile(user_id) or {}
     user_name = profile.get("name") or user_id
 
-    # Filter out alerts that were recently notified (24h cooldown)
+    # Two dedup rules, and which one applies depends on what the alert IS.
+    #
+    #   an INCIDENT (has source_session) — one email per conversation, forever.
+    #     The 24h type cooldown must not apply: it cannot tell a repeat of the
+    #     same incident from a second, genuinely new one, and it suppressed a
+    #     critical chest-pain alert for a full day because a lower-grade alert
+    #     about the very same conversation had been sent minutes before.
+    #
+    #   a PATTERN (no source_session) — 24h cooldown, as before. "She has
+    #     seemed low this week" is not tied to one conversation and should not
+    #     arrive nightly.
     fresh_alerts = []
     for alert in alerts:
-        if was_recently_notified(user_id, alert["alert_type"]):
+        src      = alert.get("source_session")
+        severity = (alert.get("severity") or "low").lower()
+
+        # 1. Same incident, already sent. Applies to every alert that names the
+        #    conversation it came from — which, since pattern alerts now carry
+        #    one too, is all of them. One event, one email.
+        if src and already_alerted_for_session(user_id, src):
+            print(f"[AlertEngine] Skipping {alert['alert_type']} — "
+                  f"already alerted for session {str(src)[:8]}")
+            continue
+
+        # 2. Same TYPE within 24h. Right for patterns; wrong for emergencies,
+        #    which must never wait behind a lower-grade alert. A valence alert
+        #    about her chest pain went out first and held the "emergency" slot,
+        #    so the acute alert carrying her actual words — "Meko chest pain hai
+        #    aj" — was suppressed for a full day and then delivered as if new.
+        if severity not in ("critical", "acute") and \
+                was_recently_notified(user_id, alert["alert_type"]):
             print(f"[AlertEngine] Skipping {alert['alert_type']} — notified within 24h")
             continue
+
         fresh_alerts.append(alert)
 
     if not fresh_alerts:
