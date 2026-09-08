@@ -131,10 +131,30 @@ def detect_decline_pattern(user_id: str, db) -> List[dict]:
     alerts = []
 
     # ── ACUTE — any acute session in the window → immediate critical ────────────
-    if any(s.get("acute") for s in sessions):
+    acute = next((s for s in sessions if s.get("acute")), None)
+    if acute:
+        # Her own words. The message said only "an acute concern was detected",
+        # so a son received something alarming with no idea what he was being
+        # alarmed about — he would ring in a panic without knowing whether it
+        # was her chest, a fall, or something she said about wanting to die.
+        # The summarizer already captures the quote alongside the flag.
+        said = ""
+        try:
+            for f in _normalise_flags(acute.get("soft_flags")):
+                q = (f.get("quote") or "").strip()
+                if q and f.get("severity") == "high":
+                    said = q
+                    break
+                if q and not said:
+                    said = q
+        except Exception as e:
+            print(f"[AlertEngine] quote read failed: {e}")
+
+        msg = (f"She said: \u201c{said}\u201d." if said
+               else "An acute concern was detected in a recent conversation.")
         return [{
             "alert_type": "emergency", "severity": "critical",
-            "message": "An acute concern was detected in a recent conversation. Please check on them right away.",
+            "message": msg + " Please check on them right away.",
             "pillar": "HEALTH_WELLNESS",
         }]
 
