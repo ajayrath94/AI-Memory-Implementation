@@ -307,7 +307,13 @@ export default function ProfileScreen() {
               )}
 
               {/* LTM-observed interests */}
-              {interests?.ltm_interests && interests.ltm_interests.length > 0 && (
+              {/* Hidden. ltm_patterns.text holds whatever the classifier stored —
+                  her own messages, the companion's messages, and bare pillar
+                  names like "HEALTH_WELLNESS, JOY, SEARCH". None of that is a
+                  topic she discusses, and the heading claims it is. The
+                  declared and computed interests above are clean and say the
+                  same thing better. */}
+              {false && interests?.ltm_interests && interests.ltm_interests.length > 0 && (
                 <View style={styles.interestGroup}>
                   <Text style={styles.interestGroupLabel}>Nancy has noticed you often discuss</Text>
                   <View style={styles.chipRow}>
