@@ -190,7 +190,15 @@ def update_user_location(user_id: str, location: str, location_type: str):
 
             # If traveling away from home — notify caregiver
             if home and canonical and home.lower() not in canonical.lower():
-                _notify_caregiver_travel(user_id, canonical, home, profile)
+                # Only when she has just ARRIVED. This fired on every
+                # location write, so a caregiver was told she is away from
+                # home each time the app opened — she moved weeks ago. A
+                # notification that repeats is one that gets muted, and the
+                # muted channel is the same one the chest-pain alert uses.
+                if moved:
+                    _notify_caregiver_travel(user_id, canonical, home, profile)
+                else:
+                    print(f"[LocationEngine] {user_id} still away — not renotifying")
 
         elif location_type == "clear":
             db.table("user_profile").update({
