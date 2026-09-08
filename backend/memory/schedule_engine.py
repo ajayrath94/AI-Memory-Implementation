@@ -398,6 +398,9 @@ def generate_proactive_script(
     if composed:
         script = composed
 
+    if not script:
+        print(f"[Schedule] EMPTY script for {user_id} action={action} "
+              f"slot={slot} priority={priority} reason={reason}")
     return {
         "script":      script,
         "slot":        slot,
