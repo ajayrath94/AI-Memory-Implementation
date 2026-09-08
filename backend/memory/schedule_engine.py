@@ -354,6 +354,18 @@ def generate_proactive_script(
         if b:
             hints = (hints + "\n" if hints else "") + boundary_hint(user_id, b)
 
+    # What is true right now, for whoever is writing. An offer before her walk
+    # could not say "chhata le jaana" because the weather was fetched on every
+    # pick and thrown away.
+    if intent in ("recommendation", "boundary", "greeting"):
+        try:
+            from memory.suggestions import moment_facts
+            mf = moment_facts(user_id)
+            if mf:
+                hints = (hints or "") + mf
+        except Exception as e:
+            print(f"[Schedule] moment facts failed: {e}")
+
     picked = None
     if intent == "recommendation":
         try:
@@ -539,8 +551,11 @@ RULES:
   unless you know they care about it.
 - If something in their routine is happening around now, that is usually the
   most natural thing to mention.
-- Never list their conditions back at them. "Ghutne ka dard kaisa hai?" is
-  warm; "Aaj knee pain aur chronic knee pain ka dhyan rakhna" is a chart.
+- Their conditions are context for what you SUGGEST, never a subject to open
+  on. Offered "ghutne ka dard kaisa hai?" as the warm example, every message
+  became that question — a boundary about her walk and an offer of music both
+  opened by asking about her knee. A separate check handles health; this is
+  not it. Do not ask after any condition, and do not list them back.
 - Use their name{f" ({name})" if name else ""} naturally, not in every sentence.
 - Match how they speak. If they use Hinglish, use Hinglish.
 - Do not invent events, appointments, or things they did not tell you. If their

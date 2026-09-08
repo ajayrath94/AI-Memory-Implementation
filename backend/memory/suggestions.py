@@ -379,3 +379,57 @@ def expire_stale(user_id: Optional[str] = None) -> int:
     for r in rows:
         apply_reaction(r["user_id"], r, "no_response")
     return len(rows)
+
+def moment_facts(user_id: str, moment: dict = None) -> str:
+    """The world as it is, for whoever is writing the next message.
+
+    Shared by offers and boundaries on purpose: an offer that knows it is
+    raining and a follow-up that does not would contradict each other an hour
+    apart.
+    """
+    m = moment or _moment(user_id)
+    lines = []
+
+    w = m.get("weather") or {}
+    if w:
+        bits = []
+        temp = w.get("temp_c")
+        if temp is not None:
+            bits.append(f"{round(float(temp))}°C")
+        if w.get("description"):
+            bits.append(str(w["description"]))
+        if bits:
+            lines.append("Weather where they are: " + ", ".join(bits) + ".")
+        # The route writes this in their language and it is better than
+        # anything assembled from the raw fields.
+        if w.get("advice"):
+            lines.append(str(w["advice"]))
+
+    v = m.get("valence")
+    flags = m.get("flags") or []
+    if v is not None and v <= -0.3:
+        lines.append(
+            "The last few conversations were heavy. Do NOT mention that or ask "
+            "about it. Offer something familiar rather than something new — "
+            "this is not the afternoon to introduce them to a singer they have "
+            "never heard of.")
+    elif v is not None and v >= 0.3:
+        lines.append("The last few conversations went well.")
+
+    # Named plainly, because an offer that cuts across a bad knee is worse than
+    # no offer. What to do about it is the composer's judgement.
+    # Deliberately NOT told. "Do not raise it" was in the instruction and both
+    # the offer and the boundary opened with "aapke ghutne ka dard kaisa hai" —
+    # naming a thing is more tempting than not naming it, and the only reliable
+    # way to keep it out of the message is to keep it out of the prompt.
+    #
+    # It still shapes the choice: pick_suggestion reads the same flags and
+    # leans familiar over novel. The composer simply never learns why.
+
+    if not m.get("at_home"):
+        lines.append("They are away from home at the moment.")
+
+    if not lines:
+        return ""
+    return ("\n\nWHAT IS TRUE RIGHT NOW — facts, not instructions about tone:\n"
+            + "\n".join(f"- {l}" for l in lines))

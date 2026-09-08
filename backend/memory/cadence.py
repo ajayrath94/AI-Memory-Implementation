@@ -216,7 +216,12 @@ def todays_ledger(user_id: str) -> Dict:
     # seventeen minutes after a boundary — the boundary was not in the ledger,
     # so there was nothing to space against. Her phone does not care which
     # kind a message was.
-    conv = [r for r in rows if r.get("action") in CONVERSATIONAL]
+    # The budget counts what she actually RECEIVED; spacing counts what was
+    # decided. Counting decisions for both meant a day where one message
+    # arrived and fourteen failed read as nine of six spent, and every
+    # remaining offer was refused for messages she never saw.
+    conv = [r for r in rows
+            if r.get("action") in CONVERSATIONAL and r.get("delivered_at")]
     out["count"] = len(conv)
     out["kinds"] = [r["action"] for r in conv]
     if rows:

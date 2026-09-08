@@ -266,6 +266,54 @@ def _flatten_item(item):
     return item
 
 
+# Measured rather than guessed. Against "knee pain": knee health 0.750,
+# knees health 0.761, knee pain management 0.793 — all the same fact. Back pain
+# 0.655, chest pain 0.625, blood pressure 0.598 — all different ones. The gap
+# between 0.655 and 0.750 is wide enough to sit in comfortably.
+_SIM_THRESHOLD = 0.72
+
+
+def _semantic_dup(candidate: str, existing: list):
+    """The key of an entry that means the same thing, or None.
+
+    Embeddings rather than substrings. Cached and batched by the classifier, so
+    a profile update costs one call for the new item and nothing for entries
+    already seen.
+    """
+    if not existing:
+        return None
+    try:
+        from classifier.pillar_classifier import embed_text, cosine_similarity
+        cv = embed_text(candidate)
+        if not cv:
+            return None
+        for key, val in existing:
+            ev = embed_text(str(val).lower().strip())
+            if not ev:
+                continue
+            if cosine_similarity(cv, ev) >= _SIM_THRESHOLD:
+                return key
+    except Exception as e:
+        print(f"[Profile] similarity check failed: {e}")
+    return None
+
+
+    try:
+        from classifier.pillar_classifier import embed_text, cosine_similarity
+        cv = embed_text(candidate)
+        if not cv:
+            return None
+        for key, val in existing:
+            ev = embed_text(str(val).lower().strip())
+            if not ev:
+                continue
+            if cosine_similarity(cv, ev) >= _SIM_THRESHOLD:
+                return key
+    except Exception as e:
+        print(f"[Profile] similarity check failed: {e}")
+    return None
+
+
 def _merge_list(existing, new, cap: int = 25, owner: str = "", user_id: str = "") -> list:
     best, order = {}, []
     for item in (_flatten_item(x) for x in list(existing or []) + list(new or [])):
@@ -276,6 +324,36 @@ def _merge_list(existing, new, cap: int = 25, owner: str = "", user_id: str = ""
         if not val:
             continue
         if k not in best:
+            # A restatement of something already here. The canonical key is the
+            # phrase, so "Knee pain", "knee pain management", "Knee health" and
+            # "knee pain recovery" were four entries about one knee — her
+            # profile reached twenty-one health concerns, nearly all of them the
+            # same fact, and every prompt carried the lot.
+            #
+            # Containment catches most of it: the longer phrasing usually holds
+            # the shorter one. What it misses ("knees health" against "knee
+            # pain") the weekly collapse handles.
+            low = str(val).lower().strip()
+            dup = next((ek for ek in order
+                        if low and (low in str(best[ek]).lower()
+                                    or str(best[ek]).lower() in low)), None)
+            # Containment only catches restatements that share a phrase.
+            # "Knee health" and "knee pain" are the same fact and share
+            # nothing, so both survived — which is how twenty-one concerns
+            # about one knee accumulated. Meaning, not spelling.
+            if dup is None and low:
+                dup = _semantic_dup(low, [(ek, best[ek]) for ek in order])
+            # Containment only catches restatements that share a phrase.
+            # "Knee health" and "knee pain" are the same fact and share
+            # nothing, so both survived — which is how twenty-one concerns
+            # about one knee accumulated. Meaning, not spelling.
+            if dup is None and low:
+                dup = _semantic_dup(low, [(ek, best[ek]) for ek in order])
+            if dup:
+                # Keep the plainer wording of the two.
+                if len(val) < len(best[dup]):
+                    best[dup] = val
+                continue
             best[k] = val
             order.append(k)
         elif len(val) < len(best[k]):
