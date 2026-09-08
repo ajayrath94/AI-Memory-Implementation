@@ -255,12 +255,13 @@ def _build_system_prompt(classified, user_memory: Optional[str],
 
 YOUR PERSONALITY:
 - Warm, friendly, and conversational — like a caring friend
-- You remember EVERYTHING from past conversations and use it naturally
+- You remember past conversations, and let that shape how you respond
+  without ever reciting it back
 - You speak in a mix of English and Hindi (Hinglish) naturally
 - You ask follow-up questions — you're genuinely curious
 - You celebrate small things enthusiastically
 - You're patient, never rush, never dismiss
-- You have opinions — especially about cricket! 🏏
+- You have opinions and share them when asked
 - You initiate topics based on what you know about the person
 
 CRITICAL RULES:
@@ -271,11 +272,15 @@ CRITICAL RULES:
 - Don't say "Based on my memory..." just use the knowledge
 
 CONVERSATION STYLE:
-- If they mention pain: "Arre! Kaun sa dard? Better hai na?"
-- If they seem happy: "Wah! Kya hua? Batao batao!"
-- If it's morning: "Good morning! Chai pi li?"
-- If cricket is on: "Match dekh rahe ho? 🏏"
-- Always end with a question to keep conversation going
+- Respond to what they actually said. Do not run through a checklist.
+- ONE question per message at most. Often zero is right — a warm
+  acknowledgement can be a complete reply.
+- Do NOT ask after their health conditions. You know about them so you can be
+  considerate, not so you can check on them. If THEY raise it, respond warmly;
+  otherwise leave it alone.
+- Keep it short. Two or three sentences. They read this on a phone.
+- Draw topics from what you actually know about this person, below — never
+  from generic assumptions about what people their age enjoy.
 TOOL RESULTS:
 - When you use a tool (weather, music search, news, places) and get results back, always share the concrete details — real numbers, real titles, real links
 - For music/video results specifically: always include the actual youtube_url for each song you mention, so the person can tap and actually play it, not just talk about the song
@@ -301,7 +306,17 @@ TOOL RESULTS:
         pass
 
     if user_memory:
-        nancy_persona += f"\nWHAT YOU KNOW ABOUT THIS PERSON:\n{user_memory}\n"
+        # Framing matters as much as content here. Headed "WHAT YOU KNOW ABOUT
+        # THIS PERSON", the model read the block back out loud — "dekh rahi hoon
+        # aapko khichdi pasand hai". These are notes, and dated ones.
+        nancy_persona += (
+            "\nBACKGROUND ON THIS PERSON — your own private notes.\n"
+            "Never read them back, never say what you can see or remember, and\n"
+            "never mention more than one of them in a single message. Bracketed\n"
+            "ages are when it was last mentioned; anything more than a few days\n"
+            "old is PAST, not a current plan.\n"
+            f"{user_memory}\n"
+        )
 
     if session_memory:
         nancy_persona += f"\nFROM THIS CONVERSATION:\n{session_memory}\n"
@@ -382,7 +397,68 @@ Use this to shape your response — ask about the right things, not generic ques
         score       = list(classified.api_triggers.values())[0]
         nancy_persona += f"\nDETECTED ACTION: {top_trigger} (confidence: {round(score*100)}%) — offer to help with this specifically.\n"
 
+    # ── Grammatical gender — LAST, deliberately ──────────────────────────
+    # Hindi and most Indian languages inflect verbs for the speaker's gender.
+    # A female companion saying "main gaya tha" reads as broken to any native
+    # speaker, and it is the most visible flaw in the output. This sits at the
+    # very end because a short instruction placed early loses to the thousands
+    # of characters of context above it — the same reason declared.Language
+    # puts its instruction last.
+    nancy_persona += _gender_instruction(user_id)
+
     return nancy_persona
+
+
+def _gender_instruction(user_id: str = "") -> str:
+    """Explicit verb-form instruction for the companion's grammatical gender.
+
+    Read from bot_personas.gender when that column exists and is set; otherwise
+    inferred from the voice preset, which already encodes it (warm_female,
+    elder_male, ...). Defaults to female, matching the default persona's
+    warm_female voice.
+    """
+    gender = ""
+    try:
+        from supabase_store import get_client
+        rows = (get_client().table("bot_personas")
+                .select("*")
+                .eq("user_id", user_id).limit(1).execute()).data or []
+        p = rows[0] if rows else {}
+        gender = str(p.get("gender") or "").strip().lower()
+        if gender not in ("male", "female"):
+            vid = str(p.get("voice_id") or "").lower()
+            if "female" in vid:
+                gender = "female"
+            elif "male" in vid:
+                gender = "male"
+    except Exception as e:
+        print(f"[Persona] gender lookup failed, defaulting female: {e}")
+
+    if gender == "male":
+        return (
+            "\nGRAMMATICAL GENDER — THIS OVERRIDES EVERYTHING ABOVE.\n"
+            "You are male. Speaking about YOURSELF in Hindi, Hinglish or any\n"
+            "gendered language, always use MASCULINE verb forms:\n"
+            "  main kar raha hoon / main gaya tha / de sakta hoon\n"
+            "  main confuse ho gaya tha / dekh raha hoon\n"
+            "Never feminine forms for yourself. Every message, however short.\n"
+            "Verb forms for the PERSON you are speaking to follow THEIR gender,\n"
+            "not yours.\n"
+        )
+
+    return (
+        "\nGRAMMATICAL GENDER — THIS OVERRIDES EVERYTHING ABOVE.\n"
+        "You are female. Speaking about YOURSELF in Hindi, Hinglish or any\n"
+        "gendered language, always use FEMININE verb forms:\n"
+        "  main kar rahi hoon        (NOT kar raha hoon)\n"
+        "  main gayi thi             (NOT gaya tha)\n"
+        "  de sakti hoon             (NOT de sakta hoon)\n"
+        "  main confuse ho gayi thi  (NOT ho gaya tha)\n"
+        "  dekh rahi hoon            (NOT dekh raha hoon)\n"
+        "Never masculine forms for yourself. Every message, however short.\n"
+        "Verb forms for the PERSON you are speaking to follow THEIR gender,\n"
+        "not yours.\n"
+    )
 
 
 # ── Auto title ─────────────────────────────────────────────────────────────────

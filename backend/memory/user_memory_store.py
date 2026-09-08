@@ -532,6 +532,32 @@ def process_session_end(session_id: str, user_id: str = "default"):
 
 # ── On session start ───────────────────────────────────────────────────────────
 
+def _ago(ts) -> str:
+    """Human age of a timestamp, for recall rendering.
+
+    A memory with no age on it reads as current. That is how a Janmashtami
+    mandir plan she mentioned before the festival came back days afterwards as
+    tonight's plan — the label was true, it just had no date attached.
+    """
+    if not ts:
+        return ""
+    try:
+        from datetime import datetime, timezone as _tz
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        d = (datetime.now(_tz.utc) - dt).days
+    except Exception:
+        return ""
+    if d <= 0:
+        return "today"
+    if d == 1:
+        return "yesterday"
+    if d < 7:
+        return f"{d}d ago"
+    if d < 31:
+        return f"{max(d // 7, 1)}w ago"
+    return f"{max(d // 30, 1)}mo ago"
+
+
 def _parse_centroid(raw):
     """Centroids stored as stringified float arrays (text col). Parse to list."""
     if raw is None:
@@ -553,7 +579,9 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
     try:
         db = get_client()
         rows = (db.table("interest_clusters")
-                .select("label,pillar,strength,event_count,centroid,trend,last_state,current_state,relationship,attributes")
+                .select("label,pillar,strength,event_count,centroid,trend,"
+                        "last_state,current_state,relationship,attributes,"
+                        "last_event")
                 .eq("user_id", user_id).eq("status", "active")
                 .order("strength", desc=True).limit(60).execute()).data or []
     except Exception as e:
@@ -562,7 +590,11 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
     if not rows:
         return ""
 
-    always = rows[:8]
+    # Health is deliberately excluded from the ALWAYS block. It stays reachable
+    # through `relevant` below — so when she raises her knee, the context is
+    # there — but it is not pushed into every message. Injecting it
+    # unconditionally is why every reply opened by asking about her knee.
+    always = [r for r in rows if r.get("pillar") != "HEALTH_WELLNESS"][:8]
     relevant = []
     if current_embedding:
         scored = []
@@ -598,6 +630,7 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
         label = item["label"]
         trend = item.get("trend")
         pillar = item.get("pillar", "")
+        age = _ago(item.get("last_event"))
         # People / family: surface attributes so the person is a rich anchor.
         attrs = item.get("attributes") or {}
         if isinstance(attrs, str):
@@ -612,11 +645,12 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
             if loc: bits.append(f"in {loc}")
             if occ: bits.append(occ)
             if bits:
-                return f"{label} ({', '.join(bits)})"
+                base = f"{label} ({', '.join(bits)})"
+                return f"{base} [{age}]" if age else base
         # Health / finance: surface the trajectory.
         if pillar in ("HEALTH_WELLNESS", "FINANCE") and trend and trend not in ("new", "stable"):
-            return f"{label} ({trend})"
-        return label
+            return f"{label} ({trend}, {age})" if age else f"{label} ({trend})"
+        return f"{label} [{age}]" if age else label
 
     lines = []
     for pillar, items in by_pillar.items():

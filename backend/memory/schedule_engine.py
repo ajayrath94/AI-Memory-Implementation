@@ -28,9 +28,19 @@ from typing import Optional
 
 # ── Time slot detection ────────────────────────────────────────────────────────
 
-def get_time_slot(hour: int = None) -> str:
+def get_time_slot(hour: int = None, user_id: str = "") -> str:
+    # Server time is UTC in production. Using it meant 13:31 IST resolved to
+    # hour=8 and slot "morning" — a "Good morning" greeting sent at half past
+    # one in the afternoon, every proactive message shifted 5.5h early, and the
+    # late_night suppression window landing on the wrong half of the day.
     if hour is None:
-        hour = datetime.now().hour
+        try:
+            from memory.time_context import time_context
+            hour = time_context(user_id)["hour"]
+        except Exception as e:
+            print(f"[Schedule] time_context failed, falling back to server "
+                  f"time (WRONG SLOT LIKELY): {e}")
+            hour = datetime.now().hour
     if   6  <= hour < 10: return "morning"
     elif 10 <= hour < 14: return "midday"
     elif 14 <= hour < 17: return "afternoon"
@@ -263,7 +273,7 @@ def generate_proactive_script(
 
     profile  = get_user_profile(user_id) or {}
     memory   = get_user_memory(user_id) or {}
-    slot     = force_slot or get_time_slot(hour)
+    slot     = force_slot or get_time_slot(hour, user_id)
     priority, reason = detect_priority(memory, profile)
 
     # Don't proactively contact during late night unless critical
