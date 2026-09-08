@@ -7,9 +7,7 @@ This tracks who the person fundamentally is:
   - Name, age, location
   - Family structure
   - Health conditions
-  - Interests and hobbies
-  - Personality traits
-  - Communication style
+  - Interests and hobbies (computed from clusters, not stored here)
   - Life context
 
 Profile is extracted from conversations using Claude Haiku
@@ -63,6 +61,10 @@ _RESOLVE_KEYS = {
     "music":      "music interest",
     "entertainment": "entertainment interest",
     "hobbies":    "hobby",
+    # Eight stored variants of "Hindu (Namaste greeting)" reached every prompt.
+    # The parenthetical strip collapses most, but resolving on the way in stops
+    # them being written separately in the first place.
+    "religion":   "religious practice",
 }
 # "medications" is deliberately absent: "BP tablet (old)" and "(new)" record a
 # switch, and resolving them together would erase it.
@@ -298,22 +300,6 @@ def _semantic_dup(candidate: str, existing: list):
     return None
 
 
-    try:
-        from classifier.pillar_classifier import embed_text, cosine_similarity
-        cv = embed_text(candidate)
-        if not cv:
-            return None
-        for key, val in existing:
-            ev = embed_text(str(val).lower().strip())
-            if not ev:
-                continue
-            if cosine_similarity(cv, ev) >= _SIM_THRESHOLD:
-                return key
-    except Exception as e:
-        print(f"[Profile] similarity check failed: {e}")
-    return None
-
-
 def _merge_list(existing, new, cap: int = 25, owner: str = "", user_id: str = "") -> list:
     best, order = {}, []
     for item in (_flatten_item(x) for x in list(existing or []) + list(new or [])):
@@ -337,12 +323,6 @@ def _merge_list(existing, new, cap: int = 25, owner: str = "", user_id: str = ""
             dup = next((ek for ek in order
                         if low and (low in str(best[ek]).lower()
                                     or str(best[ek]).lower() in low)), None)
-            # Containment only catches restatements that share a phrase.
-            # "Knee health" and "knee pain" are the same fact and share
-            # nothing, so both survived — which is how twenty-one concerns
-            # about one knee accumulated. Meaning, not spelling.
-            if dup is None and low:
-                dup = _semantic_dup(low, [(ek, best[ek]) for ek in order])
             # Containment only catches restatements that share a phrase.
             # "Knee health" and "knee pain" are the same fact and share
             # nothing, so both survived — which is how twenty-one concerns
@@ -414,6 +394,18 @@ def extract_profile_from_session(session_id: str, user_id: str) -> dict:
     a family member. The schema below reads as a form to fill in, so the model
     fills it from whatever proper nouns are in range — the rules exist to make
     an empty field the expected answer rather than a failure.
+
+    Two fields were removed from the schema rather than filtered downstream.
+    "traits" asked for an adjective every session and appended it forever: one
+    profile reached forty-one, including "Warm"/"warm", "Caring"/"caring", and
+    "Forgetful" — an unevidenced clinical-adjacent judgement about an elderly
+    person, sitting permanently in her companion's prompt with no way for her
+    to see or remove it. Nothing read the field but the prompt builder, and no
+    dedup helps: the entries are not restatements, they are accretion.
+    "notable_events" had the same shape and worse content — it held "Doctor
+    appointment scheduled for August 14th at 12 PM", exactly the dated instance
+    the summarizer forbids, long after the date had passed. Events belong in
+    the reminder and calendar tables, which carry a cancelled/pending status.
     """
     messages = get_session_messages(session_id)
     if not messages:
@@ -495,14 +487,11 @@ Extract into this exact JSON structure (use empty string/dict/list if not found)
     "concerns": ["symptom or worry the user stated"]
   }},
   "personality": {{
-    "traits": ["trait clearly evidenced in how the user writes"],
-    "emotional_state": "emotional state the user expressed",
-    "communication_style": "how they communicate"
+    "emotional_state": "emotional state the user expressed"
   }},
   "life_context": {{
     "occupation": "job the user says they have or had",
-    "living_situation": "ONLY if the user states who they live with",
-    "notable_events": ["event the user described"]
+    "living_situation": "ONLY if the user states who they live with"
   }}
 }}
 
@@ -551,6 +540,22 @@ def update_profile_from_session(session_id: str, user_id: str):
 
 # ── Build profile context for Nancy ───────────────────────────────────────────
 
+# Caps. Without them this block reached ~2,400 characters of undated,
+# duplicated text on every single message — longer than the dated cluster
+# recall and the running summary put together.
+_MAX_PER_LIST   = 5
+_MAX_CATEGORIES = 4
+
+
+def _join(vals, limit: int = _MAX_PER_LIST) -> str:
+    """Comma-join a capped list, noting how much was left out."""
+    vals = [str(v).strip() for v in (vals or []) if str(v).strip()]
+    if not vals:
+        return ""
+    shown, rest = vals[:limit], len(vals) - limit
+    return ", ".join(shown) + (f" (+{rest} more)" if rest > 0 else "")
+
+
 def build_profile_prompt(user_id: str) -> Optional[str]:
     """
     Build a concise profile summary to inject into Nancy's system prompt.
@@ -574,8 +579,11 @@ def build_profile_prompt(user_id: str) -> Optional[str]:
         lines.append(f"- Location: {current}")
     elif home:
         lines.append(f"- Location: {home}")
-    if profile.get("language_pref"):
-        lines.append(f"- Preferred language: {profile['language_pref']}")
+    # language_pref is deliberately absent. declared.Language.instruction owns
+    # how to write to this person and is placed last in the prompt on purpose;
+    # naming it here as well produced two instructions a few hundred characters
+    # apart, and the stored personality.communication_style said "English"
+    # while language_pref said "hinglish" in the same block.
 
     # Family
     family = profile.get("family", {})
@@ -584,36 +592,40 @@ def build_profile_prompt(user_id: str) -> Optional[str]:
         if family.get("spouse"):
             family_parts.append(f"spouse: {family['spouse']}")
         if family.get("children"):
-            family_parts.append(f"children: {', '.join(family['children'])}")
+            family_parts.append(f"children: {_join(family['children'])}")
         if family.get("grandchildren"):
-            family_parts.append(f"grandchildren: {', '.join(family['grandchildren'])}")
+            family_parts.append(f"grandchildren: {_join(family['grandchildren'])}")
         if family_parts:
             lines.append(f"- Family: {'; '.join(family_parts)}")
 
-    # Health
-    health = profile.get("health", {})
-    if health.get("conditions"):
-        lines.append(f"- Health conditions: {', '.join(health['conditions'])}")
-    if health.get("medications"):
-        lines.append(f"- Medications: {', '.join(health['medications'])}")
+    # Health is NOT rendered here. It reaches the companion through the cluster
+    # recall block, which is dated and similarity-gated, and through the running
+    # summary. A third undated copy was the reason every reply opened by asking
+    # after her knee. The medication guard in context_builder reads
+    # profile.health.medications directly and does not need it in the prose.
 
-    # Interests
-    interests = profile.get("interests", {})
+    # Interests, computed from clusters rather than the stored block. The stored
+    # one drifted to fifty-five entries — nineteen music variants including five
+    # spellings of one film soundtrack, eight rephrasings of "Hindu (Namaste
+    # greeting)", and topics mentioned once such as physics and Australia — of
+    # which almost none had a cluster behind them. Clusters carry a mention
+    # count and a date; the blob carries neither.
+    interests = {}
+    try:
+        from memory.interests_view import computed_interests
+        interests = computed_interests(user_id) or {}
+    except Exception as e:
+        print(f"[Profile] computed interests failed: {e}")
     interest_parts = []
     for category, items in interests.items():
-        if items:
-            vals = items if isinstance(items, list) else [items]
-            if vals:
-                interest_parts.append(f"{category}: {', '.join(str(v) for v in vals)}")
+        vals = [str(v) for v in (items if isinstance(items, list) else [items]) if v]
+        if vals:
+            interest_parts.append(f"{category}: {_join(vals)}")
     if interest_parts:
-        lines.append(f"- Interests: {'; '.join(interest_parts)}")
+        lines.append(f"- Enjoys: {'; '.join(interest_parts[:_MAX_CATEGORIES])}")
 
-    # Personality
-    personality = profile.get("personality", {})
-    if personality.get("traits"):
-        lines.append(f"- Personality: {', '.join(personality['traits'])}")
-    if personality.get("communication_style"):
-        lines.append(f"- Communication style: {personality['communication_style']}")
+    # personality.traits is NOT rendered. See extract_profile_from_session for
+    # why it is no longer written either.
 
     # Life context
     life = profile.get("life_context", {})
@@ -638,15 +650,20 @@ def build_profile_prompt(user_id: str) -> Optional[str]:
     if cultural.get("religion"):
         lines.append(f"- Religion: {cultural['religion']}")
     if cultural.get("practices"):
-        lines.append(f"- Religious practices: {', '.join(cultural['practices'])}")
-    if cultural.get("festivals"):
-        lines.append(f"- Festivals: {', '.join(cultural['festivals'])}")
+        lines.append(f"- Religious practices: {_join(cultural['practices'])}")
+    # Festivals are NOT rendered. A bare festival name with no date attached is
+    # a plan waiting to be invented: "Janmashtami" sat in this block, and days
+    # after the festival had passed the companion opened with "aapne kaha
+    # Janmashtami ke liye mandir jaana hai" — a temple visit the user never
+    # mentioned that week. A festival is only sayable once resolved against the
+    # calendar, which this function cannot do.
     if cultural.get("region"):
         lines.append(f"- Region: {cultural['region']}")
 
     if len(lines) == 1:
         return None  # Only header, nothing populated
 
-    lines.append("\nUse this profile to personalize responses. Address them by name if known.")
+    lines.append("\nThis is background, not a script. Mention at most one of these\n"
+                 "in a message, and only where it fits what they just said.")
     lines.append("Respect their religious beliefs, dietary preferences, and cultural background.")
     return "\n".join(lines)
