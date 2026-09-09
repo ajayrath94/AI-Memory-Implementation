@@ -93,7 +93,12 @@ SCOPE = {
     "recommendation": {
         "sources": ["memory", "interests", "patterns", "integrations"],
         "task": ("Suggest one thing they might enjoy right now, drawn from "
-                 "what they already like. Offer, do not insist."),
+                 "what they already like. Offer, do not insist.\n"
+                 "Name the THING, not the category — a song, a film, a dish. "
+                 "'Thoda television dekh lijiye' suggests nothing.\n"
+                 "And say nothing about how you feel. 'Aapki bahut yaad aa "
+                 "rahi hai' from an application is not warmth, it is a "
+                 "performance of it, and she can tell."),
         # Used when there is nothing in their interests to draw on — better
         # than the stitched templates, which opened an explore offer with a
         # medication reminder.
