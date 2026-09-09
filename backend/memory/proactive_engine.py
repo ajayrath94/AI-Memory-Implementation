@@ -73,8 +73,16 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
         due = []
     meds = [d for d in due if d.get("type") == "medication"]
     if meds:
-        labels = ", ".join(m.get("label", "dawai") for m in meds)
-        return decision("MEDICATION_REMINDER", "dose_due", labels, "high")
+        # Sorted, and one drug at a time. The idempotency key includes the
+        # detail, so "Thyroid, BP tablet" and "BP tablet, Thyroid" were two
+        # different keys — she was told four times this morning to take two
+        # tablets, because the batch changed shape as each dose came due and
+        # the list was never in a stable order.
+        #
+        # One reminder per drug per day. Two tablets an hour apart are two
+        # reminders an hour apart, which is what she actually needs.
+        names = sorted(m.get("label", "dawai") for m in meds)
+        return decision("MEDICATION_REMINDER", "dose_due", names[0], "high")
 
     # ── 0. Quiet gate — deep night, nothing non-critical ──
     if slot == "late_night":
