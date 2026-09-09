@@ -216,7 +216,19 @@ def boundary(user_id: str, now_min: Optional[int] = None) -> Optional[Dict]:
     if not evs:
         return None
 
-    conv = [e for e in evs if (e.get("kind") or "") in CONVERSATIONAL_KINDS]
+    # A tablet is not a conversation. "BP medicine" sits in her rhythm as a
+    # routine, so it produced a boundary — "9 baje wala routine theek se ho
+    # gaya na?" about a blood pressure tablet, half an hour after the dinner
+    # boundary said almost the same thing. Medication is a reminder; that path
+    # already handles it and names the drug.
+    def _is_medicine(e):
+        lab = (e.get("label") or "").lower()
+        return any(w in lab for w in ("medicine", "tablet", "dawai", "dose",
+                                      "thyronorm", "amlodipine", "goli"))
+
+    conv = [e for e in evs
+            if (e.get("kind") or "") in CONVERSATIONAL_KINDS
+            and not _is_medicine(e)]
 
     # What has just passed and was never spoken about.
     just_done = None

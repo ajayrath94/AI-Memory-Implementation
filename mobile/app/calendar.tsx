@@ -49,7 +49,17 @@ function catStyle(item: CalItem) {
 // ── format a UTC ISO string to IST (manual +5:30 offset — Hermes lacks tz support) ──
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
 function istDate(iso: string): Date {
-  const d = new Date(iso.includes('+') || iso.endsWith('Z') ? iso : iso + 'Z')
+  // A bare "06:30" from the schedule is not a timestamp. new Date("06:30Z") is
+  // Invalid Date, every getter returns NaN, and the screen read "NaN:NaN AM"
+  // under a heading of "Undefined, NaN Undefined" — while the routine screen
+  // showed the same times correctly, because it never parsed them.
+  let s = String(iso || '').trim()
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) {
+    const today = new Date().toISOString().slice(0, 10)
+    const [h, m] = s.split(':')
+    s = `${today}T${h.padStart(2, '0')}:${m}:00`
+  }
+  const d = new Date(s.includes('+') || s.endsWith('Z') ? s : s + 'Z')
   return new Date(d.getTime() + IST_OFFSET_MS)  // shifted so UTC getters read as IST
 }
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
@@ -57,6 +67,8 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 
 function istTime(iso: string): string {
   const d = istDate(iso)
+  // Anything still unparseable shows a dash rather than NaN.
+  if (isNaN(d.getTime())) return '—'
   let h = d.getUTCHours()
   const m = d.getUTCMinutes()
   const ampm = h >= 12 ? 'PM' : 'AM'
