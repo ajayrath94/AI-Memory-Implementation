@@ -527,6 +527,11 @@ RULES:
 - One or two sentences. Not a speech.
 - Say something only THIS person would hear — their routine, what they told
   you, what they like. Everything you mention must appear above.
+- NEVER name a person who is not in the context above. A thin profile is
+  not an invitation to fill the gap: asked to open warmly with nothing to draw
+  on, the composer wrote "Sunita ji ke saath baat hui aaj subah" about someone
+  who does not exist. An invented friend is worse than a plain greeting, and
+  once said it becomes something she has to correct.
 - Their conditions are context for what you SUGGEST, never a subject to open
   on. Offered "ghutne ka dard kaisa hai?" as the warm example, every message
   became that question — a boundary about her walk and an offer of music both
