@@ -128,6 +128,9 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
                 .select("id,label,pillar,relationship,current_state,"
                         "event_count,strength,attributes")
                 .eq("user_id", user_id).eq("status", "active")
+                # Events share this table and are not things to offer. "Beta
+                # Arjun aaya tha" is a memory, not a suggestion.
+                .neq("kind", "event")
                 .order("strength", desc=True).limit(40).execute()).data or []
     except Exception as e:
         print(f"[Suggest] cluster read failed: {e}")
