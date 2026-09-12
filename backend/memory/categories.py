@@ -172,11 +172,42 @@ def record_declared_interest(user_id: str, category: str, text: str) -> Optional
         )
         if cid:
             _mark_preference(user_id, cid, name, text, pillar)
+            # What does this belong under? "O Rangrez" is a song from Bhaag
+            # Milkha Bhaag, and filed as a sibling of "Bollywood songs" it
+            # reads as noise rather than depth.
+            #
+            # Usually nothing — a film, an artist and a cuisine all stand
+            # alone, and the proposal is asked to answer null when unsure.
+            try:
+                from memory.clusters import assign_parent
+                assign_parent(user_id, cid, name, category, pillar)
+            except Exception as _pe:
+                print(f"[Categories] parent failed: {_pe}")
+
+            # And things named in one sitting belong together, whether or not
+            # each could place itself. "Zinda" is unplaceable alone — several
+            # songs carry the name — but said alongside "O Rangrez" it is the
+            # same soundtrack. That she said them together is the evidence
+            # neither similarity nor the model has on its own.
+            try:
+                from memory.clusters import group_session
+                from supabase_store import session_for
+                group_session(user_id, session_for(user_id)["id"], category)
+            except Exception as _ge:
+                print(f"[Categories] grouping failed: {_ge}")
         return cid
     except Exception as e:
         print(f"[Categories] store failed for {text!r}: {e}")
         return None
 
+
+def _current_session(user_id: str):
+    """The conversation this is part of, or None."""
+    try:
+        from supabase_store import session_for
+        return session_for(user_id)["id"]
+    except Exception:
+        return None
 
 def _mark_preference(user_id: str, cluster_id: str, label: str,
                      native: str, pillar: str):
@@ -193,6 +224,11 @@ def _mark_preference(user_id: str, cluster_id: str, label: str,
             "strength": 1.0, "sentiment": 1.0, "salience": 0.8,
             "event_type": "likes", "relationship_type": "preference",
             "source": "setup",
+            # Which conversation this was named in. Without it nothing can
+            # tell three songs from one soundtrack apart from three songs
+            # named across three months — and that difference is the only
+            # evidence available for a title the model cannot place.
+            "session_id": _current_session(user_id),
         }).execute()
         recompute_cluster_trajectory(user_id, cluster_id)
     except Exception as e:

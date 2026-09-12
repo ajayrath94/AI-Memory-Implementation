@@ -791,7 +791,14 @@ def _extract_propositions(text: str, user_id: str = "") -> list:
     prompt = f'''You extract PROPOSITIONS (subject-relation-object facts) from an elderly person's message, including Hindi/Hinglish.{known_block}
 
 For EACH fact return an object:
-- subject: canonical name (translate common nouns to English: "ghutne ka dard"->"knee pain"; keep proper nouns transliterated: "Vikram")
+- subject: canonical name. Translate common nouns to English ("ghutne ka dard"
+  -> "knee pain"). TRANSLITERATE anything that names a particular thing — a
+  person, a film, a song, a place, a festival, a dish with a name — however
+  ordinary the words look: "Vikram", "Zinda", "Mera Yaar", "Sholay", "Dil".
+  A title is not vocabulary. "Zinda" means alive AND is a song; when a word
+  could be either, keep it as she said it. Translating "knee pain" wrongly
+  loses a little; translating a name loses the thing itself, and nothing
+  downstream can recover it.
 - subject_ref: proper_name | son | daughter | husband | wife | grandchild | mother | father | pronoun | self
 - relation: likes | stopped_liking | lives_in | works_as | is | has_condition | feels | did
 - object: canonical target ("Amreeka"->"America") or null

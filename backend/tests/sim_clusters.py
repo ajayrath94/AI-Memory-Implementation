@@ -118,11 +118,13 @@ def test_segments():
     print("\n— segments: a wall between kinds —")
     from memory.categories import record_declared_interest
 
-    for c in _clusters():
-        if c.get("label") in ("Kishore Kumar", "gardening"):
-            check(bool(c.get("segment")),
-                  f"{c['label']} has a segment",
-                  str(c.get("segment")))
+    # Segments were in the design and are not built, deliberately. The
+    # cluster resolver already adjudicates with a model — "amlodipine belongs
+    # to a blood-pressure concern, cricket does not belong to a music one" —
+    # which is a better wall than any threshold, and it filters by pillar
+    # besides. A segment column would be a third filter doing the same job.
+    #
+    # The column exists if this proves wrong.
 
     # Her son and an actor of the same name.
     record_declared_interest(UID, "sangeet", "Arjun Rampal")

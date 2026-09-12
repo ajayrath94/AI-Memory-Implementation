@@ -413,6 +413,42 @@ def process_session_end(session_id: str, user_id: str = "default"):
         "extraction_failed": bool(mood.get("extraction_failed")),
     }).eq("id", session_id).execute()
 
+    # 1b. What she talked about becomes what we know.
+    #
+    # Nothing in the live path did this. _extract_propositions and
+    # record_propositions existed and were called only by a debug route and
+    # two harnesses — so every cluster in the database came from the setup
+    # screen, and a month of her naming Kishore Kumar, her son and her knee
+    # produced none.
+    #
+    # Before the summary's early return, for the reason above it: a short
+    # exchange that names something still names it.
+    try:
+        hers = "\n".join(m.get("content", "")[:400] for m in messages
+                          if m.get("role") == "user")
+        if len(hers.strip()) >= 12:
+            from memory.profile_enricher import (_extract_propositions,
+                                                 record_propositions)
+            from classifier.pillar_classifier import classify_input
+            props = _extract_propositions(hers, user_id) or []
+            print(f"[UserMemory] {len(props)} propositions from {len(hers)} chars")
+            if props:
+                record_propositions(props, classify_input(hers), user_id,
+                                    session_id)
+                # Things named in one conversation belong together — the
+                # evidence neither similarity nor the model has alone.
+                from memory.clusters import group_session
+                group_session(user_id, session_id)
+    except Exception as e:
+        print(f"[UserMemory] cluster build failed: {e}")
+
+    # 1c. And what HAPPENED, with the date it happened on.
+    try:
+        from memory.events import extract_events
+        extract_events(user_id, messages)
+    except Exception as e:
+        print(f"[UserMemory] event extraction failed: {e}")
+
     # 2. Summarize. A session too short to summarise still had a mood.
     session_summary = summarize_session(messages, user_id)
     if not session_summary:
