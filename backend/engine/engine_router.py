@@ -47,6 +47,7 @@ def _retrieve_memory(
     session_id: str,
     user_id: str = "default",
     top_k: int = 5,
+    query_text: str = "",
 ) -> Optional[str]:
     """
     Pure embedding cosine similarity.
@@ -121,6 +122,23 @@ def _retrieve_memory(
         cleaned = _clean(r["text"])
         if cleaned and len(cleaned) > 3:
             lines.append(cleaned)
+
+    # And what HAPPENED, with the day it happened on.
+    #
+    # Asked "doctor ke paas kab gayi thi", the reply was "haal hi mein" —
+    # recently — while the event sat in storage with 2026-09-05 on it. STM and
+    # LTM hold what was said; only events carry the date, and retrieval was
+    # not reading them.
+    try:
+        from memory.events import find_events
+        for e in find_events(user_id, query_text or "", limit=3):
+            when = str(e.get("happened_on") or "")[:10]
+            what = str(e.get("label") or "").strip()
+            if what:
+                lines.append(f"{when}: {what}" if when else what)
+    except Exception as e:
+        print(f"[Retrieve] events failed: {e}")
+
     return "\n".join(lines) if lines else None
 
 
@@ -729,7 +747,9 @@ async def process_input(text: str, model: str,
     user_memory = build_memory_prompt(user_id, current_embedding=embedding)
 
     # 10. Within-session memory (EMBEDDING-BASED!)
-    session_memory = _retrieve_memory(embedding, sid, user_id)
+    # The text as well as the vector: events are matched on what she asked,
+    # and the date is the answer to "kab".
+    session_memory = _retrieve_memory(embedding, sid, user_id, query_text=text)
 
     # 11. Build context window
     context_messages = _build_context(sid, model)

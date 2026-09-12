@@ -106,6 +106,27 @@ Does NOT belong (answer NEW):
 - a different body part or condition (knee pain is not blood pressure)
 - a different topic entirely
 - a broader category than what is listed
+- ANOTHER THING OF THE SAME KIND. Two films are two films: "Bhaag Milkha
+  Bhaag" does not belong to "Sholay", and Kumar Sanu does not belong to
+  Kishore Kumar. A specific match belongs to "cricket" because cricket is
+  the ongoing interest and the match is an instance of it — but one named
+  work is never an instance of another named work. If both are particular
+  things rather than one being a category, answer NEW.
+- a NAMED thing into an unnamed category. "Kishore Kumar" must not merge
+  into "music", "dosa" must not merge into "food", "Sholay" must not merge
+  into "films". The merge keeps the listed label, so a name would become a
+  genre and the person or dish is gone. If what was mentioned has a name and
+  the listed concern does not, answer NEW.
+
+  This is about names versus CATEGORIES, not names versus names. A named work
+  contains its named parts: "O Rangrez" belongs to "Bhaag Milkha Bhaag" and
+  "Gabbar" belongs to "Sholay", because a song and a character are pieces of
+  the film itself. "Music" and "films" are categories; a particular film is
+  not.
+- anything where the listed concern is VAGUER than what was mentioned.
+  "Knee pain" must not merge into "pain": the merge keeps the listed label,
+  so a specific complaint would become a general one and the detail is gone
+  for good.
 
 When unsure, answer NEW — a wrong merge corrupts the timeline.
 
@@ -255,3 +276,166 @@ def reconcile(user_id: str, cluster_id: str, pillar: str):
                 label = _general_label(keep["label"], absorb["label"])
                 merge_clusters(user_id, keep["id"], absorb["id"], label)
                 return keep["id"]
+
+
+# What each side of the comparison is. Deliberately coarse — a long list
+# invites the model to split hairs, and every type here earns its place by
+# appearing in a rule below.
+_TYPES = ("condition", "medication", "symptom", "treatment", "person",
+          "place", "occupation", "work", "part_of_work", "cuisine", "dish",
+          "activity", "feeling", "other")
+
+
+def _classify_pair(mention: str, candidate: str) -> Optional[dict]:
+    """What are these two things? No judgement about their relationship.
+
+    One call, and the model is only asked things it is reliably good at.
+    """
+    prompt = f"""Two things someone might remember. Classify each.
+
+A: "{mention}"
+B: "{candidate}"
+
+Reply with JSON only:
+{{"a": {{"form": "named|kind", "type": "..."}},
+  "b": {{"form": "named|kind", "type": "..."}},
+  "treats": "..."}}
+
+form:
+  named  a particular thing — metformin, Anupamaa, Arjun, Sholay, Delhi,
+         Janmashtami, idli
+  kind   a class of things — health, television, music, films, dawai, khana,
+         bhakti, expenses, sport
+
+  The test is whether you could point at exactly one of it. "Dawai" is the
+  word for medicine, so it is a kind. "Metformin" is one drug, so it is named.
+
+type: {" | ".join(_TYPES)}
+  part_of_work  a song, an episode, a character — a piece of a larger work
+  occupation    doctor, teacher — what someone does
+  feeling       khushi, thakan, an empty house
+
+treats: only when A is a medication — name the condition it is for, plainly
+  ("diabetes", "blood pressure", "thyroid"). Otherwise "".
+
+No prose."""
+
+    try:
+        from llm import ask
+        raw = ask(prompt, max_tokens=200).replace("```json", "").replace("```", "")
+        d = json.loads(raw.strip())
+    except Exception as e:
+        print(f"[Merge] classify failed: {e}")
+        return None
+
+    a, b = d.get("a") or {}, d.get("b") or {}
+    if not (a.get("form") and b.get("form")):
+        return None
+    return {
+        "a_form": str(a.get("form", "")).lower(),
+        "a_type": str(a.get("type", "other")).lower(),
+        "b_form": str(b.get("form", "")).lower(),
+        "b_type": str(b.get("type", "other")).lower(),
+        "treats": str(d.get("treats") or "").lower().strip(),
+    }
+
+
+def _should_merge(mention: str, candidate: str, c: dict) -> bool:
+    """The rule. In code, so it cannot drift between domains.
+
+    Every path that is not explicitly a merge is a refusal — an unlisted
+    combination fragments rather than corrupting, and fragmentation is
+    recoverable by a later mention.
+    """
+    a_form, a_type = c["a_form"], c["a_type"]
+    b_form, b_type = c["b_form"], c["b_type"]
+
+    # A name never becomes a class. This alone is four of the seven wrong
+    # merges, and it needs no examples because it is structural: "diabetes"
+    # into "health" is the same shape as "Kishore Kumar" into "music".
+    # A category that is already one of her clusters IS a home — she has an
+    # interest in cricket, so a match belongs to it, and "South Indian food"
+    # is where idli goes. Refusing every kind cost twenty-three merges.
+    #
+    # What must not happen is a NAMED thing of the same type disappearing into
+    # its own class: Kishore Kumar into music, Anupamaa into television,
+    # diabetes into health. There the merge keeps the class and the name is
+    # gone.
+    if b_form == "kind":
+        _SAME_KIND = {
+            ("person", "person"), ("work", "work"), ("condition", "condition"),
+            ("medication", "medication"), ("place", "place"),
+            ("dish", "dish"), ("activity", "activity"),
+        }
+        if a_form == "named" and (a_type, b_type) in _SAME_KIND:
+            return False
+        # Only a genuine instance-of. The first attempt allowed anything
+        # through and knee pain joined diabetes, because the classifier calls
+        # diabetes a kind and knee pain a symptom — a pair that list happened
+        # to permit.
+        #
+        # So: named things that are examples of the class, and nothing else.
+        # A match is an instance of cricket, idli of South Indian food. A
+        # condition is never an instance of another condition.
+        return a_form == "named" and (a_type, b_type) in {
+            ("work", "activity"),        # a match, of cricket
+            ("part_of_work", "activity"),
+            ("dish", "cuisine"),
+            ("dish", "activity"),
+            ("person", "activity"),      # a player, of cricket
+            ("work", "work"),            # an episode named, of a serial
+        }
+
+    # A feeling is not part of anything. It should not have reached here —
+    # the durable-fact gate drops them — but khushi joining Arjun would make
+    # happiness a property of her son.
+    if a_type == "feeling" or b_type == "feeling":
+        return False
+
+    # Siblings. Two conditions, two people, two films, two dishes: neither
+    # contains the other, and the merge would keep the listed one.
+    if a_form == "named" and b_form == "named" and a_type == b_type:
+        return False
+
+    # A work contains its parts. A song joins its film, an episode its serial.
+    if a_type == "part_of_work" and b_type == "work":
+        return True
+
+    # A drug joins the condition it TREATS, and no other. Metformin reached
+    # blood pressure because both are health and the vectors were close; the
+    # code refuses it because metformin treats diabetes.
+    if a_type == "medication" and b_type == "condition":
+        treats = c.get("treats") or ""
+        cand = candidate.lower()
+        return bool(treats) and (treats in cand or cand in treats)
+
+    # What surrounds a condition: the symptom, the treatment, the doctor.
+    if a_type in ("symptom", "treatment", "occupation") and b_type == "condition":
+        return True
+
+    # What is known about a person: where they live, what they do. Three of
+    # the six misses were this — Delhi, doctor and beta all failed to reach
+    # Arjun, so facts about her son were not landing on her son.
+    if b_type == "person" and a_type in ("place", "occupation", "activity"):
+        return True
+
+    # A dish joins its cuisine. Not the reverse, and not two dishes.
+    if a_type == "dish" and b_type == "cuisine":
+        return True
+
+    return False
+
+
+def _adjudicate_v2(label: str, candidates: List[dict]) -> Optional[dict]:
+    """Same signature as _adjudicate. Classify, then decide.
+
+    Candidates are tried in cosine order, so the closest plausible one wins
+    and a merge is never chosen over a better-scoring alternative.
+    """
+    for cand in candidates:
+        c = _classify_pair(label, cand.get("label", ""))
+        if not c:
+            continue
+        if _should_merge(label, cand.get("label", ""), c):
+            return cand
+    return None

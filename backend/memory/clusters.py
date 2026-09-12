@@ -104,6 +104,24 @@ def reactivate(user_id: str, text: str, floor: float = REVIVE_FLOOR) -> List[Dic
                 # buys another twenty-eight days.
                 "last_event": now,
             }).eq("id", r["id"]).execute()
+            # And leave a trace. Strength alone says she mentioned this; the
+            # event log is what says WHEN, and trend is computed from events.
+            # Arjun reached strength 2.29 across six mentions with an event
+            # count of one, so his trajectory could never form — the lift was
+            # invisible to everything that reads history.
+            try:
+                _db().table("user_behavioral_events").insert({
+                    "user_id": user_id, "cluster_id": r["id"],
+                    "pillar": "GENERAL", "sub_pillar": "recall",
+                    "value": r.get("label"), "surface_form": text[:200],
+                    "strength": round(GAIN * s, 4),
+                    "sentiment": 0.5, "salience": round(s, 3),
+                    "event_type": "mentioned",
+                    "relationship_type": "recall",
+                }).execute()
+            except Exception as _ee:
+                print(f"[Reactivate] event write failed: {_ee}")
+
             revived.append({"label": r.get("label"), "score": round(s, 3),
                             "from": round(old, 2), "to": round(new, 2)})
         except Exception as e:
