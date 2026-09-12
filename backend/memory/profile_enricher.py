@@ -809,6 +809,22 @@ For EACH fact return an object:
     belong to the summary, and clustered they become things she supposedly
     has. relation=feels means transient_state, whatever it is about.
 
+    A QUESTION CREATES NO MEMORY OF WHAT IT ASKS ABOUT. "Meri sugar ki report
+    kaisi thi?" recorded a sugar report — so she now has one, and she never
+    did. "Mere pati ka naam kya tha?" recorded "asked about husband's name".
+    The thing being asked about is unknown to HER; recording it invents it.
+
+    AN EMPTY LIST IS A GOOD ANSWER. A question that states nothing yields
+    nothing — do not reach for something to return. "Sunita ke saath kab mili
+    thi main?" yielded "meet Sunita", as though the meeting were established;
+    "Mere pati ka naam kya tha?" yielded "asked about husband's name", which
+    narrates her asking rather than recording anything. Neither is a fact.
+    Never describe the act of asking.
+
+    A question may still carry facts, but never about its subject. "Kal doctor
+    ke paas gayi thi, report kaisi thi?" states that she went yesterday —
+    extract that. The report remains unknown and is not a fact.
+
     durable_fact    = still true next month. "knee pain", "son Shubham in Bangalore", "loves Kishore Kumar"
     action_request  = asking for something to be done. "remind me in 5 minutes", "paanch minute mein yaad dilana"
     scheduled_event = a specific thing at a specific time. "doctor kal 12 baje", "beta Sunday ko aa raha hai"
