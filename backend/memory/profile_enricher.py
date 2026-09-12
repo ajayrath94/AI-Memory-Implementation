@@ -804,6 +804,11 @@ For EACH fact return an object:
 - object: canonical target ("Amreeka"->"America") or null
 - entity_type: person | food | health | hobby | artist | media | place | belief | other
 - kind: durable_fact | action_request | scheduled_event | transient_state
+    A FEELING IS NEVER durable. "Bahut khushi hui", "ghar khali lag raha
+    hai", "mann nahi tha" are how a day went, not facts about her — they
+    belong to the summary, and clustered they become things she supposedly
+    has. relation=feels means transient_state, whatever it is about.
+
     durable_fact    = still true next month. "knee pain", "son Shubham in Bangalore", "loves Kishore Kumar"
     action_request  = asking for something to be done. "remind me in 5 minutes", "paanch minute mein yaad dilana"
     scheduled_event = a specific thing at a specific time. "doctor kal 12 baje", "beta Sunday ko aa raha hai"
@@ -951,6 +956,28 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                 a = pr.get("attributes") or {}
                 if isinstance(a, dict):
                     attrs.update({k: v for k, v in a.items() if v})
+
+            # What KIND of thing this is, carried from the extraction rather
+            # than guessed later. Without it every conversational cluster had
+            # no category, offerable_now could not place any of them, and a
+            # month of memory was invisible to the offer path.
+            #
+            # A concern is not an interest. "Knee pain" and "Kishore Kumar"
+            # both ended up in the same list, and only one of them is
+            # something to suggest on a quiet afternoon.
+            _CATEGORY = {
+                "artist": "sangeet", "media": "dekhna", "food": "khana",
+                "hobby": "shauk", "belief": "bhakti",
+            }
+            if etype in _CATEGORY:
+                attrs["category"] = _CATEGORY[etype]
+                attrs["kind"] = "interest"
+            elif etype == "health":
+                attrs["kind"] = "concern"
+            elif etype == "person":
+                attrs["kind"] = "person"
+            else:
+                attrs["kind"] = "other"
 
             # A person WITH a family relationship is FAMILY regardless of type
             # ("Vikram lives_in America" arrives as type=place, but he is her son).
