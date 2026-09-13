@@ -173,6 +173,13 @@ Answer with the tracked name ONLY if they are the same thing said differently
 Answer "NEW" if it is:
 - a broader or narrower category (arthritis vs knee pain; old Hindi songs vs Kishore Kumar)
 - a different instance of the same kind (back pain vs knee pain; Lata vs Kishore)
+- TWO DIFFERENT NAMES ARE TWO DIFFERENT PEOPLE. "Ramu" is not "Ramesh",
+  "Priya" is not "Priyanka", "Sunita" is not "Sunil". Sharing letters is not
+  sharing an identity, and merging them puts one person's life on another —
+  her dead husband's relation landed on the living milkman. Only a nickname
+  or an honorific makes two names one: "Kishore da" is "Kishore Kumar",
+  "Priya ji" is "Priya". Otherwise answer NEW.
+
 - A DIFFERENT PERSON WITH THE SAME NAME. If the tracked entry is a bahu and
   this one is a padosan, they are two people however identical the name. The
   relation given above is the evidence — when it conflicts with what is
