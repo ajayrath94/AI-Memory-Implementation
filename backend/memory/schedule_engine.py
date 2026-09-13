@@ -373,6 +373,15 @@ def generate_proactive_script(
             mf = moment_facts(user_id)
             if mf:
                 hints = (hints or "") + mf
+
+            # And where she is, if she has just got there. away.py was built
+            # for this and nothing ever called it — so a woman two days into
+            # a strange city was told nothing about it, while her son got an
+            # email saying local emergency resources had been surfaced.
+            from memory.away import hint as away_hint
+            ah = away_hint(user_id)
+            if ah:
+                hints = (hints or "") + "\n\n" + ah
         except Exception as e:
             print(f"[Schedule] moment facts failed: {e}")
 

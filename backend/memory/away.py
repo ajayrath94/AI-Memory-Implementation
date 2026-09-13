@@ -58,11 +58,23 @@ def phase(user_id: str) -> Optional[str]:
     return None
 
 
+# Where she is, and what was found there. A hospital does not move and a
+# temple does not move, so the answer is the same all fortnight — and without
+# this, every greeting during a two-week stay is a fresh Google Places call.
+_FOUND: dict = {}
+
+
 def _nearby(user_id: str, place_type: str, limit: int = 2) -> list:
     """The route takes a place_type and reads her coordinates itself, rather
     than a free-text query."""
     try:
         from routes.integrations import get_nearby_places
+        from memory.declared import get_declared
+        here = (get_declared(user_id).place.current or "").lower()
+        key = (user_id, here, place_type)
+        if key in _FOUND:
+            return _FOUND[key][:limit]
+
         data = get_nearby_places(user_id, place_type=place_type) or {}
         out = []
         for p in (data.get("places") or [])[:limit]:
@@ -70,9 +82,12 @@ def _nearby(user_id: str, place_type: str, limit: int = 2) -> list:
             if name:
                 out.append({"name": name, "address": p.get("address") or "",
                             "distance": p.get("distance") or ""})
+        _FOUND[key] = out
         return out
     except Exception as e:
-        print(f"[Away] places lookup failed for {query!r}: {e}")
+        # place_type, not query — the name in here was wrong, so any failure
+        # raised a NameError instead of logging one.
+        print(f"[Away] places lookup failed for {place_type!r}: {e}")
         return []
 
 
@@ -122,17 +137,33 @@ def hint(user_id: str) -> str:
             "not sightseeing."
         )
 
-    # local: her own life, where she happens to be
-    likes = []
-    for cat in ("khana", "shauk"):
-        likes += ((d.interests or {}).get(cat) or [])
-    if not likes:
+    # local: her own life, where she happens to be.
+    #
+    # Every category, not only food and hobbies — she is the same person in
+    # Mumbai as in Surat, and what she likes is what makes a strange city
+    # worth anything. The category decides what kind of place to look for.
+    _PLACE_FOR = {
+        "khana":   "restaurant",
+        "shauk":   "park",
+        "bhakti":  "temple",
+        "sangeet": "music store",
+        "dekhna":  "cinema",
+    }
+
+    import random
+    pool = []
+    for cat, place_type in _PLACE_FOR.items():
+        for subj in ((d.interests or {}).get(cat) or []):
+            pool.append((subj, place_type))
+    if not pool:
         return ""
 
-    subject = likes[0]
-    # A dish is not a place type. "restaurant" is the closest the route
-    # offers, and the subject is what makes the mention hers.
-    found = _nearby(user_id, "restaurant", limit=1)
+    # Not always the first. Taking likes[0] meant the same interest every
+    # time she was away, and she has more than one.
+    subject, place_type = random.choice(pool)
+    # A dish is not a place type, and neither is a singer. The route takes a
+    # kind of place; the subject is what makes the mention hers.
+    found = _nearby(user_id, place_type, limit=1)
     if not found:
         return ""
 
