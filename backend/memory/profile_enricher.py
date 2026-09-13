@@ -730,6 +730,22 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
                     .eq("user_id", user_id).eq("label", label).limit(1).execute()).data
         except Exception:
             dupe = None
+        # Same name, different person. Her daughter-in-law Priya and her
+        # neighbour Priya ji became one cluster — an exact-label match with
+        # nothing asked, so two people merged and neither is recoverable.
+        #
+        # The relation is the evidence and it is already extracted: a bahu is
+        # not a padosan. When both carry one and they differ, this is somebody
+        # else.
+        if dupe:
+            _old_rel = ((dupe[0].get("attributes") or {}) if isinstance(
+                dupe[0].get("attributes"), dict) else {}).get("relation")
+            _new_rel = (attributes or {}).get("relation")
+            if _old_rel and _new_rel and str(_old_rel).lower() != str(_new_rel).lower():
+                print(f"[Cluster] {label!r} is {_new_rel}, not {_old_rel} — "
+                      f"a different person")
+                dupe = None
+
         if dupe:
             d = dupe[0]
             merged_attrs = d.get("attributes") or {}
@@ -920,7 +936,15 @@ def _is_durable_fact(name: str, ptype: str = "", rel_type: str = "",
         # a companion the pain is getting worse; without this each one is
         # discarded and the cluster stays at a single event forever.
         # Everything else transient ("thak gayi hoon") still drops.
-        if not (k == "transient_state" and ptype == "health"):
+        # A PERSON is durable even when what they did is not. "Beta Mohan ka
+        # phone aaya" is a Tuesday, and it also tells you Mohan is her son —
+        # the whole proposition was dropped and he went with it. Six of nine
+        # people she named were lost this way: her son, her devar, her
+        # neighbour, the milkman, her grandson.
+        #
+        # Most mentions of a person are like this. Almost nobody says "mera
+        # beta engineer hai" twice; they say he called.
+        if k != "transient_state" or ptype not in ("health", "person"):
             return False
 
     n = (name or "").strip().lower()
@@ -1075,6 +1099,19 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                 attrs["kind"] = "concern"
             elif etype == "person":
                 attrs["kind"] = "person"
+                # Everyone has a relation, not only family. A padosan and a
+                # doodhwala are how she refers to them, and storing it only
+                # for family meant the neighbour Priya ji carried nothing —
+                # so nothing distinguished her from the daughter-in-law Priya
+                # and the two became one person.
+                _NOT_REL = ("", "self", "user", "pronoun", "i", "me",
+                            "proper_name")
+                _r = next((str(pr.get("subject_ref") or "").strip()
+                           for pr in subj_props
+                           if str(pr.get("subject_ref") or "").strip().lower()
+                           not in _NOT_REL), "")
+                if _r:
+                    attrs["relation"] = _r
             else:
                 attrs["kind"] = "other"
 
@@ -1094,13 +1131,14 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                 # two people is what the edge table is for, and it carries dates: a
                 # husband who dies or a daughter-in-law who becomes an ex is a
                 # closed edge, not a deleted fact.
-                _rel = next((pr.get("subject_ref") for pr in subj_props
-                             if pr.get("subject_ref") in (
-                                 "son", "daughter", "husband", "wife",
-                                 "grandchild", "mother", "father",
-                                 "daughter-in-law", "son-in-law",
-                                 "brother", "sister", "friend",
-                                 "neighbour", "neighbor")), "")
+                # Whatever she called them. The person check stopped using a list
+                # and this did not, so "devar" matched nothing and every relation
+                # came back empty — twelve people and not one of them anybody.
+                _NOT_REL = ("", "self", "user", "pronoun", "i", "me", "proper_name")
+                _rel = next((str(pr.get("subject_ref") or "").strip()
+                             for pr in subj_props
+                             if str(pr.get("subject_ref") or "").strip().lower()
+                             not in _NOT_REL), "")
                 if _rel:
                     attrs["relation"] = _rel
             else:
@@ -1165,7 +1203,12 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                 continue
 
             # resolve + upsert (reuse anchoring path)
-            res = resolve(subj, etype, pillar, user_id)
+            # The relation goes with the name. Two people share a name far
+            # more often than two conditions do, and "bahu" versus "padosan"
+            # is the only thing telling her daughter-in-law Priya from her
+            # neighbour Priya ji.
+            res = resolve(subj, etype, pillar, user_id,
+                          relation=attrs.get("relation", ""))
             # Strength scales by the LLM's salience classification: a stated
             # passion ("I love X", salience~0.8) stores strong and surfaces now;
             # a passing mention ("watched some cricket", ~0.3) stores weak and

@@ -114,7 +114,8 @@ def _candidates_from(vector: List[float], pool: List[str],
 
 
 def resolve(name: str, entity_type: str, pillar: str, user_id: str,
-            against: Optional[List[str]] = None) -> dict:
+            against: Optional[List[str]] = None,
+            relation: str = "") -> dict:
     """
     Returns {"name": <canonical name to use>, "embedding": [...], "matched": bool}
 
@@ -135,7 +136,7 @@ def resolve(name: str, entity_type: str, pillar: str, user_id: str,
     if not cands:
         return {"name": name, "embedding": vector, "matched": False}
 
-    verdict = _adjudicate(name, entity_type, cands)
+    verdict = _adjudicate(name, entity_type, cands, relation)
     if verdict:
         print(f"[Resolver] {name!r} -> {verdict!r} (was {[c['name'] for c in cands]})")
         return {"name": verdict, "embedding": vector, "matched": True}
@@ -143,7 +144,8 @@ def resolve(name: str, entity_type: str, pillar: str, user_id: str,
     return {"name": name, "embedding": vector, "matched": False}
 
 
-def _adjudicate(name: str, entity_type: str, candidates: List[dict]) -> Optional[str]:
+def _adjudicate(name: str, entity_type: str, candidates: List[dict],
+                relation: str = "") -> Optional[str]:
     """
     Ask the model whether the new entity IS one of the candidates.
 
@@ -153,7 +155,12 @@ def _adjudicate(name: str, entity_type: str, candidates: List[dict]) -> Optional
     would corrupt exactly the signal we are trying to measure.
     """
     listing = "\n".join(f"- {c['name']}" for c in candidates)
-    prompt = f"""A person mentioned: "{name}" (type: {entity_type or 'unknown'})
+    # How they were referred to. Two people share a name far more often than
+    # two conditions do, and it is the only thing separating them: her
+    # daughter-in-law Priya and her neighbour Priya ji became one cluster
+    # because the name matched and nothing else was asked.
+    _rel = f', referred to as "{relation}"' if relation else ""
+    prompt = f"""A person mentioned: "{name}"{_rel} (type: {entity_type or 'unknown'})
 
 We already track these for them:
 {listing}
@@ -166,6 +173,10 @@ Answer with the tracked name ONLY if they are the same thing said differently
 Answer "NEW" if it is:
 - a broader or narrower category (arthritis vs knee pain; old Hindi songs vs Kishore Kumar)
 - a different instance of the same kind (back pain vs knee pain; Lata vs Kishore)
+- A DIFFERENT PERSON WITH THE SAME NAME. If the tracked entry is a bahu and
+  this one is a padosan, they are two people however identical the name. The
+  relation given above is the evidence — when it conflicts with what is
+  tracked, answer NEW.
 - merely related or topically similar
 
 When unsure, answer NEW. A wrong merge is worse than a missed one.
