@@ -216,6 +216,35 @@ def update_user_location(user_id: str, location: str, location_type: str):
 
 # ── Caregiver notification ─────────────────────────────────────────────────────
 
+
+
+def _greet_arrival(user_id: str, where: str):
+    """One message, when she opens the app after arriving somewhere new.
+
+    Not on a timer — the scheduler would add fifteen minutes, and this is
+    already the moment we learn. She lands at three, opens the app when she
+    is settled, and hears about the chemist round the corner.
+    """
+    from memory.schedule_engine import generate_proactive_script
+    from memory.push_sender import send_push
+    from memory.persona_names import get_companion_name
+    from supabase_store import save_message, session_for
+
+    r = generate_proactive_script(user_id, action="GREETING") or {}
+    script = (r.get("script") or "").strip()
+    if not script:
+        return
+
+    try:
+        s = session_for(user_id)
+        save_message(s["id"], "assistant", script, "gemini-flash-latest")
+    except Exception as e:
+        print(f"[LocationEngine] session write failed: {e}")
+
+    n = send_push(user_id, title=get_companion_name(user_id), body=script,
+                  data={"type": "arrival", "place": where})
+    print(f"[LocationEngine] arrival greeting pushed to {n} device(s)")
+
 def _notify_caregiver_travel(user_id: str, current: str, home: str, profile: dict):
     """Notify caregiver when user is traveling away from home."""
     try:
@@ -418,6 +447,13 @@ def update_location_from_gps(user_id: str, lat: float, lng: float) -> dict:
                 _notify_caregiver_travel(user_id, canonical, home, profile)
             except Exception as e:
                 print(f"[LocationEngine] caregiver notify failed: {e}")
+            # And tell HER. Her son received an email saying local emergency
+            # resources had been surfaced for her; she was told nothing about
+            # the city she had just arrived in.
+            try:
+                _greet_arrival(user_id, canonical)
+            except Exception as e:
+                print(f"[LocationEngine] arrival greeting failed: {e}")
         elif home and canonical and home.lower() not in canonical.lower():
             print(f"[LocationEngine] {user_id} still away — not renotifying")
 

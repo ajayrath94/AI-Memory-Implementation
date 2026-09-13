@@ -91,86 +91,137 @@ def _nearby(user_id: str, place_type: str, limit: int = 2) -> list:
         return []
 
 
-def hint(user_id: str) -> str:
-    """A line for the composer, or nothing.
+# What kind of place a category can happen in. Coarse on purpose — Google
+# takes a free-text type and a narrow one returns nothing in a small town.
+#
+# The subject is what makes it hers; this only decides where to look.
+_PLACE_FOR = {
+    "khana":   ("restaurant", "a place to eat"),
+    "sangeet": ("music store", "somewhere for music"),
+    "bhakti":  ("temple", "somewhere to pray"),
+    "dekhna":  ("cinema", "somewhere to watch something"),
+    "shauk":   ("park", "somewhere to sit outside"),
+}
 
-    Nothing is the common answer — she is at home, or she has been away long
-    enough that it is no longer news.
+# Everyone needs these wherever they are, whatever they like.
+_ESSENTIAL = ("pharmacy", "hospital")
+
+
+def _interests_by_category(user_id: str) -> dict:
+    """Her live clusters, grouped by category.
+
+    From interest_clusters rather than the declared list, so anything she has
+    mentioned in conversation counts — which is most of what she likes, now
+    that talking builds clusters at all.
+    """
+    out = {}
+    try:
+        from supabase_store import get_client
+        rows = (get_client().table("interest_clusters")
+                .select("label,attributes,strength")
+                .eq("user_id", user_id).eq("status", "active")
+                .neq("kind", "event")
+                .order("strength", desc=True).limit(40).execute()).data or []
+    except Exception as e:
+        print(f"[Away] interests read failed: {e}")
+        return out
+
+    for r in rows:
+        a = r.get("attributes") if isinstance(r.get("attributes"), dict) else {}
+        cat = a.get("category")
+        if cat in _PLACE_FOR:
+            out.setdefault(cat, []).append(r["label"])
+    return out
+
+
+def suggestion(user_id: str) -> dict:
+    """One place near her, tied to something she likes. Or nothing.
+
+    Nothing is a fine answer — she is home, or she has been here long enough
+    that it is no longer news, or there is nothing of the kind nearby.
     """
     ph = phase(user_id)
     if not ph:
-        return ""
+        return {}
 
     try:
         from memory.declared import get_declared
         d = get_declared(user_id)
-        where = d.place.current or "somewhere new"
-        days = d.place.days_away
+        where = d.place.current or ""
     except Exception:
+        return {}
+    if not where:
+        return {}
+
+    # Orienting: what she needs, not what she enjoys. Two days into a strange
+    # city the chemist matters more than the cinema.
+    if ph == "orient":
+        for t in _ESSENTIAL:
+            found = _nearby(user_id, t, limit=1)
+            if found:
+                return {"phase": ph, "place": found[0], "kind": t,
+                        "subject": "", "where": where}
+        return {}
+
+    # Settled enough to have a life here. Draw across everything she likes,
+    # weighted by how much — not likes[0], which meant the same interest
+    # every single time.
+    import random
+    by_cat = _interests_by_category(user_id)
+    if not by_cat:
+        return {}
+
+    pool = []
+    for cat, labels in by_cat.items():
+        for i, label in enumerate(labels):
+            # The strongest interest in a category is likeliest, the rest
+            # still possible.
+            pool += [(label, cat)] * max(1, 3 - i)
+    if not pool:
+        return {}
+
+    random.shuffle(pool)
+    for subject, cat in pool[:4]:
+        place_type, _ = _PLACE_FOR[cat]
+        found = _nearby(user_id, place_type, limit=1)
+        if found:
+            return {"phase": ph, "place": found[0], "kind": place_type,
+                    "subject": subject, "where": where}
+    return {}
+
+
+def hint(user_id: str) -> str:
+    """A line for the composer, or nothing.
+
+    Facts, not instructions about tone — the same rule as the weather. It is
+    told what is nearby and what she likes; what to say about it is its own
+    judgement.
+    """
+    s = suggestion(user_id)
+    if not s:
         return ""
 
-    if ph == "orient":
-        # What someone needs in an unfamiliar place at that age: a temple if
-        # they pray, a chemist, somewhere to sit outside. Not restaurants.
-        wants = []
-        if (d.interests or {}).get("bhakti"):
-            wants.append("temple")
-        wants += ["pharmacy", "park"]
+    p = s["place"]
+    place = p["name"] + (f" ({p['distance']})" if p.get("distance") else "")
 
-        found = []
-        for w in wants[:2]:
-            found += _nearby(user_id, w, limit=1)
-        if not found:
-            return ""
-
-        listed = "; ".join(
-            f"{p['name']}" + (f" ({p['distance']})" if p["distance"] else "")
-            for p in found)
+    if s["phase"] == "orient":
         return (
-            f"They have recently arrived in {where}"
-            + (f", {days} day(s) ago" if days is not None else "")
-            + " and will not know where "
-            f"anything is. Nearby: {listed}.\n"
-            "Mention ONE of these, the one most likely to matter to them, as a "
-            "passing helpful remark. Not a list, not a tour — the way a "
-            "neighbour would mention it. They are living there for a while, "
-            "not sightseeing."
+            f"\n\nThey arrived in {s['where']} recently and will not know "
+            f"where anything is. Nearby: {place} ({s['kind']}).\n"
+            "Mention it once, in passing, the way a neighbour would — not a "
+            "list and not a tour. They are living there for a while, not "
+            "sightseeing.\n"
+            "This is the POINT of the message on the first days, not a "
+            "garnish on it. Told about the chemist round the corner, the "
+            "composer wrote about the weather and her music and left the "
+            "chemist out — which is the one thing she cannot find for "
+            "herself in a city she does not know."
         )
 
-    # local: her own life, where she happens to be.
-    #
-    # Every category, not only food and hobbies — she is the same person in
-    # Mumbai as in Surat, and what she likes is what makes a strange city
-    # worth anything. The category decides what kind of place to look for.
-    _PLACE_FOR = {
-        "khana":   "restaurant",
-        "shauk":   "park",
-        "bhakti":  "temple",
-        "sangeet": "music store",
-        "dekhna":  "cinema",
-    }
-
-    import random
-    pool = []
-    for cat, place_type in _PLACE_FOR.items():
-        for subj in ((d.interests or {}).get(cat) or []):
-            pool.append((subj, place_type))
-    if not pool:
-        return ""
-
-    # Not always the first. Taking likes[0] meant the same interest every
-    # time she was away, and she has more than one.
-    subject, place_type = random.choice(pool)
-    # A dish is not a place type, and neither is a singer. The route takes a
-    # kind of place; the subject is what makes the mention hers.
-    found = _nearby(user_id, place_type, limit=1)
-    if not found:
-        return ""
-
     return (
-        f"They like {subject}, and they are in {where} at the moment. "
-        f"Nearby: {found[0]['name']}"
-        + (f" ({found[0]['distance']})" if found[0]["distance"] else "") + ".\n"
-        "Mention it once, lightly — something of theirs that happens to be "
-        "close by, not a recommendation."
+        f"\n\nThey are in {s['where']}, away from home, and they like "
+        f"{s['subject']}. Nearby: {place}.\n"
+        "If it fits what you were going to say, mention it — because of the "
+        "thing they like, not because it is close. A maps app can tell them "
+        "what is 400m away. Do not list the distance."
     )
