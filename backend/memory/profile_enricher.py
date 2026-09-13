@@ -704,6 +704,14 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
                 merged = {**existing_attrs, **{k: v for k, v in attributes.items() if v}}
                 if merged:
                     update["attributes"] = merged
+                    # The COLUMN too, not only the attribute. Vikram came out
+                    # kind=interest in the column and kind=person in his
+                    # attributes — two sources of truth for one fact, already
+                    # disagreeing. The picker filters on the column, so a
+                    # person with a category would be offered as an afternoon
+                    # activity.
+                    if merged.get("kind"):
+                        update["kind"] = merged["kind"]
             db.table("interest_clusters").update(update).eq("id", cluster_id).execute()
             try:
                 from memory.cluster_resolver import reconcile
@@ -747,6 +755,11 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
             "event_count": 1,
             "centroid":    embedding,
             "attributes":  {k: v for k, v in (attributes or {}).items() if v} or {},
+            # From the attributes, not the column default. A new cluster came
+            # out kind=interest whatever it was, and only a SECOND mention
+            # corrected it — so a concern or a person was an interest until
+            # she happened to mention it again.
+            "kind":        (attributes or {}).get("kind") or "interest",
         }).execute()).data
         new_id = created[0]["id"] if created else None
         if new_id:
@@ -789,6 +802,11 @@ def _extract_propositions(text: str, user_id: str = "") -> list:
                      "known person. When unsure, keep the natural subject.") if known else ""
 
     prompt = f'''You extract PROPOSITIONS (subject-relation-object facts) from an elderly person's message, including Hindi/Hinglish.{known_block}
+
+ONE PROPOSITION PER FACT, NOT PER SENTENCE. "Mera beta Vikram Pune mein
+engineer hai" holds two: he lives in Pune, and he works as an engineer. It
+returned only the occupation and the city was lost — and a city is exactly the
+kind of fact that changes later, which is why it needs to exist separately.
 
 For EACH fact return an object:
 - subject: canonical name. Translate common nouns to English ("ghutne ka dard"
@@ -917,6 +935,39 @@ def _is_durable_fact(name: str, ptype: str = "", rel_type: str = "",
     return True
 
 
+def _node_for(user_id: str, label: str, kind: str, pillar: str = "GENERAL"):
+    """The cluster for this thing, made if it is not there.
+
+    A place or an occupation is a node so an edge can point at it, but it is
+    never something to suggest — no category, so offerable_now skips it.
+    """
+    from supabase_store import get_client
+    db = get_client()
+    try:
+        found = (db.table("interest_clusters").select("id")
+                 .eq("user_id", user_id).ilike("label", label)
+                 .limit(1).execute()).data or []
+        if found:
+            return found[0]["id"]
+    except Exception:
+        pass
+
+    row = {"user_id": user_id, "label": label[:120], "pillar": pillar,
+           "kind": kind, "status": "active", "strength": 0.5,
+           "attributes": {"kind": kind}}
+    try:
+        from classifier.pillar_classifier import embed_text
+        v = embed_text(label)
+        if v:
+            row["centroid"] = v
+    except Exception:
+        pass
+    try:
+        return (db.table("interest_clusters").insert(row).execute()).data[0]["id"]
+    except Exception as e:
+        print(f"[Prop] could not create node {label!r}: {e}")
+        return None
+
 def record_propositions(props: list, classified, user_id: str, session_id: str = "") -> dict:
     """Turn propositions into cluster operations:
     - pillar from entity_type (deterministic)
@@ -957,7 +1008,16 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
         affected_clusters = []
         for subj, subj_props in by_subject.items():
             first = subj_props[0]
-            etype = (first.get("entity_type") or "other").lower()
+            # The most specific type across everything said about this
+            # subject, not whichever proposition came first. "Vikram lives_in
+            # Pune" and "Vikram works_as engineer" arrive together and the
+            # second carried entity_type=other, so he was filed as other —
+            # a person only by luck of ordering.
+            _RANK = ("person", "health", "artist", "media", "food", "hobby",
+                     "belief", "place", "other")
+            _types = [(pr.get("entity_type") or "other").lower()
+                      for pr in subj_props]
+            etype = next((t for t in _RANK if t in _types), "other")
             # Gate: skip bare emotions ("proud") and vague complaints ("tabiyat
             # theek nahi") — they belong to the summary's texture, not durable
             # fact clusters. Uses already-extracted fields, no extra LLM call.
@@ -1075,6 +1135,35 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                                          res.get("embedding"), attrs or None)
             if cluster_id:
                 affected_clusters.append(cluster_id)
+
+                # Facts ABOUT this subject become their own nodes, linked.
+                #
+                # "Vikram Pune mein engineer hai" used to store the occupation
+                # and lose the city. As an attribute a city is overwritten when
+                # he moves and "pehle kahan tha" has no answer; as an edge with
+                # dates, Delhi closes and Pune opens and both survive.
+                #
+                # Which type is exclusive matters: he lives in one city, so a
+                # new lives_in closes the old. Children accumulate — a third
+                # grandchild does not end the first two.
+                _EDGE_REL = {
+                    "lives_in": ("lives_in", "place"),
+                    "works_as": ("does", "occupation"),
+                    "treats":   ("treats", "condition"),
+                }
+                for pr in subj_props:
+                    rel = (pr.get("relation") or "").lower()
+                    obj = (pr.get("object") or "").strip()
+                    if rel not in _EDGE_REL or not obj or len(obj) < 2:
+                        continue
+                    etype_edge, node_kind = _EDGE_REL[rel]
+                    try:
+                        from memory.relations import link_current
+                        obj_id = _node_for(user_id, obj, node_kind, pillar)
+                        if obj_id:
+                            link_current(user_id, cluster_id, obj_id, etype_edge)
+                    except Exception as _ee:
+                        print(f"[Prop] edge failed for {obj!r}: {_ee}")
                 # one event per subject (the relation is the state verb)
                 try:
                     db.table("user_behavioral_events").insert({
