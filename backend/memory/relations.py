@@ -274,3 +274,232 @@ def adopt_parents(user_id: str) -> int:
     if n:
         print(f"[Relations] {user_id}: {n} parent links became edges")
     return n
+
+
+def extract_edges(user_id: str, text: str, cluster_ids: List[str]) -> int:
+    """What connects the things this conversation mentioned. Returns how many.
+
+    Only among clusters that already exist — this finds relationships, it does
+    not create entities. Anything worth being a node became one earlier in the
+    pipeline.
+    """
+    if not cluster_ids or len(cluster_ids) < 1:
+        return 0
+
+    db = _db()
+    try:
+        rows = (db.table("interest_clusters").select("id,label,kind")
+                .in_("id", list(set(cluster_ids))).execute()).data or []
+    except Exception as e:
+        print(f"[Relations] cluster read failed: {e}")
+        return 0
+
+    # Everything she already has, so an edge can reach something mentioned
+    # weeks ago — "Vikram Pune shift ho gaya" has to find the Vikram from
+    # three sessions back, not only what is in this one.
+    try:
+        known = (db.table("interest_clusters").select("id,label,kind")
+                 .eq("user_id", user_id).eq("status", "active")
+                 .limit(80).execute()).data or []
+    except Exception:
+        known = rows
+
+    by_label = {str(r["label"]).lower(): r["id"] for r in known}
+    listing = "\n".join(f"- {r['label']}" for r in known[:60])
+    if not listing:
+        return 0
+
+    prompt = f"""Someone said: "{text[:400]}"
+
+These are things already known about them:
+{listing}
+
+What does this tell you about how any of them RELATE? Reply with JSON only:
+{{"edges": [{{"from": "...", "to": "...", "type": "..."}}]}}
+
+type is one of:
+  part_of      a song of a film, an episode of a serial, a character
+  instance_of  a match of cricket, idli of South Indian food
+  treats       a medicine and the condition it is for
+  symptom_of   swelling and the knee it is in
+  lives_in     a person and where they live
+  does         a person and their work
+  about        an event and who or what it concerns
+  related_to   connected, but none of the above
+
+Use the labels EXACTLY as written above. Both ends must be in that list.
+
+Only what this message tells you. Do not add what you happen to know about
+the world — that Pune is in Maharashtra is true and is not something she
+said.
+
+An empty list is the usual answer. Most messages establish no new
+relationship at all."""
+
+    try:
+        from llm import ask
+        raw = ask(prompt, max_tokens=400).replace("```json", "").replace("```", "")
+        found = json.loads(raw.strip()).get("edges") or []
+    except Exception as e:
+        print(f"[Relations] edge extraction failed: {e}")
+        return 0
+
+    n = 0
+    for e in found:
+        a = by_label.get(str(e.get("from", "")).strip().lower())
+        b = by_label.get(str(e.get("to", "")).strip().lower())
+        rtype = str(e.get("type", "")).strip().lower()
+        if not (a and b) or rtype not in TYPES:
+            continue
+        if link(user_id, a, b, rtype):
+            n += 1
+            print(f"[Relations] {e.get('from')} --{rtype}--> {e.get('to')}")
+    return n
+
+
+def link_events(user_id: str, event_ids: List[str]) -> int:
+    """Attach each event to whoever or whatever it is about.
+
+    Separate from extract_edges because an event is not a thing she mentioned
+    — it is something that happened, and the subject is usually named right
+    there in the label: "Arjun arrived from Delhi" is about Arjun.
+    """
+    if not event_ids:
+        return 0
+    db = _db()
+    try:
+        evs = (db.table("interest_clusters").select("id,label")
+               .in_("id", list(set(event_ids))).execute()).data or []
+        people = (db.table("interest_clusters").select("id,label")
+                  .eq("user_id", user_id).neq("kind", "event")
+                  .eq("status", "active").limit(60).execute()).data or []
+    except Exception as e:
+        print(f"[Relations] event link read failed: {e}")
+        return 0
+
+    n = 0
+    for ev in evs:
+        label = str(ev.get("label") or "").lower()
+        for p in people:
+            name = str(p.get("label") or "").strip()
+            # A name appearing in the event text is the subject. Crude, and
+            # it holds because event labels are short and name what happened.
+            if len(name) > 2 and name.lower() in label:
+                if link(user_id, ev["id"], p["id"], "about"):
+                    n += 1
+                    print(f"[Relations] '{ev['label'][:30]}' --about--> {name}")
+    return n
+
+
+# One at a time. A new edge of these types ends the previous one rather than
+# sitting beside it — he cannot live in two cities, and a drug treats the
+# condition it treats.
+#
+# Everything else accumulates: she may like many singers, and an event is
+# about whoever it is about.
+_EXCLUSIVE = {"lives_in", "does", "treats"}
+
+
+def link_current(user_id: str, from_id: str, to_id: str, rtype: str,
+                 confidence: float = 1.0) -> bool:
+    """Record this, and close whatever it replaces.
+
+    The closed edge is kept. "He lived in Delhi until September" is a fact
+    about her life, and deleting it to make room for Pune would lose it.
+    """
+    if rtype not in _EXCLUSIVE:
+        return link(user_id, from_id, to_id, rtype, confidence)
+
+    now = datetime.now(timezone.utc).isoformat()
+    db = _db()
+
+    try:
+        open_edges = (db.table("entity_relations").select("id,to_id")
+                      .eq("user_id", user_id).eq("from_id", from_id)
+                      .eq("type", rtype).is_("ended_at", "null")
+                      .execute()).data or []
+    except Exception as e:
+        print(f"[Relations] open-edge read failed: {e}")
+        open_edges = []
+
+    for e in open_edges:
+        if e.get("to_id") == to_id:
+            # Already the current answer. Touch it so the recency is right and
+            # leave it open.
+            try:
+                db.table("entity_relations").update(
+                    {"last_seen": now}).eq("id", e["id"]).execute()
+            except Exception:
+                pass
+            return True
+        try:
+            db.table("entity_relations").update(
+                {"ended_at": now}).eq("id", e["id"]).execute()
+            print(f"[Relations] closed a {rtype} edge — it changed")
+        except Exception as ex:
+            print(f"[Relations] could not close: {ex}")
+
+    return link(user_id, from_id, to_id, rtype, confidence)
+
+
+def current(user_id: str, cluster_id: str, rtype: str) -> Optional[Dict]:
+    """What is true NOW, for a type that has one answer.
+
+    "Kahan rehta hai ab" — the open edge, not the most recent row, because a
+    correction closes the old one the moment the new one arrives.
+    """
+    db = _db()
+    try:
+        rows = (db.table("entity_relations").select("to_id,first_seen")
+                .eq("user_id", user_id).eq("from_id", cluster_id)
+                .eq("type", rtype).is_("ended_at", "null")
+                .order("first_seen", desc=True).limit(1).execute()).data or []
+    except Exception as e:
+        print(f"[Relations] current read failed: {e}")
+        return None
+    if not rows:
+        return None
+
+    try:
+        c = (db.table("interest_clusters").select("id,label")
+             .eq("id", rows[0]["to_id"]).limit(1).execute()).data or []
+    except Exception:
+        return None
+    return {"id": c[0]["id"], "label": c[0]["label"],
+            "since": rows[0].get("first_seen")} if c else None
+
+
+def history(user_id: str, cluster_id: str, rtype: str = "") -> List[Dict]:
+    """Everything that was ever true, in order, open and closed.
+
+    Where someone has lived, what they have done. The closed edges are the
+    point — an attribute would have overwritten them.
+    """
+    db = _db()
+    try:
+        q = (db.table("entity_relations").select("*")
+             .eq("user_id", user_id).eq("from_id", cluster_id))
+        if rtype:
+            q = q.eq("type", rtype)
+        rows = q.order("first_seen").execute().data or []
+    except Exception as e:
+        print(f"[Relations] history read failed: {e}")
+        return []
+    if not rows:
+        return []
+
+    ids = [r["to_id"] for r in rows]
+    try:
+        cl = (db.table("interest_clusters").select("id,label")
+              .in_("id", ids).execute()).data or []
+    except Exception:
+        return []
+
+    by_id = {c["id"]: c["label"] for c in cl}
+    return [{
+        "label": by_id.get(r["to_id"], "?"),
+        "type": r.get("type"),
+        "from": str(r.get("first_seen") or "")[:10],
+        "to": str(r.get("ended_at") or "")[:10] or None,
+        "current": not r.get("ended_at"),
+    } for r in rows if r["to_id"] in by_id]
