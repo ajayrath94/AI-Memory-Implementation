@@ -817,7 +817,18 @@ For EACH fact return an object:
   could be either, keep it as she said it. Translating "knee pain" wrongly
   loses a little; translating a name loses the thing itself, and nothing
   downstream can recover it.
-- subject_ref: proper_name | son | daughter | husband | wife | grandchild | mother | father | pronoun | self
+- subject_ref: how they were referred to, IN HER OWN WORDS — "beta", "devar",
+  "jethani", "saheli", "padosan", "mausi" — or "self", "pronoun",
+  "proper_name" when no relation was named.
+
+  Do NOT translate it and do NOT force it into a small English set. Offered
+  seven words to choose from, "mere devar Suresh" came back as husband,
+  because devar is the husband's younger brother and husband was the nearest
+  slot. Her brother-in-law became her husband, and the milkman became one too.
+
+  Hindi alone has devar, jeth, nanad, bhabhi, jethani, dewrani, sala, mausi,
+  chachi, taai, bua, mama — and every other Indian language has its own set.
+  There is no list worth keeping. Write what she said.
 - relation: likes | stopped_liking | lives_in | works_as | is | has_condition | feels | did
 - object: canonical target ("Amreeka"->"America") or null
 - entity_type: person | food | health | hobby | artist | media | place | belief | other
@@ -1018,6 +1029,18 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             _types = [(pr.get("entity_type") or "other").lower()
                       for pr in subj_props]
             etype = next((t for t in _RANK if t in _types), "other")
+            # entity_type describes the OBJECT, so "Rajesh lives_in Mumbai"
+            # types him as a place and he came out "other". A subject_ref
+            # that names a relation says what he is regardless of what the
+            # sentence was about.
+            # Anything that is not self, a pronoun, or empty names a PERSON —
+            # in whatever language she used. Membership of an English list is
+            # what made devar into husband, and it could never have worked for
+            # மருமகள் or ননদ.
+            _NOT_A_PERSON = ("", "self", "user", "pronoun", "i", "me")
+            if any(str(pr.get("subject_ref") or "").strip().lower()
+                   not in _NOT_A_PERSON for pr in subj_props):
+                etype = "person"
             # Gate: skip bare emotions ("proud") and vague complaints ("tabiyat
             # theek nahi") — they belong to the summary's texture, not durable
             # fact clusters. Uses already-extracted fields, no extra LLM call.
@@ -1062,6 +1085,24 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                                               "grandchild","mother","father")
                     for pr in subj_props):
                 pillar = "FAMILY"
+                # WHICH relation, not merely that there is one. The extractor
+                # returns son, daughter-in-law, grandchild in subject_ref, and the
+                # cluster stored "person" for all three — so the system knew Rajesh
+                # was a person and had forgotten he was her son.
+                #
+                # As an edge rather than an attribute, because a relation between
+                # two people is what the edge table is for, and it carries dates: a
+                # husband who dies or a daughter-in-law who becomes an ex is a
+                # closed edge, not a deleted fact.
+                _rel = next((pr.get("subject_ref") for pr in subj_props
+                             if pr.get("subject_ref") in (
+                                 "son", "daughter", "husband", "wife",
+                                 "grandchild", "mother", "father",
+                                 "daughter-in-law", "son-in-law",
+                                 "brother", "sister", "friend",
+                                 "neighbour", "neighbor")), "")
+                if _rel:
+                    attrs["relation"] = _rel
             else:
                 pillar = _TYPE_TO_PILLAR.get(etype, "GENERAL")
 
