@@ -240,8 +240,8 @@ def detect_trends(session_centroids: Dict[str, List[float]]) -> dict:
 
     # Pillar trends — need at least 3 sessions, use linear slope
     pillar_trends = {}
-    if len(centroids) >= 3:
-        window = centroids[-6:]  # last 6 sessions max
+    window = _usable_centroids(centroids[-8:])
+    if len(window) >= 3:
         n      = len(window)
         xs     = list(range(n))
         x_mean = sum(xs) / n
@@ -255,10 +255,14 @@ def detect_trends(session_centroids: Dict[str, List[float]]) -> dict:
             denominator = sum((xs[j] - x_mean) ** 2 for j in range(n))
             slope       = numerator / denominator if denominator else 0
 
-            # Only report non-stable trends for pillars with meaningful signal
-            max_val = max(ys)
-            if max_val < 0.05:
-                continue  # pillar never active — skip
+            # A pillar has to be the SUBJECT of some of these sessions, not
+            # merely present in all of them. The old check was max(ys) < 0.05,
+            # which nothing ever failed: every pillar scores around 0.7 because
+            # the centroids barely separate, so slopes were computed across
+            # noise and four false alerts went out about a woman whose last
+            # twelve sessions were all neutral or positive.
+            if not any(_stands_out(c, i) for c in window):
+                continue
 
             if slope > 0.03:
                 pillar_trends[dim] = "rising"
@@ -695,6 +699,36 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
         names = [_label_with_trend(i) for i in ordered]
         lines.append(f"{heading}: {', '.join(names)}")
     return "\n".join(lines)
+
+
+# How far above its neighbours a pillar must sit to count as present at all.
+#
+# Not an absolute floor. Every pillar scores around 0.7 for the same session —
+# nineteen centroids that barely separate — so an absolute threshold passes
+# everything and slopes get computed across noise. What matters is whether
+# this pillar stands out from the rest of that session.
+PILLAR_MARGIN = 0.04
+
+# Below this, a stored centroid is a failed classification rather than a
+# measurement. Skipped, not zeroed: missing data is not a reading of nothing,
+# and a zero in the middle of a series drags a regression upward.
+DEAD_CENTROID = 0.01
+
+
+def _usable_centroids(window: list) -> list:
+    """Drop the failures. What is left is what was actually measured."""
+    return [c for c in window
+            if isinstance(c, list) and c and max(c) > DEAD_CENTROID]
+
+
+def _stands_out(vec: list, i: int) -> bool:
+    """Is this pillar actually the subject, or is everything level?"""
+    if not vec or i >= len(vec):
+        return False
+    others = [v for j, v in enumerate(vec) if j != i]
+    if not others:
+        return False
+    return vec[i] - (sum(others) / len(others)) >= PILLAR_MARGIN
 
 
 def build_memory_prompt(user_id: str = "default", current_embedding=None) -> Optional[str]:
