@@ -698,6 +698,41 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
 
 
 def build_memory_prompt(user_id: str = "default", current_embedding=None) -> Optional[str]:
+    """Everything the composer knows about her, for every message it writes.
+
+    FOUR BLOCKS, and one rule they all answer to.
+
+        what she likes      clusters, recalled by similarity
+        the summary         accumulated across every session
+        key facts           the durable handful
+        the count           how many conversations there have been
+
+    THE RULE: a fact about her LIFE may be stated back to her. A fact about
+    her STATE may not.
+
+        "Her son Shubham lives in Bengaluru"     life. safe.
+        "Frequently experiences knee pain"       life. a condition, durable.
+        "Has been anxious lately"                state. not safe.
+        "May need emotional support"             worse — an instruction.
+
+    A reading of how she has BEEN, read back to her, becomes "aap pareshan lag
+    rahi hain, sab theek toh hai na?" — which hands her mood to her as a
+    question, on Ganesh Chaturthi morning, instead of wishing her. People stop
+    answering a thing that does that.
+
+    Her state still decides everything. It picks which offer, sets the
+    register, decides whether to send at all, and reaches her son when it
+    matters. It shapes what is CHOSEN and never what is SAID.
+
+    A fifth block used to sit here: behavioural alerts, from the fingerprint.
+    They are written for a caregiver dashboard — "Sadness increasing, may need
+    emotional support", "Emotional distress in last 3 sessions, check in" —
+    and handed to the thing writing her message they read as orders, and it
+    followed them. They remain on the fingerprint, where the caregiver path
+    and the picker can use them.
+
+    Before adding a block here, ask which of the two it is.
+    """
     memory = get_user_memory(user_id)
     cluster_recall = _clusters_for_recall(user_id, current_embedding)
 
@@ -719,10 +754,30 @@ def build_memory_prompt(user_id: str = "default", current_embedding=None) -> Opt
                 fingerprint = json.loads(fingerprint)
             except Exception:
                 fingerprint = {}
-        alerts = fingerprint.get("alerts", [])
-        if alerts:
-            alert_text = "\n".join(f"[!] {a}" for a in alerts)
-            parts.append(f"\nBehavioural alerts:\n{alert_text}")
+        # The alerts are NOT given to the composer, deliberately.
+        #
+        # They are written for a caregiver — "Sadness increasing — may need
+        # emotional support", "Emotional distress in last 3 sessions — check
+        # in". Handed to the thing writing her message, they read as
+        # instructions, and it follows them: "aap thodi pareshan lag rahi
+        # hain, sab theek toh hai na?" on Ganesh Chaturthi morning.
+        #
+        # THE RULE, arrived at three separate times:
+        #   the composer receives facts about the WORLD — the weather, where
+        #   she is, what day it is.
+        #   it never receives facts about HER STATE.
+        #
+        # Told her knee hurts it opened with her knee. Told she was low it
+        # asked whether she was alright. Told she may need emotional support
+        # it provided some. Each time the instruction said not to, and each
+        # time naming the thing was more tempting than not naming it.
+        #
+        # Her state still decides everything — which offer, which register,
+        # whether to send at all, and whether her son hears about it. It
+        # shapes what is CHOSEN and never what is SAID.
+        #
+        # The alerts remain on the fingerprint for the caregiver path and the
+        # picker, which is where they belong.
         count = memory.get("session_count", 0)
         if count > 0:
             parts.append(f"\nThis is conversation #{count + 1} with this person.")

@@ -367,6 +367,19 @@ Update the memory profile by:
    cannot be cancelled and will be repeated back long after the day has passed.
    Keep the pattern ("often has doctor visits"), not the instance.
 
+8. DESCRIBING, never prescribing. Write what is true about them, not what
+   should be done about it. This summary goes into every message the companion
+   writes, so a sentence like "occasional anxiety requiring emotional
+   reassurance" is read as an instruction and obeyed — she was wished a happy
+   Ganesh Chaturthi and asked, in the same breath, whether she was alright.
+   "Has mentioned feeling anxious at times" is the same fact and carries no
+   order. No "needs", "requires", "should be", "check in on".
+
+9. NOT INCLUDING THE COMPANION. "Shares close bonds with her family, including
+   her son Shubham and Nancy" — Nancy is the application writing this. It has
+   no place in her family, and reading itself back as a relative is how a
+   companion starts claiming to be one.
+
 Write a comprehensive but concise profile (5-8 sentences max).
 Write in third person. Be specific with names, preferences, and details.
 

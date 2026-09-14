@@ -410,13 +410,18 @@ def moment_facts(user_id: str, moment: dict = None) -> str:
 
     v = m.get("valence")
     flags = m.get("flags") or []
-    if v is not None and v <= -0.3:
-        lines.append(
-            "The last few conversations were heavy. Do NOT mention that or ask "
-            "about it. Offer something familiar rather than something new — "
-            "this is not the afternoon to introduce them to a singer they have "
-            "never heard of.")
-    elif v is not None and v >= 0.3:
+    # Deliberately NOT told she is low. The instruction said do not
+    # mention it, do not ask whether she is alright, do not say she
+    # seems worried — and the composer wrote "aap thodi pareshaan lag
+    # rahi hain, sab theek hai na?" twice in a row.
+    #
+    # The same lesson as her knee: a negative instruction teaches the
+    # subject. What the composer does not know, it cannot hand back to
+    # her as a question.
+    #
+    # It still shapes the choice — pick_suggestion reads the same
+    # valence and leans familiar over novel on a hard afternoon.
+    if v is not None and v >= 0.3:
         lines.append("The last few conversations went well.")
 
     # Named plainly, because an offer that cuts across a bad knee is worse than

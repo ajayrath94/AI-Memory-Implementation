@@ -382,6 +382,15 @@ def generate_proactive_script(
             ah = away_hint(user_id)
             if ah:
                 hints = (hints or "") + "\n\n" + ah
+
+            # And what day it is in the country she lives in. Carried by the
+            # breakfast message rather than pushed separately — she is up,
+            # her puja is done, and there is a natural pause. A festival wish
+            # at nine at night is a day too late.
+            from memory.festivals import hint_for as festival_hint
+            fh = festival_hint(user_id)
+            if fh:
+                hints = (hints or "") + fh
         except Exception as e:
             print(f"[Schedule] moment facts failed: {e}")
 
