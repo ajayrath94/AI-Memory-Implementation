@@ -676,6 +676,22 @@ async def process_input(text: str, model: str,
                 from memory.day import note_from_message
                 note_from_message(user_id, text)
 
+                # Whatever she just touched comes back up. Recall REVIVES
+                # rather than promotes — what was built did the opposite,
+                # pushing frequently recalled things down into long-term
+                # storage, so the subjects she returned to most were archived
+                # first.
+                #
+                # It also leaves a behavioural event, because strength alone
+                # says she mentioned something and the event log is what says
+                # WHEN. Arjun reached 2.29 across six mentions with an event
+                # count of one, so his trajectory could never form.
+                try:
+                    from memory.clusters import reactivate
+                    reactivate(user_id, text)
+                except Exception as _re:
+                    print(f"[Router] reactivate failed: {_re}")
+
                 from memory.ambiguity import (needs_asking, match_answer,
                                               resolve)
                 pend = needs_asking(user_id)
