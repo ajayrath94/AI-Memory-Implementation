@@ -417,6 +417,42 @@ def process_session_end(session_id: str, user_id: str = "default"):
         "extraction_failed": bool(mood.get("extraction_failed")),
     }).eq("id", session_id).execute()
 
+    # 1a2. What she talked about, and how she felt about each thing.
+    #
+    # Session valence says how a conversation went and cannot say what about.
+    # She scores -0.4 and nobody knows whether it is her knee, her son, or
+    # being alone — and those need different responses.
+    #
+    # Written beside the pillar vectors rather than replacing them: nothing
+    # that depends on DIMENSION_ORDER changes, and in a few weeks there is
+    # evidence about which signal is worth keeping.
+    try:
+        from memory.topics import extract_topics, save_topics
+        tps = extract_topics(messages)
+        if tps:
+            save_topics(session_id, tps)
+            print(f"[Topics] {', '.join(t['subject'] for t in tps)}")
+    except Exception as e:
+        print(f"[UserMemory] topics failed: {e}")
+
+    # 1a2. What she talked about, and how she felt about each thing.
+    #
+    # Session valence says how a conversation went and cannot say what about.
+    # She scores -0.4 and nobody knows whether it is her knee, her son, or
+    # being alone — and those need different responses.
+    #
+    # Written beside the pillar vectors rather than replacing them: nothing
+    # that depends on DIMENSION_ORDER changes, and in a few weeks there is
+    # evidence about which signal is worth keeping.
+    try:
+        from memory.topics import extract_topics, save_topics
+        tps = extract_topics(messages)
+        if tps:
+            save_topics(session_id, tps)
+            print(f"[Topics] {', '.join(t['subject'] for t in tps)}")
+    except Exception as e:
+        print(f"[UserMemory] topics failed: {e}")
+
     # 1b. What she talked about becomes what we know.
     #
     # Nothing in the live path did this. _extract_propositions and
