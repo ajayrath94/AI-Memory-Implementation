@@ -42,6 +42,8 @@ app.include_router(memory_router,   prefix="/memory",   tags=["memory"],   depen
 app.include_router(voice_router,    prefix="/voice",    tags=["voice"],    dependencies=[Depends(require_api_key)])
 app.include_router(schedule_router, prefix="/schedule", tags=["schedule"], dependencies=[Depends(require_api_key)])
 app.include_router(reminders_router, prefix="/reminders", tags=["reminders"], dependencies=[Depends(require_api_key)])
+from routes.emergency import router as emergency_router
+app.include_router(emergency_router, prefix="/emergency", tags=["emergency"], dependencies=[Depends(require_api_key)])
 app.include_router(export_router, prefix="/export", tags=["export"], dependencies=[Depends(require_api_key)])
 app.include_router(care_router, prefix="/care", tags=["care"], dependencies=[Depends(require_api_key)])
 app.include_router(calendar_router, prefix="/calendar", tags=["calendar"], dependencies=[Depends(require_api_key)])
