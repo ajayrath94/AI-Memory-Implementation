@@ -848,6 +848,34 @@ def build_memory_prompt(user_id: str = "default", current_embedding=None) -> Opt
         #
         # The alerts remain on the fingerprint for the caregiver path and the
         # picker, which is where they belong.
+        # The people she would ring, with their numbers.
+        #
+        # Asked "Shubham ka number kya hai?" it said the number was not saved
+        # and suggested she look in a diary — while it sat in the caregivers
+        # table. A son's phone number is a fact about her life, and the kind
+        # she is likeliest to want at the worst moment.
+        try:
+            from memory.alert_engine import get_caregivers_for_user
+            people = []
+            for link in get_caregivers_for_user(user_id):
+                cg = link.get("caregivers") or {}
+                num = (cg.get("phone") or "").strip()
+                if not num:
+                    continue
+                rel = (link.get("relationship") or "").strip()
+                nm = cg.get("name") or ""
+                people.append(f"- {nm}" + (f" ({rel})" if rel else "") + f": {num}")
+            if people:
+                parts.append("\nTheir people, and their numbers:\n"
+                             + "\n".join(people)
+                             + "\nGive a number plainly when asked. Wanting "
+                               "your son's number is an ordinary thing — "
+                               "asked for it, the reply was 'call him now, "
+                               "is everything alright?', which turns a "
+                               "question into an emergency.")
+        except Exception as e:
+            print(f"[Memory] caregiver numbers failed: {e}")
+
         count = memory.get("session_count", 0)
         if count > 0:
             parts.append(f"\nThis is conversation #{count + 1} with this person.")

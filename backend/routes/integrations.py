@@ -177,6 +177,32 @@ def get_news(user_id: str, topic: str = None):
 # ── Places ─────────────────────────────────────────────────────────────────────
 
 @router.get("/places/{user_id}")
+def place_details(place_id: str) -> dict:
+    """The full address and the phone number, for one place.
+
+    A second call, so only made for something she might actually ring — the
+    hospital on the emergency screen, not every restaurant near her.
+    """
+    import os
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not (api_key and place_id):
+        return {}
+    try:
+        url = ("https://maps.googleapis.com/maps/api/place/details/json"
+               f"?place_id={place_id}"
+               "&fields=formatted_address,formatted_phone_number,name,opening_hours"
+               f"&key={api_key}")
+        r = (http_get(url) or {}).get("result") or {}
+        return {
+            "name":    r.get("name"),
+            "address": r.get("formatted_address"),
+            "phone":   (r.get("formatted_phone_number") or "").replace(" ", ""),
+            "open":    (r.get("opening_hours") or {}).get("open_now"),
+        }
+    except Exception as e:
+        print(f"[Places] details failed: {e}")
+        return {}
+
 def get_nearby_places(user_id: str, place_type: str = "hospital", location: str = None):
     """
     Find nearby hospitals, pharmacies, clinics.
@@ -222,6 +248,11 @@ def get_nearby_places(user_id: str, place_type: str = "hospital", location: str 
         for p in places_data.get("results", [])[:5]:
             places.append({
                 "name":    p.get("name"),
+                # Kept so Details can be called for a real address and a
+                # phone number. Nearby Search returns neither — "vicinity" is
+                # a fragment, and there is no number at all, so a hospital on
+                # an emergency screen had nothing to dial.
+                "place_id": p.get("place_id"),
                 "address": p.get("vicinity"),
                 "rating":  p.get("rating"),
                 "open":    p.get("opening_hours", {}).get("open_now"),
