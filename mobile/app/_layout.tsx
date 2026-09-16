@@ -23,6 +23,10 @@ const NAV_ITEMS = [
   { path: '/memory',    icon: 'hardware-chip-outline', label: 'nav.memory'    },
   { path: '/reminders', icon: 'alarm-outline',         label: 'nav.reminders' },
   { path: '/calendar',  icon: 'calendar-outline',      label: 'nav.calendar'  },
+  // Between the calendar and her profile, not at the top. She needs to
+  // find it without thinking; she does not need it to be the first
+  // thing she sees every day.
+  { path: '/emergency', icon: 'call-outline',          label: 'nav.emergency' },
   { path: '/profile',   icon: 'person-outline',        label: 'nav.profile'   },
   { path: '/settings',  icon: 'settings-outline',      label: 'nav.settings'  },
 ]

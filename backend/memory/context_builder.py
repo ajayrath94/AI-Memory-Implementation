@@ -469,6 +469,27 @@ def compose(user_id: str, intent: str = "check_in",
     task = task + ("\nTwo short sentences at most. Shorter is better; she "
                    "reads this on a phone, not on a page.")
 
+    # WHAT DAY IT IS. The composer had her whole life in front of it and no
+    # anchor for now — so "temple visits for festivals like Janmashtami", a
+    # correct and durable fact about her, was read as today's plan twelve days
+    # after Janmashtami, and she was asked which mandir she was going to.
+    #
+    # Everything dated in her memory depends on this. An event stamped
+    # 2026-09-04 means nothing without it; with it, it is twelve days ago.
+    # "Kal" in her own words has no anchor either.
+    #
+    # Her timezone, not the server's — she is in Bengaluru and Railway is not.
+    today_note = ""
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from memory.declared import get_declared
+        tz = ZoneInfo(get_declared(user_id).place.timezone or "Asia/Kolkata")
+        now = datetime.now(tz)
+        today_note = f"Today is {now.strftime('%A, %-d %B %Y')}. "
+    except Exception as e:
+        print(f"[Context] date line failed: {e}")
+
     slot_note = {
         "morning":    "It is morning — they are starting their day.",
         "midday":     "It is the middle of the day.",
@@ -477,6 +498,7 @@ def compose(user_id: str, intent: str = "check_in",
         "night":      "It is night — they will be winding down.",
         "late_night": "It is very late.",
     }.get(slot, "")
+    slot_note = today_note + slot_note
 
     urgency = {
         "critical": "They seemed genuinely distressed recently. Lead with "
