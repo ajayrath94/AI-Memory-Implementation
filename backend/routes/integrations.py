@@ -203,7 +203,8 @@ def place_details(place_id: str) -> dict:
         print(f"[Places] details failed: {e}")
         return {}
 
-def get_nearby_places(user_id: str, place_type: str = "hospital", location: str = None):
+def get_nearby_places(user_id: str, place_type: str = "hospital",
+                      location: str = None, radius: int = 5000):
     """
     Find nearby hospitals, pharmacies, clinics.
     Used when health alerts fire.
@@ -240,7 +241,16 @@ def get_nearby_places(user_id: str, place_type: str = "hospital", location: str 
         # Search nearby places
         places_url = (
             f"https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-            f"?location={lat},{lng}&radius=2000&type={place_type}&key={api_key}"
+            # keyword AND type. With type alone, a 2km search for a hospital
+            # returned a chemist, an eye clinic, a diagnostics lab and
+            # Herbalife — Google pads the results when exact matches are thin,
+            # and the padding does not care what you asked for.
+            #
+            # 5km, not 2km. In an emergency she would travel further than two
+            # kilometres anyway, and a real hospital five minutes away beats a
+            # chemist next door.
+            f"?location={lat},{lng}&radius={radius}&type={place_type}"
+            f"&keyword={urllib.parse.quote(place_type)}&key={api_key}"
         )
         places_data = http_get(places_url)
 

@@ -101,8 +101,14 @@ _NOT_A_HOSPITAL = ("medical store", "medicals", "pharmacy", "chemist",
                    "optical", "ayurved")
 
 
-def _nearest(user_id: str, kind: str) -> Optional[Dict]:
-    """The best nearby one, with a number she can actually ring."""
+def _nearest(user_id: str, kind: str) -> List[Dict]:
+    """Up to two: the nearest, and the nearest she can ring.
+
+    They are often not the same place. Google has no phone number for plenty
+    of hospitals, and an address alone is little use to a frightened woman —
+    but the nearest one still matters, because someone driving her there does
+    not need to ring ahead.
+    """
     try:
         from routes.integrations import get_nearby_places, place_details
         data = get_nearby_places(user_id, place_type=kind) or {}
@@ -121,21 +127,47 @@ def _nearest(user_id: str, kind: str) -> Optional[Dict]:
             return 2
         return 1
 
-    best = sorted(places, key=rank)[0]
+    # Prefer one she can actually ring. Shirdi Sai ranked first and Google
+    # has no number for it, so the card showed a name and an address and
+    # nothing to dial — which is most of the point.
+    # Hospitals only, as a filter and not a preference. Ranking alone let a
+    # chemist through the moment it was the one with a phone number — and
+    # "S.A Medical" is where she buys her tablets, not where she goes with
+    # chest pain.
+    hospitals = [p for p in places if rank(p) == 0] or \
+                [p for p in places if rank(p) <= 1]
+    if not hospitals:
+        return None
 
-    # One more call, only for this one — a full address and a phone number.
-    # Nearby Search returns a fragment of an address and no number at all.
-    det = {}
-    try:
-        from routes.integrations import place_details
-        det = place_details(best.get("place_id")) or {}
-    except Exception:
-        pass
+    from routes.integrations import place_details as _pd
 
-    return {"name": det.get("name") or best["name"],
-            "address": det.get("address") or best.get("address") or "",
-            "phone": det.get("phone") or "",
-            "kind": kind}
+    # Two of them, because the closest is not always the one she can ring.
+    #   nearest      whatever Google knows about it
+    #   reachable    the nearest one with a number, if that is a different one
+    out = []
+    seen = set()
+    for cand in hospitals[:4]:
+        try:
+            d = _pd(cand.get("place_id")) or {}
+        except Exception:
+            d = {}
+        entry = {
+            "name": d.get("name") or cand.get("name"),
+            "address": d.get("address") or cand.get("address") or "",
+            "phone": d.get("phone") or "",
+            "kind": kind,
+        }
+        if not out:
+            out.append(entry)                       # the nearest, as it is
+            seen.add(entry["name"])
+        elif entry["phone"] and entry["name"] not in seen:
+            out.append(entry)                       # and one she can ring
+            break
+        if len(out) == 1 and out[0]["phone"]:
+            break                                   # the nearest already has one
+
+    return out
+
 
 
 def card(user_id: str) -> Dict:
@@ -157,10 +189,12 @@ def card(user_id: str) -> Dict:
         entries.append({"label": n["label"], "number": n["number"],
                         "kind": "national"})
 
-    place = _nearest(user_id, "hospital" if _needs_a_hospital(user_id) else "clinic")
-    if place:
-        entries.append({"label": place["name"], "number": place.get("phone", ""),
-                        "address": place["address"], "kind": "hospital"})
+    for place in _nearest(user_id,
+                          "hospital" if _needs_a_hospital(user_id) else "clinic"):
+        entries.append({"label": place["name"],
+                        "number": place.get("phone", ""),
+                        "address": place.get("address", ""),
+                        "kind": "hospital"})
 
     where = ""
     try:
