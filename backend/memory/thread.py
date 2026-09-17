@@ -110,7 +110,7 @@ def _resolve_tags(user_id: str, subjects: List[str]) -> List[str]:
     """
     if not subjects:
         return []
-    ids = []
+    ids, loose = [], []
     try:
         from supabase_store import get_client
         rows = (get_client().table("interest_clusters").select("id,label")
@@ -127,9 +127,15 @@ def _resolve_tags(user_id: str, subjects: List[str]) -> List[str]:
                             if low and (low in l or l in low)), None)
             if hit and hit not in ids:
                 ids.append(hit)
+            elif not hit and low:
+                # No cluster yet. Kept rather than dropped, because a subject
+                # appearing across three days with nothing to resolve to is
+                # precisely what promotion looks for — "dal" today is noise,
+                # "dal" on Tuesday, Thursday and Sunday is a new interest.
+                loose.append(str(s).strip()[:60])
     except Exception as e:
         print(f"[Thread] tag resolve failed: {e}")
-    return ids
+    return ids, loose
 
 
 def write_stm(user_id: str, messages: List[dict], topics: List[Dict] = None,
@@ -182,12 +188,14 @@ Just the note."""
     # The subjects come from the topics extraction, which already ran on this
     # session — no second call to work out what it was about.
     subjects = [t.get("subject") for t in (topics or []) if t.get("subject")]
+    tag_ids, loose = _resolve_tags(user_id, subjects)
 
     row = {
         "user_id": user_id,
         "happened_on": day.isoformat(),
         "text": text[:1200],
-        "tags": _resolve_tags(user_id, subjects),
+        "tags": tag_ids,
+        "untagged": loose,
         "embedding": _embed(text),
     }
     try:
