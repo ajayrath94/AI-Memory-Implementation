@@ -281,3 +281,175 @@ def as_lines(user_id: str, rows: List[Dict]) -> str:
                 else d.strftime("%-d %B"))
         out.append(f"- {when}: {r.get('text', '')}")
     return "\n".join(out)
+
+
+# How long something survives WITHOUT being mentioned. A recall resets it —
+# these are not deadlines, they are how long neglect takes.
+CACHE_KEEP = 7       # her exact words
+STM_KEEP = 14        # the day's note
+# LTM is not swept. A line a month is small enough to keep indefinitely, and
+# it is the only thing left that reaches back beyond a fortnight.
+
+
+def _stale_before(days: int, user_id: str) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+
+def sweep_cache(user_id: str) -> int:
+    """Her verbatim words, after a week. The day's note has them in summary.
+
+    Deleted rather than moved: STM was written from these at session end, so
+    there is nothing here that is not already compressed.
+    """
+    cutoff = (_today(user_id) - timedelta(days=CACHE_KEEP)).isoformat()
+    try:
+        r = (_db().table("memory_cache").delete()
+             .eq("user_id", user_id).lt("happened_on", cutoff).execute())
+        n = len(r.data or [])
+        if n:
+            print(f"[Thread] cache: {n} messages older than {CACHE_KEEP} days")
+        return n
+    except Exception as e:
+        print(f"[Thread] cache sweep failed: {e}")
+        return 0
+
+
+def compress_stm(user_id: str, now: date = None) -> int:
+    """Days nobody has touched in a fortnight become a line about their month.
+
+    Grouped by month because that is the next coarser bucket, and because she
+    would think of it that way — "that month Arjun was here".
+    """
+    today = now or _today(user_id)
+    cutoff = (today - timedelta(days=STM_KEEP)).isoformat()
+
+    try:
+        rows = (_db().table("memory_stm").select("*")
+                .eq("user_id", user_id)
+                .lt("happened_on", cutoff)
+                .order("happened_on").limit(120).execute()).data or []
+    except Exception as e:
+        print(f"[Thread] stm read failed: {e}")
+        return 0
+
+    # A day she has come back to stays. Neglect is what moves things down,
+    # not the calendar.
+    stale = []
+    for r in rows:
+        last = r.get("last_recalled")
+        if last:
+            try:
+                if (datetime.now(timezone.utc) -
+                        datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+                        ).days < STM_KEEP:
+                    continue
+            except Exception:
+                pass
+        stale.append(r)
+
+    if not stale:
+        return 0
+
+    # By month.
+    months = {}
+    for r in stale:
+        try:
+            d = date.fromisoformat(str(r["happened_on"])[:10])
+        except Exception:
+            continue
+        months.setdefault(d.replace(day=1), []).append(r)
+
+    # Never fold a month that is still running. September folded from one
+    # stale day while two of its days were still in stm, and produced "the
+    # month was quiet and unremarkable" — about a month that had not
+    # finished, from a single note that said a neighbour brought sabzi.
+    this_month = (now or _today(user_id)).replace(day=1)
+
+    done = 0
+    for period, days in months.items():
+        if period >= this_month:
+            continue
+        if _fold_month(user_id, period, days):
+            done += len(days)
+    return done
+
+
+def _fold_month(user_id: str, period: date, days: list) -> bool:
+    """A month of days into one line, keeping every tag."""
+    existing = ""
+    try:
+        prev = (_db().table("memory_ltm").select("text,tags")
+                .eq("user_id", user_id).eq("period", period.isoformat())
+                .limit(1).execute()).data or []
+        if prev:
+            existing = prev[0].get("text") or ""
+    except Exception:
+        pass
+
+    listing = "\n".join(f"- {r.get('text', '')}" for r in days)
+    prior = f"\nAlready recorded for this month:\n{existing}\n" if existing else ""
+
+    prompt = f"""These are notes from separate days in {period.strftime('%B %Y')}:
+
+{listing}
+{prior}
+Write ONE or TWO sentences covering the month. Third person, plain.
+
+Keep what recurred or mattered — someone visiting, an illness, a change in how
+they are living. Drop the particular days: a dal that was too salty on one
+Tuesday is not part of a month.
+
+Do not invent a pattern from two mentions, and do not call a month
+unremarkable — given one note about a neighbour bringing sabzi, this wrote
+"the month was quiet and unremarkable", which says less than the note did.
+Write what the days actually contain, however little that is.
+
+No dates inside the sentence — the month is stored beside it.
+
+Just the sentence."""
+
+    try:
+        from llm import ask
+        text = (ask(prompt, max_tokens=200) or "").strip()
+    except Exception as e:
+        print(f"[Thread] fold failed: {e}")
+        return False
+    if len(text) < 8:
+        return False
+
+    # Every tag the month's days carried, so LTM can be searched and not only
+    # read. "When did her knee start" needs the months to carry the knee.
+    tags, loose = [], []
+    for r in days:
+        for t in (r.get("tags") or []):
+            if t not in tags:
+                tags.append(t)
+        for u in (r.get("untagged") or []):
+            if u not in loose:
+                loose.append(u)
+
+    try:
+        _db().table("memory_ltm").upsert({
+            "user_id": user_id,
+            "period": period.isoformat(),
+            "text": text[:800],
+            "tags": tags,
+            "untagged": loose[:20],
+        }, on_conflict="user_id,period").execute()
+
+        _db().table("memory_stm").delete().eq("user_id", user_id).in_(
+            "id", [r["id"] for r in days]).execute()
+
+        print(f"[Thread] {period.strftime('%B %Y')}: {len(days)} days -> {text[:60]}")
+        return True
+    except Exception as e:
+        print(f"[Thread] ltm write failed: {e}")
+        return False
+
+
+def sweep(user_id: str) -> dict:
+    """The daily pass. Cheap when nothing has aged, which is most days."""
+    return {
+        "cache_removed": sweep_cache(user_id),
+        "days_folded": compress_stm(user_id),
+    }
