@@ -764,7 +764,8 @@ def _stands_out(vec: list, i: int) -> bool:
     return vec[i] - (sum(others) / len(others)) >= PILLAR_MARGIN
 
 
-def build_memory_prompt(user_id: str = "default", current_embedding=None) -> Optional[str]:
+def build_memory_prompt(user_id: str = "default", current_embedding=None,
+                        _query_text: str = "") -> Optional[str]:
     """Everything the composer knows about her, for every message it writes.
 
     FOUR BLOCKS, and one rule they all answer to.
@@ -872,6 +873,21 @@ def build_memory_prompt(user_id: str = "default", current_embedding=None) -> Opt
                                "question into an emergency.")
         except Exception as e:
             print(f"[Memory] caregiver numbers failed: {e}")
+
+        # The thread. Facts about her LIFE are above; this is what was SAID,
+        # which is a different thing and the reason tomorrow can pick up where
+        # yesterday left off.
+        #
+        # It passes the rule at the top of this function because a note about
+        # a dal that came out too salty is not a reading of her state — it is
+        # something that happened, the way the weather is.
+        try:
+            from memory.thread import recall as _thread_recall
+            t = _thread_recall(user_id, _query_text or "")
+            if t:
+                parts.append(t)
+        except Exception as e:
+            print(f"[Memory] thread recall failed: {e}")
 
         count = memory.get("session_count", 0)
         if count > 0:

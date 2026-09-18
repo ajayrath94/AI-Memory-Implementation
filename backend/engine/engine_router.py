@@ -760,7 +760,10 @@ async def process_input(text: str, model: str,
     _compress_cache_to_stm(sid, embedding)
 
     # 9. Cross-session user memory
-    user_memory = build_memory_prompt(user_id, current_embedding=embedding)
+    # Her message goes too, so the thread can be found by TAG rather than
+    # only by recency — she says "Rajesh" and the days about him are a lookup.
+    user_memory = build_memory_prompt(user_id, current_embedding=embedding,
+                                      _query_text=text)
 
     # 10. Within-session memory (EMBEDDING-BASED!)
     # The text as well as the vector: events are matched on what she asked,

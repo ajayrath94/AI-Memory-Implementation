@@ -109,7 +109,7 @@ def _resolve_tags(user_id: str, subjects: List[str]) -> List[str]:
     unresolved ones are what promotion counts.
     """
     if not subjects:
-        return []
+        return [], []
     ids, loose = [], []
     try:
         from supabase_store import get_client
@@ -168,8 +168,16 @@ mentioned sleeping badly — an illustration read as a list to fill in.
 Do not add a question at the end either. Write what happened; what to ask is
 obvious from it.
 
-Leave out what is permanently true — that her son lives in Delhi, that she
-takes a tablet for her thyroid. That is kept elsewhere.
+Write only what CHANGED or HAPPENED that day. A phone call, a meal, a bad
+morning, a visit.
+
+Told to leave out what is permanently true, this wrote "she mentioned that he
+lives in Mumbai and works as an engineer" — the instruction named the thing
+and the note included it anyway. So: if the sentence would still be true next
+year, it does not go here.
+
+"Rajesh called" — yes, that was Tuesday.
+"Rajesh lives in Mumbai" — no, that is true every day and is kept elsewhere.
 
 No dates and no "today" or "yesterday" — the day is stored beside this and
 relative words go stale. Say "cooked dal", not "cooked dal today".
