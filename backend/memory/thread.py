@@ -453,3 +453,148 @@ def sweep(user_id: str) -> dict:
         "cache_removed": sweep_cache(user_id),
         "days_folded": compress_stm(user_id),
     }
+
+
+def _clusters_named(user_id: str, text: str) -> List[str]:
+    """Which of her subjects this message touches. Ids, not words.
+
+    The same resolution the tags were written with, so a mention of "beta"
+    finds days tagged with Arjun's cluster.
+    """
+    if not (text or "").strip():
+        return []
+    try:
+        rows = (_db().table("interest_clusters").select("id,label")
+                .eq("user_id", user_id).eq("status", "active")
+                .limit(200).execute()).data or []
+    except Exception:
+        return []
+
+    low = text.lower()
+    hits = []
+    for r in rows:
+        label = str(r.get("label") or "").strip().lower()
+        if len(label) < 3:
+            continue
+        if label in low:
+            hits.append(r["id"])
+    return hits
+
+
+def _similar_days(user_id: str, text: str, limit: int = 2) -> List[Dict]:
+    """The last resort. Only called when tags and dates found nothing."""
+    v = _embed(text)
+    if not v:
+        return []
+    try:
+        # pgvector does the work; 3072 dimensions cannot be indexed, but a
+        # fortnight of days is a handful of rows and a scan is instant.
+        r = _db().rpc("match_stm", {
+            "p_user_id": user_id, "p_embedding": v, "p_limit": limit,
+        }).execute()
+        return r.data or []
+    except Exception:
+        # No rpc defined: fall back to reading and comparing here. Slower and
+        # fine at this size.
+        try:
+            from classifier.pillar_classifier import cosine_similarity
+            rows = (_db().table("memory_stm")
+                    .select("happened_on,text,tags,embedding")
+                    .eq("user_id", user_id).limit(40).execute()).data or []
+        except Exception as e:
+            print(f"[Thread] similar read failed: {e}")
+            return []
+
+        scored = []
+        for row in rows:
+            emb = row.get("embedding")
+            if isinstance(emb, str):
+                try:
+                    emb = json.loads(emb)
+                except Exception:
+                    continue
+            if not emb:
+                continue
+            s = cosine_similarity(v, emb)
+            # A floor, so "nothing matched" is a possible answer. Without it
+            # the nearest of fourteen days is always returned, however far.
+            if s >= 0.62:
+                scored.append((s, row))
+        scored.sort(key=lambda x: -x[0])
+        return [r for _s, r in scored[:limit]]
+
+
+def recall(user_id: str, text: str = "", days_back: int = 1) -> str:
+    """What was said recently that bears on this. For the prompt, or "".
+
+    Always the last day. Then whatever she named, by tag. Then, only if both
+    came back empty, whatever reads as similar.
+    """
+    seen, rows = set(), []
+
+    # Continuity, unconditionally.
+    for r in recent_days(user_id, days_back):
+        key = str(r.get("happened_on"))
+        if key not in seen:
+            seen.add(key)
+            rows.append(r)
+
+    # What she just named.
+    tagged = []
+    ids = _clusters_named(user_id, text)
+    if ids:
+        for r in days_about(user_id, ids, limit=3):
+            key = str(r.get("happened_on"))
+            if key not in seen:
+                seen.add(key)
+                rows.append(r)
+                tagged.append(r)
+
+    # And only then, similarity.
+    if text and not tagged:
+        for r in _similar_days(user_id, text, limit=2):
+            key = str(r.get("happened_on"))
+            if key not in seen:
+                seen.add(key)
+                rows.append(r)
+
+    if not rows:
+        return ""
+
+    # Touched, so a day she came back to stays where it is. Neglect is what
+    # moves things down.
+    for r in rows:
+        touch(user_id, str(r.get("happened_on")))
+
+    rows.sort(key=lambda r: str(r.get("happened_on")), reverse=True)
+    lines = as_lines(user_id, rows)
+    if not lines:
+        return ""
+    return ("\n\nWHAT WAS SAID RECENTLY — the thread, not facts about them:\n"
+            + lines +
+            "\nPick it up if it fits. Do not recite it back.")
+
+
+def months(user_id: str, n: int = 6) -> str:
+    """The shape of the last few months. Small enough to read whole.
+
+    A line a month, so no retrieval — twelve lines is a year and it all fits.
+    """
+    try:
+        rows = (_db().table("memory_ltm").select("period,text")
+                .eq("user_id", user_id)
+                .order("period", desc=True).limit(n).execute()).data or []
+    except Exception as e:
+        print(f"[Thread] ltm read failed: {e}")
+        return ""
+    if not rows:
+        return ""
+
+    out = []
+    for r in reversed(rows):
+        try:
+            p = date.fromisoformat(str(r["period"])[:10])
+        except Exception:
+            continue
+        out.append(f"- {p.strftime('%B %Y')}: {r.get('text', '')}")
+    return "\n\nEARLIER MONTHS:\n" + "\n".join(out) if out else ""

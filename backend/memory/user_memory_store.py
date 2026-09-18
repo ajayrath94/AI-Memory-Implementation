@@ -426,6 +426,8 @@ def process_session_end(session_id: str, user_id: str = "default"):
     # Written beside the pillar vectors rather than replacing them: nothing
     # that depends on DIMENSION_ORDER changes, and in a few weeks there is
     # evidence about which signal is worth keeping.
+    tps = []          # the thread write reads this; a failed topics call
+                      # must not take it down with it
     try:
         from memory.topics import extract_topics, save_topics
         tps = extract_topics(messages)
@@ -435,23 +437,18 @@ def process_session_end(session_id: str, user_id: str = "default"):
     except Exception as e:
         print(f"[UserMemory] topics failed: {e}")
 
-    # 1a2. What she talked about, and how she felt about each thing.
+
+    # 1a3. The thread: what was said, kept so tomorrow can pick it up.
     #
-    # Session valence says how a conversation went and cannot say what about.
-    # She scores -0.4 and nobody knows whether it is her knee, her son, or
-    # being alone — and those need different responses.
-    #
-    # Written beside the pillar vectors rather than replacing them: nothing
-    # that depends on DIMENSION_ORDER changes, and in a few weeks there is
-    # evidence about which signal is worth keeping.
+    # Clusters hold what is durable. This holds the dal that came out too
+    # salty — not a fact about her, and exactly what you would ask about the
+    # next day.
     try:
-        from memory.topics import extract_topics, save_topics
-        tps = extract_topics(messages)
-        if tps:
-            save_topics(session_id, tps)
-            print(f"[Topics] {', '.join(t['subject'] for t in tps)}")
+        from memory.thread import write_cache, write_stm
+        write_cache(user_id, session_id, messages)
+        write_stm(user_id, messages, tps)
     except Exception as e:
-        print(f"[UserMemory] topics failed: {e}")
+        print(f"[UserMemory] thread write failed: {e}")
 
     # 1b. What she talked about becomes what we know.
     #
