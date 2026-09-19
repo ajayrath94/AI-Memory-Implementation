@@ -48,14 +48,35 @@ def record(user_id: str, topics: List[Dict], when: date = None) -> int:
         return 0
     day = (when or date.today()).isoformat()
 
+    # What she already has a cluster for. A mention of something known is
+    # recorded against it, so promotion never offers up a subject that is
+    # already knowledge — Rajesh had a cluster and was still a candidate,
+    # because cluster_id was only ever filled in ON promotion.
+    known = {}
+    try:
+        for r in (_db().table("interest_clusters").select("id,label")
+                  .eq("user_id", user_id).eq("status", "active")
+                  .limit(200).execute()).data or []:
+            known[str(r["label"]).strip().lower()] = r["id"]
+    except Exception as e:
+        print(f"[Mentions] cluster read failed: {e}")
+
     rows = []
     for t in topics:
         subject = str(t.get("subject") or "").strip()
         if len(subject) < 2:
             continue
+        low = subject.lower()
+        cid = known.get(low)
+        if not cid:
+            # Loosely, because "Kishore Kumar's songs" and "Kishore Kumar"
+            # are the same subject to her.
+            cid = next((i for l, i in known.items()
+                        if len(l) > 3 and (low in l or l in low)), None)
         rows.append({
             "user_id": user_id,
             "subject": subject[:80],
+            "cluster_id": cid,
             "pillar": t.get("pillar") or None,
             "sentiment": t.get("sentiment"),
             "happened_on": day,

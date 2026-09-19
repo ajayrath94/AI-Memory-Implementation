@@ -54,7 +54,18 @@ def _retrieve_memory(
     No TF-IDF. No keyword matching. Done.
     """
     stm = get_stm_clusters(session_id)
-    ltm = get_ltm_patterns(user_id)
+    # ltm_patterns is retired, not read.
+    #
+    # Eighteen rows for one user and almost none of them was memory: the
+    # companion's own greetings recalled twenty times, "USER_PATTERN: NUDGE,
+    # SADNESS, SEARCH" seventeen, a reminder from August that had long since
+    # passed, and her one-word replies. The Janmashtami row said "abhi
+    # Janmashtami hai toh mandir jana hai" with no date and was recalled
+    # twenty-eight times, a fortnight after Janmashtami.
+    #
+    # The thread does this properly now — dated, compressed, and rendered as
+    # "twelve days ago" rather than as an undated line that reads as today.
+    ltm = []
 
     all_entries = [(e, "stm") for e in stm] + [(e, "ltm") for e in ltm]
     if not all_entries:

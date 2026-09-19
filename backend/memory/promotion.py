@@ -53,6 +53,16 @@ def _db():
 
 # ── a habit: counted across days ──────────────────────────────────────────────
 
+# Two windows, because they say different things. Three times in a fortnight
+# is something she is doing NOW and worth offering back today. Three times in
+# a month is a slower rhythm — khichdi every ten days is a habit the short
+# window cannot see, and six weeks of it were invisible.
+#
+# A subject can clear both, or only the wider one, and which it is changes how
+# it would be offered.
+WINDOWS = (14, 30)
+
+
 def habits(user_id: str, window: int = HABIT_WINDOW) -> List[Dict]:
     """Subjects with no cluster that keep coming back.
 
@@ -63,8 +73,23 @@ def habits(user_id: str, window: int = HABIT_WINDOW) -> List[Dict]:
     count that would have earned it a cluster silently reset.
     """
     from memory.mentions import recurring
-    return recurring(user_id, min_days=HABIT_DAYS, window=window,
-                     unresolved_only=True)
+
+    seen, out = set(), []
+    for w in (window,) if window != HABIT_WINDOW else WINDOWS:
+        for h in recurring(user_id, min_days=HABIT_DAYS, window=w,
+                           unresolved_only=True):
+            key = h["subject"].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            # Which window caught it. "Recent" is worth offering today;
+            # "regular" is worth knowing about her.
+            h["rhythm"] = "recent" if w <= 14 else "regular"
+            h["window"] = w
+            out.append(h)
+
+    out.sort(key=lambda x: (-x["days"], x["window"]))
+    return out
 
 
 # ── a weighty event: judged once ──────────────────────────────────────────────
@@ -194,7 +219,14 @@ def _promote(user_id: str, subject: str, evidence: Dict) -> bool:
              "seen_on": evidence.get("dates", [])},
         )
         if cid:
-            print(f"[Promote] {subject!r} -> cluster ({evidence['days']} days)")
+            # Point the mentions at it, so the count stops being counted.
+            # Without this a promoted subject stays unresolved and is offered
+            # for promotion again every day — Rajesh had a cluster and was
+            # still a candidate, because nothing ever filled cluster_id in.
+            from memory.mentions import attach
+            n = attach(user_id, subject, cid)
+            print(f"[Promote] {subject!r} -> cluster "
+                  f"({evidence['days']} days, {n} mentions attached)")
         return bool(cid)
     except Exception as e:
         print(f"[Promote] failed for {subject!r}: {e}")
