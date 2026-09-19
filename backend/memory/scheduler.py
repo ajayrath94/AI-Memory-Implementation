@@ -62,6 +62,19 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
             try:
                 from memory.cluster_cleaner import clean_clusters
                 clean_clusters(_uid)
+
+                # The thread ages. Cache after seven days, a day's note after
+                # fourteen without being mentioned — and nothing was calling
+                # this, so nothing aged at all.
+                from memory.thread import sweep as _thread_sweep
+                _thread_sweep(_uid)
+
+                # And what keeps coming back. Report only: three days in a
+                # fortnight is a guess, and a week of seeing what it catches
+                # turns it into a measurement. Nothing is written until the
+                # threshold has been watched.
+                from memory.promotion import review as _promotion_review
+                _promotion_review(_uid, dry_run=True)
             except Exception as _e:
                 print(f"[Scheduler] cluster clean failed for {_uid}: {_e}")
     # Fire due reminders — the reactive engine delivering prospective memory.
