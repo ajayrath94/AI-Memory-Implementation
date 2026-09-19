@@ -434,6 +434,11 @@ def process_session_end(session_id: str, user_id: str = "default"):
         if tps:
             save_topics(session_id, tps)
             print(f"[Topics] {', '.join(t['subject'] for t in tps)}")
+            # And the dates, which outlive the day they were on. Compression
+            # takes stm's untagged array with it when a month folds; these
+            # stay, so a count across weeks is reliable.
+            from memory.mentions import record as _record_mentions
+            _record_mentions(user_id, tps)
     except Exception as e:
         print(f"[UserMemory] topics failed: {e}")
 

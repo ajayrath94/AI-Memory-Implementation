@@ -489,29 +489,29 @@ def note_from_message(user_id: str, user_text: str) -> Optional[str]:
     print(f"[Day] {user_id}: {match['label'] or match['kind']} "
           f"{got['status']}" + (f" — {got['detail']}" if got["detail"] else ""))
 
-    # A meal that named a dish is a food interest arriving through
-    # conversation. Stronger evidence than the setup form: someone who names
-    # South Indian food on a form is stating a preference, someone who cooked
-    # khichdi on Tuesday demonstrated one.
+    # A meal that named a dish is an EVENT, not a preference.
+    #
+    # This called record_declared_interest — the path for things she types
+    # into the setup form — so "aaj lemon rice khaya" arrived as a favourite
+    # with strength 1.33 and salience 0.8, the same weight as a dish she had
+    # chosen from a list.
+    #
+    # The old comment argued that someone who cooked khichdi on Tuesday
+    # demonstrated a preference where someone naming it on a form only stated
+    # one. That is true and it is not a licence to promote the first
+    # demonstration: one meal is Tuesday, and three across a fortnight is a
+    # habit worth offering back to her.
+    #
+    # So it is recorded with its date, the dish lands in the day's untagged
+    # subjects through the usual path, and repetition is what makes it a
+    # cluster.
     if (match.get("kind") == "meal" and got["status"] == "confirmed"
             and got.get("detail")):
         try:
-            from memory.categories import record_declared_interest
-            cid = record_declared_interest(user_id, "khana", got["detail"])
-            if cid:
-                from supabase_store import get_client
-                db = get_client()
-                rows = (db.table("interest_clusters").select("attributes")
-                        .eq("id", cid).limit(1).execute()).data or []
-                if rows:
-                    a = rows[0].get("attributes")
-                    a = a if isinstance(a, dict) else {}
-                    # Distinguished from declared and from observed: she made
-                    # it, which is the strongest of the three.
-                    a["source"] = "cooked"
-                    db.table("interest_clusters").update(
-                        {"attributes": a}).eq("id", cid).execute()
+            from memory.events import record_event
+            record_event(user_id, f"ate {got['detail']}",
+                         kind="meal", feeling="")
         except Exception as e:
-            print(f"[Day] dish record failed: {e}")
+            print(f"[Day] meal event failed: {e}")
 
     return got["status"]
