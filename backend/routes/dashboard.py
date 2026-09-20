@@ -58,6 +58,16 @@ def data(user_id: str):
     except Exception as e:
         out["thread"] = [{"error": str(e)[:120]}]
 
+    # Her words, so the top layer shows what the note was made FROM.
+    try:
+        out["cache"] = (db.table("memory_cache")
+                        .select("happened_on,created_at,text")
+                        .eq("user_id", user_id)
+                        .order("created_at", desc=True)
+                        .limit(12).execute()).data or []
+    except Exception:
+        out["cache"] = []
+
     try:
         out["months"] = (db.table("memory_ltm").select("period,text,tags")
                          .eq("user_id", user_id)
