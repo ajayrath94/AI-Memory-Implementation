@@ -69,12 +69,16 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                 from memory.thread import sweep as _thread_sweep
                 _thread_sweep(_uid)
 
-                # And what keeps coming back. Report only: three days in a
-                # fortnight is a guess, and a week of seeing what it catches
-                # turns it into a measurement. Nothing is written until the
-                # threshold has been watched.
+                # And what keeps coming back becomes knowledge.
+                #
+                # Three distinct days in a fortnight, or in a month for a
+                # slower rhythm. The threshold is a guess, but a wrong
+                # promotion is cheap — a cluster at strength 0.8 that is
+                # rarely drawn, and cluster_cleaner merges duplicates on this
+                # same pass. A week of dry-run would have been a week of not
+                # learning her habits.
                 from memory.promotion import review as _promotion_review
-                _promotion_review(_uid, dry_run=True)
+                _promotion_review(_uid, dry_run=False)
             except Exception as _e:
                 print(f"[Scheduler] cluster clean failed for {_uid}: {_e}")
     # Fire due reminders — the reactive engine delivering prospective memory.
