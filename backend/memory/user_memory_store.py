@@ -439,6 +439,30 @@ def process_session_end(session_id: str, user_id: str = "default"):
             # stay, so a count across weeks is reliable.
             from memory.mentions import record as _record_mentions
             _record_mentions(user_id, tps)
+
+            # Some things do not wait for repetition. "Doctor ne kaha
+            # operation karana padega" is knowledge the first time she says
+            # it, and waiting for her to say it twice would be a failure.
+            #
+            # Judged with the signals already computed — pillar, sentiment,
+            # and whatever the mood read flagged — so this is scoring a
+            # summary rather than parsing the conversation again. An
+            # operation comes back 1.0, a wedding 1.0, a new tablet 0.7,
+            # lemon rice 0.0.
+            try:
+                from memory.promotion import weighty
+                for w in weighty(user_id, tps):
+                    from memory.profile_enricher import _upsert_cluster
+                    from classifier.pillar_classifier import embed_text
+                    _upsert_cluster(
+                        user_id, w["subject"], w.get("pillar") or "GENERAL",
+                        1.0, embed_text(w["subject"]),
+                        {"source": "weighty", "kind": "concern"
+                         if (w.get("pillar") == "HEALTH_WELLNESS") else "other",
+                         "promoted_on": __import__("datetime").date.today().isoformat()})
+                    print(f"[Promote] {w['subject']!r} at once ({w['score']:.2f})")
+            except Exception as _we:
+                print(f"[UserMemory] weighty check failed: {_we}")
     except Exception as e:
         print(f"[UserMemory] topics failed: {e}")
 
