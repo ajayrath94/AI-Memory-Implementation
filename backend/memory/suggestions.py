@@ -112,6 +112,81 @@ def _weather_blocks(category: str, weather: dict) -> bool:
     return any(w in desc for w in ("rain", "storm", "shower", "thunder"))
 
 
+
+
+# Cached for the day, because the note it reads only changes at session end.
+_SETTLED: dict = {}
+
+
+def _decided_today(user_id: str) -> set:
+    """Categories she has already made up her mind about today.
+
+    Read from the day's note in the thread. If she has said she is cooking
+    chicken, food is settled; if she has said she is going to the temple,
+    bhakti is. Everything else stays open.
+
+    The note is written at session end, so a plan made at breakfast is known
+    once that conversation closes — the same lag the thread has generally.
+    """
+    from datetime import date
+    key = (user_id, date.today().isoformat())
+    if key in _SETTLED:
+        return _SETTLED[key]
+
+    try:
+        from memory.thread import recent_days
+        rows = recent_days(user_id, 1)
+        if not rows:
+            _SETTLED[key] = set()
+            return set()
+        today_note = rows[0]
+        if str(today_note.get("happened_on"))[:10] != date.today().isoformat():
+            _SETTLED[key] = set()
+            return set()
+        note = str(today_note.get("text") or "")
+    except Exception as e:
+        print(f"[Suggest] settled read failed: {e}")
+        return set()
+
+    if len(note) < 10:
+        _SETTLED[key] = set()
+        return set()
+
+    prompt = f"""Someone's day so far:
+
+{note}
+
+Which of these have they already DECIDED about, so that suggesting an
+alternative would be unwelcome? JSON only:
+
+{{"settled": ["khana", "sangeet", "dekhna", "bhakti", "shauk"]}}
+
+  khana    they have said what they are eating or cooking
+  sangeet  they have said what they are listening to
+  dekhna   they have said what they are watching
+  bhakti   they have said where they are going or what they are observing
+  shauk    they have said what they are doing with their time
+
+Only when they have SAID SO. "Planned to get chicken for lunch" settles
+khana. "Had breakfast" does not settle anything — everyone eats breakfast.
+
+An empty list is the usual answer.
+
+No prose."""
+
+    try:
+        from llm import ask
+        import json as _j
+        raw = ask(prompt, max_tokens=120).replace("```json", "").replace("```", "")
+        out = {str(s).strip().lower()
+               for s in (_j.loads(raw.strip()).get("settled") or [])}
+    except Exception as e:
+        print(f"[Suggest] settled check failed: {e}")
+        out = set()
+
+    _SETTLED[key] = out
+    return out
+
 def pick_suggestion(user_id: str) -> Optional[dict]:
     """
     Choose the cluster worth surfacing, rather than letting the composer reach
@@ -148,6 +223,19 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
         print(f"[Suggest] {user_id} is mid-routine — staying quiet")
         return None
 
+    # What she has already decided today.
+    #
+    # She said at breakfast she was going to the market for chicken and would
+    # make curry for lunch. The picker knew none of it — it reads her stored
+    # interests and nothing about today — so it would have offered her khichdi
+    # while the chicken was on the stove.
+    #
+    # Offering an alternative to someone who has decided is worse than
+    # offering nothing: it says plainly that the thing she said was not heard.
+    settled = _decided_today(user_id)
+    if settled:
+        print(f"[Suggest] {user_id} has settled: {', '.join(settled)}")
+
     # Anything offered in the last few days, whatever the outcome — repeating
     # yourself is its own failure.
     recent_ids = set()
@@ -166,6 +254,13 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
         if r["id"] in recent_ids:
             continue
         if (r.get("pillar") or "") in ("HEALTH_WELLNESS", "FAMILY"):
+            continue
+
+        # She has already decided about this. Offering an alternative to
+        # someone who has made up her mind says plainly that the thing she
+        # said was not heard.
+        _a = r.get("attributes") if isinstance(r.get("attributes"), dict) else {}
+        if settled and (_a.get("category") or "") in settled:
             continue
         state = r.get("current_state")
         if state is not None and state < 0:
