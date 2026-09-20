@@ -269,6 +269,159 @@ def boundary(user_id: str, now_min: Optional[int] = None) -> Optional[Dict]:
     return {"done": just_done, "next": coming}
 
 
+
+
+def _said_since(user_id: str, ev: Dict) -> str:
+    """What she said about this event, in the hours before this boundary.
+
+    Not message by message. A refusal, a plan and a report all read
+    differently one line at a time and obviously in context — and the context
+    is everything between one boundary and the next.
+    """
+    from datetime import timedelta
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        since = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+        sess = (db.table("sessions").select("id")
+                .eq("user_id", user_id).gte("updated_at", since)
+                .order("updated_at", desc=True).limit(3).execute()).data or []
+        said = []
+        for s in sess:
+            for m in (db.table("messages").select("content,timestamp")
+                      .eq("session_id", s["id"]).eq("role", "user")
+                      .gte("timestamp", since)
+                      .order("timestamp").execute()).data or []:
+                said.append(str(m.get("content") or "")[:200])
+    except Exception as e:
+        print(f"[Day] window read failed: {e}")
+        return ""
+
+    if not said:
+        return ""
+
+    label = ev.get("label") or ev.get("kind") or ""
+    prompt = f"""Someone said these things over the last few hours:
+
+{chr(10).join('- ' + s for s in said[-12:])}
+
+Did any of it say something about their {label}? If so, reply with that one
+line, exactly as they wrote it. Otherwise reply NONE.
+
+Anything counts — that they did it, that they did not, that they are not
+going to, how it went, or that something got in the way.
+
+One line, nothing else."""
+    try:
+        from llm import ask
+        got = (ask(prompt, max_tokens=80) or "").strip().strip('"')
+    except Exception as e:
+        print(f"[Day] window read failed: {e}")
+        return ""
+    return "" if (not got or got.upper().startswith("NONE")) else got[:200]
+
+
+
+def _said_since(user_id: str, ev: Dict) -> str:
+    """What she said about this event, in the hours before this boundary.
+
+    Not message by message. A refusal, a plan and a report all read
+    differently one line at a time and obviously in context — and the context
+    is everything between one boundary and the next.
+    """
+    from datetime import timedelta
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        since = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+        sess = (db.table("sessions").select("id")
+                .eq("user_id", user_id).gte("updated_at", since)
+                .order("updated_at", desc=True).limit(3).execute()).data or []
+        said = []
+        for s in sess:
+            for m in (db.table("messages").select("content,timestamp")
+                      .eq("session_id", s["id"]).eq("role", "user")
+                      .gte("timestamp", since)
+                      .order("timestamp").execute()).data or []:
+                said.append(str(m.get("content") or "")[:200])
+    except Exception as e:
+        print(f"[Day] window read failed: {e}")
+        return ""
+
+    if not said:
+        return ""
+
+    label = ev.get("label") or ev.get("kind") or ""
+    prompt = f"""Someone said these things over the last few hours:
+
+{chr(10).join('- ' + s for s in said[-12:])}
+
+Did any of it say something about their {label}? If so, reply with that one
+line, exactly as they wrote it. Otherwise reply NONE.
+
+Anything counts — that they did it, that they did not, that they are not
+going to, how it went, or that something got in the way.
+
+One line, nothing else."""
+    try:
+        from llm import ask
+        got = (ask(prompt, max_tokens=80) or "").strip().strip('"')
+    except Exception as e:
+        print(f"[Day] window read failed: {e}")
+        return ""
+    return "" if (not got or got.upper().startswith("NONE")) else got[:200]
+
+
+
+def _said_since(user_id: str, ev: Dict) -> str:
+    """What she said about this event, in the hours before this boundary.
+
+    Not message by message. A refusal, a plan and a report all read
+    differently one line at a time and obviously in context — and the context
+    is everything between one boundary and the next.
+    """
+    from datetime import timedelta
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        since = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+        sess = (db.table("sessions").select("id")
+                .eq("user_id", user_id).gte("updated_at", since)
+                .order("updated_at", desc=True).limit(3).execute()).data or []
+        said = []
+        for s in sess:
+            for m in (db.table("messages").select("content,timestamp")
+                      .eq("session_id", s["id"]).eq("role", "user")
+                      .gte("timestamp", since)
+                      .order("timestamp").execute()).data or []:
+                said.append(str(m.get("content") or "")[:200])
+    except Exception as e:
+        print(f"[Day] window read failed: {e}")
+        return ""
+
+    if not said:
+        return ""
+
+    label = ev.get("label") or ev.get("kind") or ""
+    prompt = f"""Someone said these things over the last few hours:
+
+{chr(10).join('- ' + s for s in said[-12:])}
+
+Did any of it say something about their {label}? If so, reply with that one
+line, exactly as they wrote it. Otherwise reply NONE.
+
+Anything counts — that they did it, that they did not, that they are not
+going to, how it went, or that something got in the way.
+
+One line, nothing else."""
+    try:
+        from llm import ask
+        got = (ask(prompt, max_tokens=80) or "").strip().strip('"')
+    except Exception as e:
+        print(f"[Day] window read failed: {e}")
+        return ""
+    return "" if (not got or got.upper().startswith("NONE")) else got[:200]
+
 def boundary_hint(user_id: str, b: Dict) -> str:
     """The line for the composer.
 
@@ -303,6 +456,10 @@ def boundary_hint(user_id: str, b: Dict) -> str:
         except Exception as e:
             print(f"[Day] offer lookup failed: {e}")
 
+    # Read once. It was called twice — in the test and again in the branch —
+    # which is two model calls for the same answer at every boundary.
+    _window_said = _said_since(user_id, done) if done else ""
+
     parts = []
     if done:
         if took_up:
@@ -311,6 +468,54 @@ def boundary_hint(user_id: str, b: Dict) -> str:
                 f"THAT went — by name, not in general. They told you an hour "
                 f"ago; asking 'khana kaisa tha' as though you had forgotten is "
                 f"worse than not asking."
+            )
+        elif _window_said:
+            # She DID mention it, in the window before this boundary. Reading
+            # message by message missed it: "aaj sair pe nahi jaungi" half an
+            # hour after the walk was due was read as a plan rather than a
+            # decision, nothing was recorded, and the evening message asked
+            # how the walk had gone.
+            #
+            # The window is the honest unit. Whatever she said between the
+            # last boundary and this one is what happened.
+            parts.append(
+                f"About their {done['label'] or done['kind']}, they already "
+                f"said: \"{_window_said}\"\n"
+                f"So do NOT ask how it went. Respond to what they actually "
+                f"said — and do not go silent either, because saying nothing "
+                f"after someone tells you something is its own answer."
+            )
+        elif _said_since(user_id, done):
+            # She DID mention it, in the window before this boundary. Reading
+            # message by message missed it: "aaj sair pe nahi jaungi" half an
+            # hour after the walk was due was read as a plan rather than a
+            # decision, nothing was recorded, and the evening message asked
+            # how the walk had gone.
+            #
+            # The window is the honest unit. Whatever she said between the
+            # last boundary and this one is what happened.
+            parts.append(
+                f"About their {done['label'] or done['kind']}, they already "
+                f"said: \"{_window_said}\"\n"
+                f"So do NOT ask how it went. Respond to what they actually "
+                f"said — and do not go silent either, because saying nothing "
+                f"after someone tells you something is its own answer."
+            )
+        elif _said_since(user_id, done):
+            # She DID mention it, in the window before this boundary. Reading
+            # message by message missed it: "aaj sair pe nahi jaungi" half an
+            # hour after the walk was due was read as a plan rather than a
+            # decision, nothing was recorded, and the evening message asked
+            # how the walk had gone.
+            #
+            # The window is the honest unit. Whatever she said between the
+            # last boundary and this one is what happened.
+            parts.append(
+                f"About their {done['label'] or done['kind']}, they already "
+                f"said: \"{_window_said}\"\n"
+                f"So do NOT ask how it went. Respond to what they actually "
+                f"said — and do not go silent either, because saying nothing "
+                f"after someone tells you something is its own answer."
             )
         else:
             parts.append(
@@ -410,13 +615,19 @@ This is about: {label}
 Answer with ONE word.
 
 done      — they themselves did it, today, and it is finished
-not_done  — they themselves did not do it today, and the time has passed
+not_done  — they themselves are not doing it today. Either the time passed
+            and they did not, or they have said they are not going to.
 other     — anything else
 
 "other" covers more than it sounds. Someone else did it — "padosan sair karti
-hai" is the neighbour. It was another day — "kal sair achi rahi thi". Or it
-has not happened yet — "shaam ko sair karne jaungi" is a plan, "soch rahi hoon
+hai" is the neighbour. It was another day — "kal sair achi rahi thi". Or it is
+still ahead of them — "shaam ko sair karne jaungi" is a plan, "soch rahi hoon
 khichdi banaun" is a thought. None of those is a thing done.
+
+But saying they are NOT doing it is not a plan, it is a decision, and it is
+not_done. "Aaj sair pe nahi jaungi" said half an hour after the walk was due
+came back as other, so nothing was recorded and the evening message asked how
+the walk had gone.
 
 One word, nothing else."""
     try:
