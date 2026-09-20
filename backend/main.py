@@ -48,6 +48,10 @@ app.include_router(emergency_router, prefix="/emergency", tags=["emergency"], de
 # Its /data endpoint does. A developer tool, read-only.
 from routes.dashboard import router as dashboard_router
 app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
+# The dashboard page itself carries no key — the browser has none to send.
+# Its /data endpoint does. A developer tool, read-only.
+from routes.dashboard import router as dashboard_router
+app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(export_router, prefix="/export", tags=["export"], dependencies=[Depends(require_api_key)])
 app.include_router(care_router, prefix="/care", tags=["care"], dependencies=[Depends(require_api_key)])
 app.include_router(calendar_router, prefix="/calendar", tags=["calendar"], dependencies=[Depends(require_api_key)])
