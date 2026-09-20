@@ -43,19 +43,30 @@ def memory_view(user_id: str):
                 .eq("user_id", user_id).order("created_at", desc=True).execute()).data or []
     sess_ids = [s["id"] for s in sessions]
 
-    stm_n = 0
-    for sid in sess_ids:
+    # The live tiers, not the retired ones.
+    #
+    # This counted stm_clusters and ltm_patterns — session-keyed fragments and
+    # undated lines, neither of which is read any more. It was also one query
+    # per session, so seventy-five round trips for a number that was wrong.
+    def _count(table):
         try:
-            stm_n += (db.table("stm_clusters").select("id", count="exact")
-                      .eq("session_id", sid).execute()).count or 0
+            return (db.table(table).select("id", count="exact")
+                    .eq("user_id", user_id).execute()).count or 0
         except Exception:
-            pass
-    ltm_n = 0
+            return 0
+
+    cache_n = _count("memory_cache")
+    stm_n = _count("memory_stm")
+    ltm_n = _count("memory_ltm")
+
+    # And the notes themselves, which is the part that is actually memory.
     try:
-        ltm_n = (db.table("ltm_patterns").select("id", count="exact")
-                 .eq("user_id", user_id).execute()).count or 0
+        thread = (db.table("memory_stm")
+                  .select("happened_on,text,tags,untagged")
+                  .eq("user_id", user_id)
+                  .order("happened_on", desc=True).limit(14).execute()).data or []
     except Exception:
-        pass
+        thread = []
 
     clusters = (db.table("interest_clusters").select("*")
                 .eq("user_id", user_id).order("strength", desc=True).execute()).data or []
@@ -86,7 +97,7 @@ def memory_view(user_id: str):
 
     tiers = (
         '<div class="tiers">'
-        '<div class="tier"><div class="tn">Cache</div><div class="tv">~</div><div class="td">raw · fast decay</div></div>'
+        '<div class="tier"><div class="tn">Cache</div><div class="tv">' + str(cache_n) + '</div><div class="td">her words · 7d</div></div>'
         '<div class="arrow">&rarr;</div>'
         '<div class="tier"><div class="tn">STM</div><div class="tv">' + str(stm_n) + '</div><div class="td">fused · 7d</div></div>'
         '<div class="arrow">&rarr;</div>'

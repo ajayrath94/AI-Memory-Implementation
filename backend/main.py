@@ -42,6 +42,20 @@ app.include_router(memory_router,   prefix="/memory",   tags=["memory"],   depen
 app.include_router(voice_router,    prefix="/voice",    tags=["voice"],    dependencies=[Depends(require_api_key)])
 app.include_router(schedule_router, prefix="/schedule", tags=["schedule"], dependencies=[Depends(require_api_key)])
 app.include_router(reminders_router, prefix="/reminders", tags=["reminders"], dependencies=[Depends(require_api_key)])
+
+# The memory dashboard. A developer tool — every bug this week was invisible
+# until someone printed a table, and seven stores with things moving between
+# them on a clock is not debuggable from a terminal.
+from routes.dashboard import router as dashboard_router
+app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
+
+# The page itself carries no data; every call it makes sends the key.
+from fastapi.responses import FileResponse as _FileResponse
+import os as _os
+@app.get("/memory-view")
+def _memory_view():
+    return _FileResponse(_os.path.join(_os.path.dirname(__file__),
+                                       "static", "dashboard.html"))
 from routes.emergency import router as emergency_router
 app.include_router(emergency_router, prefix="/emergency", tags=["emergency"], dependencies=[Depends(require_api_key)])
 # The dashboard page itself carries no key — the browser has none to send.
