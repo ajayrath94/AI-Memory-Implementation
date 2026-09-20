@@ -508,6 +508,30 @@ def process_session_end(session_id: str, user_id: str = "default"):
     except Exception as e:
         print(f"[UserMemory] cluster build failed: {e}")
 
+    # 1b2. And how the things she mentioned relate to each other.
+    #
+    # The relations table had only what record_propositions writes — a place,
+    # an occupation. Nothing read a conversation and asked what connects to
+    # what, so a song never belonged to its film and a tablet never treated
+    # anything.
+    #
+    # One call with everything she has in view, rather than one per pair: the
+    # merge attempts asked about pairs in isolation and the answers drifted.
+    try:
+        from memory.relations import extract_edges
+        _said = " ".join((m.get("content") or "")[:200] for m in messages
+                         if m.get("role") == "user")
+        if len(_said.strip()) > 15:
+            from supabase_store import get_client as _gc
+            _ids = [r["id"] for r in
+                    (_gc().table("interest_clusters").select("id")
+                     .eq("user_id", user_id).eq("status", "active")
+                     .limit(60).execute()).data or []]
+            if _ids:
+                extract_edges(user_id, _said, _ids)
+    except Exception as e:
+        print(f"[UserMemory] edge extraction failed: {e}")
+
     # 1c. And what HAPPENED, with the date it happened on.
     try:
         from memory.events import extract_events
