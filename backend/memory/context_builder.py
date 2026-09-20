@@ -153,7 +153,25 @@ def _recent_companion_lines(user_id: str, n: int = 6) -> list:
         rows = (db.table("messages").select("content,timestamp")
                 .in_("session_id", ids).eq("role", "assistant")
                 .order("timestamp", desc=True).limit(n).execute()).data or []
-        return [r.get("content", "") for r in rows if r.get("content")]
+        # With the day, because "aaj Sunday hai" said yesterday reads as today
+        # otherwise — and repeating something from last week is fine where
+        # repeating this morning is not.
+        from datetime import datetime as _dt, timezone as _tz
+        today = _dt.now(_tz.utc).date()
+        out = []
+        for r in rows:
+            if not r.get("content"):
+                continue
+            try:
+                d = _dt.fromisoformat(
+                    str(r["timestamp"]).replace("Z", "+00:00")).date()
+                gap = (today - d).days
+                when = ("today" if gap == 0 else "yesterday" if gap == 1
+                        else f"{gap} days ago")
+                out.append(f"[{when}] {r['content']}")
+            except Exception:
+                out.append(r["content"])
+        return out
     except Exception as e:
         print(f"[Context] recent lines failed: {e}")
         return []
