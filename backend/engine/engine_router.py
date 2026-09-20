@@ -101,12 +101,24 @@ def _retrieve_memory(
         if score >= RECALL_THRESHOLD:
             new_strength = min(1.0, entry["strength"] + 0.05)
             new_count    = entry["recall_count"] + 1
+            # The old tiers are neither read nor written now.
+            #
+            # Promotion here ran backwards: three recalls in one conversation
+            # moved a memory DOWN into long-term storage, so the subjects she
+            # returned to most were archived first. And what ltm_patterns
+            # collected was not memory — the companion's own greetings
+            # recalled twenty times, "USER_PATTERN: NUDGE, SADNESS, SEARCH"
+            # seventeen, and "abhi Janmashtami hai toh mandir jana hai" at
+            # twenty-eight, undated, a fortnight after Janmashtami.
+            #
+            # The recall counts kept climbing after we stopped reading them,
+            # which is how that row was found again after being deleted.
+            #
+            # memory_stm and memory_ltm do this properly: dated, compressed by
+            # neglect, and rendered as "twelve days ago" rather than as a line
+            # that reads as now.
             if tier == "stm":
                 update_stm_recall(entry["id"], new_strength, new_count)
-                if new_count >= PROMOTION_THRESHOLD:
-                    promote_stm_to_ltm(entry, user_id)
-            else:
-                update_ltm_recall(entry["id"], new_strength, new_count)
 
             results.append({
                 "text":  entry["text"],
