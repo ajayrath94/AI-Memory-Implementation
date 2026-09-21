@@ -72,6 +72,30 @@ class _Messages:
         # so max_tokens=10 — which several one-word classifiers here use
         # deliberately — returned an empty string with finish_reason STOP and
         # no error at all. Ten worked on Haiku; it does not here.
+        # Which model, honestly. This used self._model whatever was passed, so
+        # twenty-three call sites asking for the cheap tier — one-word
+        # classifiers, yes/no judgements, a score — all ran on the full
+        # thinking model. The code asked for haiku everywhere and never got it.
+        use = model or self._model
+        small = use != self._model
+
+        if small:
+            # A yes/no does not need to reason about itself first. Thinking
+            # tokens are billed as output, so "done" was costing several
+            # hundred tokens to produce one word.
+            cfg = types.GenerateContentConfig(
+                max_output_tokens=max(max_tokens * 2, 64),
+                temperature=0.2,
+                system_instruction=system or None,
+                # No thinking_config. Flash-Lite does not think by default and
+                # rejects the setting with a 400 — which, deployed, would have
+                # broken every small call at once: the day chain, promotion,
+                # the resolver.
+            )
+            gc = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            r = gc.models.generate_content(model=use, contents=prompt, config=cfg)
+            return _Response(getattr(r, "text", "") or "")
+
         cfg = types.GenerateContentConfig(
             # And Devanagari costs more tokens per character than English,
             # so limits sized against Haiku clip mid-word here.
@@ -89,7 +113,7 @@ class _Messages:
         # mid-call and the request failed with "client has been closed".
         gc = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         r = gc.models.generate_content(
-            model=self._model, contents=prompt, config=cfg)
+            model=use, contents=prompt, config=cfg)
         return _Response(getattr(r, "text", "") or "")
 
 
@@ -163,6 +187,10 @@ def model(name: str = HAIKU) -> str:
     """
     client()
     if _backend == "gemini":
+        # The cheap tier for the small calls. Everything asking for haiku was
+        # sized for a fast, cheap model and got the full one instead.
+        if name == HAIKU or "haiku" in (name or ""):
+            return os.getenv("GEMINI_LITE_MODEL", "gemini-flash-lite-latest")
         return os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     if _backend != "vertex":
         return name
