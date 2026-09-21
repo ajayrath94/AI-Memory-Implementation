@@ -437,6 +437,28 @@ def generate_proactive_script(
             print(f"[Schedule] record_suggestion failed: {e}")
     if composed:
         script = composed
+    elif action in ("BOUNDARY", "RECOMMENDATION", "GREETING"):
+        # When composing fails, send nothing rather than a template.
+        #
+        # Credits ran out on 21 September and three of four boundaries went
+        # out as templates: "Aaj ka cricket dekha?" twice — once after she had
+        # said she does not watch cricket — and "Raat ki dawai li?" at dinner,
+        # though boundaries are never meant to mention medicine. The templates
+        # read a profile filled in from a form weeks ago; they cannot know
+        # anything she has said since.
+        #
+        # A missed boundary costs nothing. A wrong one teaches her the
+        # companion is not listening.
+        print(f"[Schedule] compose failed for {action} — sending nothing "
+              f"rather than a template")
+        script = ""
+    elif action == "CHECK_IN":
+        # The exception. Hours of silence during waking time is a welfare
+        # question, and that should still arrive even when composing fails —
+        # but plainly, claiming nothing about her day.
+        name = (profile or {}).get("name") or ""
+        script = f"{name} ji, sab theek hai? Bas yaad aayi aapki." if name \
+                 else "Sab theek hai? Bas yaad aayi aapki."
 
     if not script:
         print(f"[Schedule] EMPTY script for {user_id} action={action} "
