@@ -122,6 +122,17 @@ def save_user_profile(user_id: str, updates: dict, declared: bool = False):
     existing = get_user_profile(user_id) or {}
 
     owner   = updates.get("name") or existing.get("name") or ""
+
+    # Interests are not kept on the profile any more. interest_clusters holds
+    # them — built from what she says, weighted by how often and how warmly,
+    # promoted by repetition.
+    #
+    # The profile list was a form filled in during testing and refilled by
+    # every session's extraction: Kendrick Lamar, Michael Jackson, cricket,
+    # IPL. The templates read it, and asked "aaj ka cricket dekha?" of someone
+    # who had just said she does not watch cricket.
+    updates = {k: v for k, v in updates.items() if k != "interests"}
+
     updates = _resolve_incoming(updates, existing, user_id)
     merged  = _deep_merge(existing, updates, owner, user_id, declared)
     merged["user_id"]    = user_id
