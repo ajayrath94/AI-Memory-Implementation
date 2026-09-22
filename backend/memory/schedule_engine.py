@@ -403,9 +403,11 @@ def generate_proactive_script(
     # A reason beats a probability, so a rhythm due today outranks the
     # weighted draw. The day goes in the words: naming it shows she has been
     # noticed rather than merely predicted.
+    _rhythm_fired = False
     try:
         from memory.rhythms import due_today, hint as rhythm_hint
         for _r in due_today(user_id):
+            _rhythm_fired = True
             hints = (hints or "") + rhythm_hint(_r)
             print(f"[Rhythm] {user_id}: {_r['subject']} on {_r['weekday']}s "
                   f"({_r['on_that_day']}/{_r['of']})")
@@ -414,7 +416,11 @@ def generate_proactive_script(
         print(f"[Rhythm] check failed: {_re}")
 
     picked = None
-    if intent == "recommendation":
+    # A rhythm is a reason, and a reason beats a probability. If she has a
+    # Sunday and it is Sunday, that IS the offer — drawing a second one on top
+    # gives the composer two things to choose between and it picks whichever
+    # reads better, which is not a decision anyone made.
+    if intent == "recommendation" and not _rhythm_fired:
         try:
             from memory.suggestions import pick_suggestion
             picked = pick_suggestion(user_id)
