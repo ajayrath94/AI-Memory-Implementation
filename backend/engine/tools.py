@@ -92,8 +92,13 @@ NEWS_SCHEMA = {
                 "topic": {
                     "type": "string",
                     "description": (
-                        "What to search news for, e.g. 'cricket India' or "
-                        "'Mumbai weather alert'. Omit for general India news."
+                        "What to search news for, as the person asked for it. "
+                        "Omit for general India news."
+                        # No example topic. "e.g. 'cricket India'" was read as
+                        # a hint about what to offer, and a woman who does not
+                        # watch cricket was offered cricket scores before she
+                        # had said anything about sport. A tool is there when
+                        # she asks for it, not a suggestion when she has not.
                     ),
                 },
             },
