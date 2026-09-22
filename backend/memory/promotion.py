@@ -84,6 +84,12 @@ def habits(user_id: str, window: int = HABIT_WINDOW) -> List[Dict]:
             seen.add(key)
             # Which window caught it. "Recent" is worth offering today;
             # "regular" is worth knowing about her.
+            # Three mentions in one week and nothing since is a spell — she
+            # was doing it and stopped. It promoted as a habit, which is the
+            # opposite of what it is.
+            from memory.rhythms import is_spell
+            if is_spell(h.get("dates") or []):
+                continue
             h["rhythm"] = "recent" if w <= 14 else "regular"
             h["window"] = w
             out.append(h)

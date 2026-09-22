@@ -394,6 +394,25 @@ def generate_proactive_script(
         except Exception as e:
             print(f"[Schedule] moment facts failed: {e}")
 
+    # What she does on THIS day of the week, before anything is drawn.
+    #
+    # Promotion counts distinct days, so chicken on four Sundays and khichdi
+    # on four scattered days both come back as "4 days" — and only the first
+    # lets you say, on a Sunday morning, "aaj Sunday hai, chicken banayengi?"
+    #
+    # A reason beats a probability, so a rhythm due today outranks the
+    # weighted draw. The day goes in the words: naming it shows she has been
+    # noticed rather than merely predicted.
+    try:
+        from memory.rhythms import due_today, hint as rhythm_hint
+        for _r in due_today(user_id):
+            hints = (hints or "") + rhythm_hint(_r)
+            print(f"[Rhythm] {user_id}: {_r['subject']} on {_r['weekday']}s "
+                  f"({_r['on_that_day']}/{_r['of']})")
+            break
+    except Exception as _re:
+        print(f"[Rhythm] check failed: {_re}")
+
     picked = None
     if intent == "recommendation":
         try:
