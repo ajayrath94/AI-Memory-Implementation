@@ -826,13 +826,28 @@ kind of fact that changes later, which is why it needs to exist separately.
 
 For EACH fact return an object:
 - subject: canonical name. Translate common nouns to English ("ghutne ka dard"
-  -> "knee pain"). TRANSLITERATE anything that names a particular thing — a
-  person, a film, a song, a place, a festival, a dish with a name — however
-  ordinary the words look: "Vikram", "Zinda", "Mera Yaar", "Sholay", "Dil".
-  A title is not vocabulary. "Zinda" means alive AND is a song; when a word
-  could be either, keep it as she said it. Translating "knee pain" wrongly
-  loses a little; translating a name loses the thing itself, and nothing
-  downstream can recover it.
+  KEEP HER WORD whenever she would recognise it as her own — the label is
+  what gets said back to her, and she did not say "gardening".
+
+  Not a list of categories. This said "a person, a film, a song, a place, a
+  festival, a dish with a name", and bagwani is none of those, so it came back
+  as "gardening" while mandir and ghutna survived — the rule was applied
+  exactly as written and still got it wrong. The same list-shaped rule turned
+  devar into husband and had no slot for மருமகள்.
+
+  So: bagwani, mandir, ghutna, Sholay, Zinda, Mera Yaar, devar, தோட்டம்.
+  Translate only when the English is genuinely what she would say herself.
+
+  These are not a boundary — a word not on this line still keeps her form.
+  They are here because without them 'ghutne mein dard' came back as 'knee
+  pain' and Tamil produced nothing at all: the principle alone was not
+  specific enough to act on, and the model judged conservatively toward
+  English.
+
+  A title is never vocabulary. "Zinda" means alive AND is a song; when a word
+  could be either, keep it as she said it. Translating a common noun loses a
+  little; translating a name loses the thing itself, and nothing downstream
+  can recover it.
 - subject_ref: how they were referred to, IN HER OWN WORDS — "beta", "devar",
   "jethani", "saheli", "padosan", "mausi" — or "self", "pronoun",
   "proper_name" when no relation was named.
