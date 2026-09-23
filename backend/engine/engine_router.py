@@ -53,7 +53,10 @@ def _retrieve_memory(
     Pure embedding cosine similarity.
     No TF-IDF. No keyword matching. Done.
     """
-    stm = get_stm_clusters(session_id)
+    # stm_clusters and ltm_patterns are dropped. Both were retired — session-
+    # keyed fragments and undated lines that produced "abhi Janmashtami hai"
+    # a fortnight after the festival — and the thread does this properly now.
+    stm = []
     # ltm_patterns is retired, not read.
     #
     # Eighteen rows for one user and almost none of them was memory: the
@@ -118,7 +121,7 @@ def _retrieve_memory(
             # neglect, and rendered as "twelve days ago" rather than as a line
             # that reads as now.
             if tier == "stm":
-                update_stm_recall(entry["id"], new_strength, new_count)
+                pass          # nothing to write back to
 
             results.append({
                 "text":  entry["text"],

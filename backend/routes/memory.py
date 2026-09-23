@@ -13,11 +13,11 @@ def cache_state():
 
 @router.get("/stm/{session_id}")
 def stm_state(session_id: str):
-    return {"entries": get_stm_clusters(session_id)}
+    return {"entries": [], "note": "stm_clusters retired — see /dashboard"}
 
 @router.get("/ltm")
 def ltm_state():
-    return {"entries": get_ltm_patterns()}
+    return {"entries": [], "note": "ltm_patterns retired — see /dashboard"}
 
 @router.get("/entropy")
 def entropy():
