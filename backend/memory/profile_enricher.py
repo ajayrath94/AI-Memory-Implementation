@@ -146,7 +146,7 @@ Return ONLY the JSON."""
 
     try:
         from google import genai
-        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        client = __import__("llm").genai_client()
         resp   = client.models.generate_content(
             model="gemini-flash-lite-latest",
             contents=prompt,
@@ -486,7 +486,7 @@ Return ONLY the JSON."""
     try:
         client = __import__("llm").client()
         resp   = client.messages.create(
-            model      = "claude-haiku-4-5",
+            model      = __import__("llm").model(),
             max_tokens = 150,
             messages   = [{"role": "user", "content": prompt}]
         )
@@ -527,7 +527,7 @@ Return ONLY the JSON."""
     try:
         client = __import__("llm").client()
         resp   = client.messages.create(
-            model      = "claude-haiku-4-5",
+            model      = __import__("llm").model(),
             max_tokens = 150,
             messages   = [{"role": "user", "content": prompt}]
         )
@@ -893,7 +893,7 @@ Return ONLY a JSON array. Message:
 
     try:
         from google import genai
-        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        client = __import__("llm").genai_client()
         resp = client.models.generate_content(
             model="gemini-flash-lite-latest", contents=prompt)
         raw = (resp.text or "").strip().replace("```json", "").replace("```", "").strip()

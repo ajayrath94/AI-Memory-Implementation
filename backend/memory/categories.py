@@ -159,6 +159,30 @@ def record_declared_interest(user_id: str, category: str, text: str) -> Optional
     try:
         res = resolve(label, etype or "other", pillar, user_id)
         name = res.get("name") or label
+
+        # Stating something twice is not new evidence.
+        #
+        # Every save of the setup form added 1.0 and a fresh "likes" event, so
+        # a preference re-saved seven times during testing ranked seven times
+        # higher than one saved once — Shakira reached 7.0 without ever being
+        # mentioned in conversation, and outranked everything she actually
+        # talked about.
+        #
+        # A declaration is a fact about her. Occurrences — mentions, replies —
+        # still add every time, because those are evidence.
+        try:
+            from supabase_store import get_client as _gc
+            already = (_gc().table("interest_clusters").select("id,attributes")
+                       .eq("user_id", user_id).ilike("label", name)
+                       .limit(1).execute()).data or []
+            if already:
+                _a = already[0].get("attributes") if isinstance(
+                    already[0].get("attributes"), dict) else {}
+                if _a.get("source") == "declared":
+                    return already[0]["id"]
+        except Exception as _de:
+            print(f"[Categories] declared check failed: {_de}")
+
         cid = _upsert_cluster(
             user_id, name, pillar,
             # Full strength: they said it outright. An inferred interest has to

@@ -92,7 +92,7 @@ class _Messages:
                 # broken every small call at once: the day chain, promotion,
                 # the resolver.
             )
-            gc = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            gc = genai_client()
             r = gc.models.generate_content(model=use, contents=prompt, config=cfg)
             return _Response(getattr(r, "text", "") or "")
 
@@ -111,7 +111,7 @@ class _Messages:
         )
         # Held in a local rather than chained: the client was being collected
         # mid-call and the request failed with "client has been closed".
-        gc = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        gc = genai_client()
         r = gc.models.generate_content(
             model=use, contents=prompt, config=cfg)
         return _Response(getattr(r, "text", "") or "")
@@ -173,6 +173,31 @@ def client():
     _backend = "anthropic"
     print("[LLM] direct Anthropic API")
     return _client
+
+
+_genai = None
+
+
+def genai_client():
+    """One Gemini client for the process.
+
+    Thirteen places were constructing their own, nine of them on the hot path
+    — a new connection pool per call, none of them closed. That is what
+    produced "Server disconnected without sending a response" and the read
+    timeouts.
+
+    Held in a module global rather than a local because of the other failure:
+    a client built inside a function was collected mid-call and the request
+    came back "client has been closed". A global is never collected.
+    """
+    global _genai
+    if _genai is None:
+        from google import genai
+        key = os.getenv("GEMINI_API_KEY")
+        if not key:
+            raise RuntimeError("GEMINI_API_KEY not set")
+        _genai = genai.Client(api_key=key)
+    return _genai
 
 
 HAIKU = "claude-haiku-4-5-20251001"

@@ -115,7 +115,7 @@ def _extract_location_from_text(text: str) -> Optional[str]:
         import anthropic
         client = __import__("llm").client()
         resp   = client.messages.create(
-            model      = "claude-haiku-4-5",
+            model      = __import__("llm").model(),
             max_tokens = 50,
             messages   = [{
                 "role":    "user",

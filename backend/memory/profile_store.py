@@ -512,7 +512,7 @@ Return ONLY the JSON, no explanation."""
         import anthropic
         client = __import__("llm").client()
         resp   = client.messages.create(
-            model      = "claude-haiku-4-5",
+            model      = __import__("llm").model(),
             max_tokens = 1000,
             messages   = [{"role": "user", "content": prompt}]
         )

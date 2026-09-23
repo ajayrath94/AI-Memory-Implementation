@@ -134,7 +134,7 @@ Reply with exactly one line: the concern name verbatim, or NEW."""
 
     try:
         from google import genai
-        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        client = __import__("llm").genai_client()
         resp = client.models.generate_content(
             model="gemini-flash-lite-latest", contents=prompt)
         answer = (resp.text or "").strip().strip('"').strip()
@@ -164,7 +164,7 @@ Between "India match" and "cricket", choose "cricket".
 Reply with exactly one of the two labels, verbatim. No other text."""
     try:
         from google import genai
-        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        client = __import__("llm").genai_client()
         resp = client.models.generate_content(model="gemini-flash-lite-latest", contents=prompt)
         ans = (resp.text or "").strip().strip('"').strip()
         for lab in (a, b):

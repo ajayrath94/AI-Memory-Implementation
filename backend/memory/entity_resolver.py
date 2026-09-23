@@ -36,7 +36,7 @@ def embed_entity(name: str, entity_type: str = "") -> Optional[List[float]]:
         from google.genai import types
 
         text = f"{name} ({entity_type})" if entity_type else name
-        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        client = __import__("llm").genai_client()
         resp = client.models.embed_content(
             model="models/gemini-embedding-001",
             contents=text,
@@ -192,7 +192,7 @@ Reply with exactly one line: either the tracked name verbatim, or NEW."""
 
     try:
         from google import genai
-        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        client = __import__("llm").genai_client()
         resp = client.models.generate_content(
             model="gemini-flash-lite-latest", contents=prompt)
         answer = (resp.text or "").strip().strip('"').strip()

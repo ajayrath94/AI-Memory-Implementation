@@ -212,7 +212,7 @@ def _embed_google(texts, _retry: int = 1):
     todo = [t for t in texts if t not in _EMBED_CACHE]
 
     if todo:
-        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        client = __import__("llm").genai_client()
         try:
             # One request for the batch. This looped per text even when called
             # from embed_batch, so ten labels meant ten requests.
