@@ -620,15 +620,20 @@ def process_session_end(session_id: str, user_id: str = "default"):
         personal_centroids=personal_centroids,
     )
 
-    # 13. Store in STM
-    if new_summary:
-        save_stm_cluster(
-            session_id=session_id,
-            pillar="USER_MEMORY",
-            text=f"[USER PROFILE] {new_summary}",
-            strength=1.0,
-            pillar_tags=dominant_pillars,
-        )
+    # 13. Nothing. stm_clusters is retired.
+    #
+    # The reads went yesterday and this write stayed, which is the worst of
+    # both: a row nobody reads, and an unguarded insert with a session_id
+    # foreign key. When that failed — a session deleted, a race — it raised,
+    # and everything after it in this function died with it.
+    #
+    # That is what made the pipeline nondeterministic. The same eight
+    # sentences produced thirteen clusters one run and two the next, because
+    # the second run hit the failure partway through and threw away every
+    # cluster, event and note computed after it.
+    #
+    # memory_stm holds the day's note now — dated, tagged, keyed by user
+    # rather than session, and written above.
 
     # 14. Run forgetting in background
     try:
