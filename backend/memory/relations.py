@@ -49,7 +49,17 @@ from typing import List, Dict, Optional
 # So same_as is an edge like any other. Nothing is destroyed, retrieval follows
 # the edge, and a wrong one is a row to delete rather than a label that is
 # gone. Which was the conclusion the merge attempts kept pointing at.
-SAME_AS = 0.78          # worth ASKING about, not worth merging on
+# Low, because this only decides what to ASK about — the model decides.
+#
+# At 0.78 the pairs that matter were never proposed: ghutna / knee pain at
+# 0.695, bagwani / gardening at 0.680. And no higher bar could have worked,
+# because Kishore Kumar / Lata Mangeshkar — two different singers — scores
+# 0.704, ABOVE both. Embeddings cannot separate "the same thing in two
+# languages" from "two things of the same kind".
+#
+# So cosine narrows and the model rules. Two or three Flash-Lite calls when a
+# new cluster appears, none otherwise.
+SAME_AS = 0.62          # worth ASKING about, not worth merging on
 
 TYPES = (
     "same_as",      # identity. the only case that merges.
@@ -236,10 +246,16 @@ def find_same_as(user_id: str, label: str,
         from llm import ask
         a = ask(f'Are these two the same thing, or two different things?\n\n'
                 f'A: "{label}"\nB: "{best["label"]}"\n\n'
-                f'Same only if they NAME the same thing — a nickname, the same '
-                f'words in another language, an abbreviation. Two people of '
-                f'similar fame are not the same. A specific thing and a general '
-                f'one are not the same.\n\nOne word: same or different.',
+                f'Same if they refer to the same thing, however differently '
+                f'it is written — a nickname, an abbreviation, or HER WORD AND '
+                f'THE ENGLISH FOR IT. "bagwani" and "gardening" are the same '
+                f'activity and came back as different, because the rule said '
+                f'"the same words in another language" and bagwani is not the '
+                f'same words.\n\n'
+                f'Different if they are two things of the same kind — two '
+                f'singers, two films, two dishes. And different if one is a '
+                f'body part and the other a condition: a knee is not knee '
+                f'pain.\n\nOne word: same or different.',
                 max_tokens=10).strip().lower()
     except Exception as e:
         print(f"[Relations] same_as check failed: {e}")
