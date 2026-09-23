@@ -151,12 +151,33 @@ def write_stm(user_id: str, messages: List[dict], topics: List[Dict] = None,
     if len(hers.strip()) < 12:
         return False
 
+    # Who she is. The notes called a woman "he" — the profile says female and
+    # nothing passed it on, so the model guessed, and guessed wrong.
+    _gender_line = ""
+    try:
+        from memory.profile_store import get_user_profile
+        _p = get_user_profile(user_id) or {}
+        _g = ((_p.get("demographics") or {}).get("gender") or "").lower()
+        _nm = _p.get("name") or ""
+        if _g.startswith("f"):
+            _gender_line = f"This person is a woman{f' named {_nm}' if _nm else ''}. Use she and her."
+        elif _g.startswith("m"):
+            _gender_line = f"This person is a man{f' named {_nm}' if _nm else ''}. Use he and him."
+        elif _nm:
+            _gender_line = f"This person is called {_nm}. Use their name rather than he or she."
+        else:
+            _gender_line = "Do not guess whether they are a man or a woman. Say 'they'."
+    except Exception:
+        _gender_line = "Do not guess whether they are a man or a woman. Say 'they'."
+
     prompt = f"""Someone said these things during one day:
 
 {hers}
 
 Write what happened, in two or three short sentences, as a note to yourself
 for tomorrow. Third person, plain.
+
+{_gender_line}
 
 Keep what you would ASK ABOUT tomorrow. Small things are the point; this is
 the thread of a conversation, not a record of who they are.
@@ -168,8 +189,15 @@ mentioned sleeping badly — an illustration read as a list to fill in.
 Do not add a question at the end either. Write what happened; what to ask is
 obvious from it.
 
-Write only what CHANGED or HAPPENED that day. A phone call, a meal, a bad
-morning, a visit.
+Write only what CHANGED or HAPPENED that day.
+
+No examples here, deliberately. This prompt used to list "a phone call, a meal,
+a bad morning, a visit" — and given "mera beta Rajesh Mumbai mein rehta hai",
+which says only where he lives, it wrote "Rajesh called". Three runs, three
+invented phone calls. The illustration two paragraphs above caused the same
+thing with "a bad night".
+
+If they did not say it happened, it did not happen.
 
 Told to leave out what is permanently true, this wrote "she mentioned that he
 lives in Mumbai and works as an engineer" — the instruction named the thing
