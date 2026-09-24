@@ -201,7 +201,7 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
         db = get_client()
         rows = (db.table("interest_clusters")
                 .select("id,label,pillar,relationship,current_state,"
-                        "event_count,strength,attributes")
+                        "event_count,strength,attributes,last_event")
                 .eq("user_id", user_id).eq("status", "active")
                 # Events share this table and are not things to offer. "Beta
                 # Arjun aaya tha" is a memory, not a suggestion.
@@ -308,8 +308,42 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
     # The category comes along: it decides what kind of thing can be fetched
     # for this — a song, a recipe, or nothing at all.
     attrs = best.get("attributes")
+    # WHEN she last had this, and at what hour.
+    #
+    # The picker handed the composer a label and nothing else, so "chole" —
+    # which she ate two days ago — was offered as though it were a new idea.
+    # The dates were already there: last_event on the cluster, and every day
+    # in subject_mentions.
+    #
+    # It changes the offer rather than only the choice. Never mentioned is an
+    # introduction; two days ago is "phir se chole?"; three weeks ago is
+    # "bahut din se khichdi nahi banayi", which is a warmer thing and
+    # impossible without the date.
+    last_at, last_on, days_ago = None, None, None
+    try:
+        from datetime import date as _date   # datetime is imported at module level; re-importing it here shadowed it for the whole function and broke the recent-offers lookup above
+        rows = (db.table("subject_mentions").select("happened_on")
+                .eq("user_id", user_id).ilike("subject", f"%{best['label']}%")
+                .order("happened_on", desc=True).limit(1).execute()).data or []
+        if rows:
+            last_on = str(rows[0]["happened_on"])[:10]
+        # The hour comes from the cluster's last event — the day alone cannot
+        # tell a breakfast from a late supper, and an offer at the wrong hour
+        # is the thing that made a dish arrive at 8:41pm.
+        if best.get("last_event"):
+            last_at = str(best["last_event"])
+            if not last_on:
+                last_on = last_at[:10]
+        if last_on:
+            days_ago = (_date.today() - _date.fromisoformat(last_on)).days
+    except Exception as e:
+        print(f"[Suggest] last-seen read failed: {e}")
+
     return {"cluster_id": best["id"], "label": best["label"],
             "pillar": best.get("pillar"),
+            "last_on": last_on,          # the day she last had it
+            "last_at": last_at,          # and the hour, where known
+            "days_ago": days_ago,
             "attributes": attrs if isinstance(attrs, dict) else {}}
 
 

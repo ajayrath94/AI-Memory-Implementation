@@ -431,6 +431,24 @@ def generate_proactive_script(
                 # result, or a category that should never fetch — and the hint
                 # falls back to naming the subject, which is what this did
                 # before.
+                # How long since she last had it. The same subject is three
+                # different offers depending on when — and the picker was
+                # handing over a label with no date, so chole she ate two days
+                # ago arrived as a fresh idea.
+                _d = picked.get("days_ago")
+                if _d is not None:
+                    if _d <= 3:
+                        hints = ((hints + "\n") if hints else "") + (
+                            f"They had {picked['label']} {'today' if _d == 0 else f'{_d} day(s) ago'}. "
+                            f"So this is picking something up, not introducing "
+                            f"it — 'phir se' rather than 'try kijiye'.")
+                    elif _d >= 14:
+                        hints = ((hints + "\n") if hints else "") + (
+                            f"It has been {_d} days since {picked['label']} "
+                            f"came up. That gap is itself the reason to "
+                            f"mention it — 'bahut din se' — and it should not "
+                            f"sound like the first time.")
+
                 from memory.artefacts import (fetch_artefact, as_hint,
                                                fetch_along_axis, axis_hint)
                 cat = ((picked.get("attributes") or {}).get("category")
