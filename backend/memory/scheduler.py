@@ -197,6 +197,15 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                             print(f"[Proactive] compose failed for {uid}: {_ge}")
                             _r = None
                         script = (_r or {}).get("script", "")
+                        if not script:
+                            # Five recommendations were decided and logged on
+                            # 23 September and none delivered, while every
+                            # boundary that day went out. Composing them by
+                            # hand works, so the failure only appears in the
+                            # scheduler's own pass — and nothing recorded why.
+                            print(f"[Proactive] {uid}: {action} composed "
+                                  f"nothing — reason={(_r or {}).get('reason')} "
+                                  f"slot={(_r or {}).get('slot')}")
                         if script:
                             # Write it to her session before pushing. A
                             # proactive message currently exists only on the
