@@ -512,6 +512,96 @@ def expire_stale(user_id: Optional[str] = None) -> int:
         apply_reaction(r["user_id"], r, "no_response")
     return len(rows)
 
+# What makes weather worth a sentence. Not a temperature — a change, or
+# something she would act on.
+DROP_C = 4.0          # colder than yesterday. Her knee notices a fall.
+RISE_C = 6.0          # warmer. Less interesting, but a jump is a jump.
+COLD_C = 12.0         # cold in its own right, whatever yesterday was
+HOT_C = 36.0
+
+_WET = ("rain", "drizzle", "shower", "storm", "thunder", "snow")
+
+
+def _weather_yesterday(user_id: str):
+    """What it was the last time we looked. None on the first day."""
+    from datetime import date, timedelta
+    try:
+        from supabase_store import get_client
+        rows = (get_client().table("weather_log").select("temp_c,description")
+                .eq("user_id", user_id)
+                .lt("on_day", date.today().isoformat())
+                .order("on_day", desc=True).limit(1).execute()).data or []
+        return rows[0] if rows else None
+    except Exception as e:
+        print(f"[Weather] history read failed: {e}")
+        return None
+
+
+def _remember_weather(user_id: str, temp, desc: str):
+    """One row a day. Cheap, and it is the only way to know a change."""
+    from datetime import date
+    try:
+        from supabase_store import get_client
+        get_client().table("weather_log").upsert({
+            "user_id": user_id, "on_day": date.today().isoformat(),
+            "temp_c": temp, "description": desc,
+        }, on_conflict="user_id,on_day").execute()
+    except Exception as e:
+        print(f"[Weather] write failed: {e}")
+
+
+def weather_worth_saying(user_id: str, w: dict) -> str:
+    """One line, or "" — and "" is the common answer.
+
+    Returns a fact, never a phrasing. "Mausam theek hai" used to be in this
+    block and it is an opinion; given one, the composer says it back.
+    """
+    if not w:
+        return ""
+
+    temp = w.get("temp_c")
+    desc = str(w.get("description") or "").lower()
+    try:
+        temp = float(temp) if temp is not None else None
+    except Exception:
+        temp = None
+
+    was = _weather_yesterday(user_id)
+    if temp is not None:
+        _remember_weather(user_id, temp, desc)
+
+    # Rain first. She walks in the evening, and an umbrella is a thing she can
+    # act on — which is the whole test.
+    if any(word in desc for word in _WET):
+        t = f", {round(temp)}°C" if temp is not None else ""
+        return f"It is raining where they are{t}."
+
+    if temp is None:
+        return ""
+
+    if temp <= COLD_C:
+        return f"It is cold where they are, {round(temp)}°C."
+    if temp >= HOT_C:
+        return f"It is very hot where they are, {round(temp)}°C."
+
+    # And a change from yesterday. The number alone is not news; the
+    # difference is what anyone would remark on.
+    if was and was.get("temp_c") is not None:
+        try:
+            delta = temp - float(was["temp_c"])
+        except Exception:
+            return ""
+        if delta <= -DROP_C:
+            return (f"It is {abs(round(delta))}° colder than yesterday, "
+                    f"{round(temp)}°C.")
+        if delta >= RISE_C:
+            return (f"It is {round(delta)}° warmer than yesterday, "
+                    f"{round(temp)}°C.")
+
+    # A pleasant day is not news, and passing it guarantees it gets used.
+    return ""
+
+
 def moment_facts(user_id: str, moment: dict = None) -> str:
     """The world as it is, for whoever is writing the next message.
 
@@ -522,16 +612,13 @@ def moment_facts(user_id: str, moment: dict = None) -> str:
     m = moment or _moment(user_id)
     lines = []
 
-    w = m.get("weather") or {}
-    if w:
-        bits = []
-        temp = w.get("temp_c")
-        if temp is not None:
-            bits.append(f"{round(float(temp))}°C")
-        if w.get("description"):
-            bits.append(str(w["description"]))
-        if bits:
-            lines.append("Weather where they are: " + ", ".join(bits) + ".")
+    # Only when it would change what she does. Three messages one morning
+    # were all about the weather, and the breakfast boundary never mentioned
+    # breakfast — the weather was the only concrete thing in this block, and
+    # always is.
+    _w = weather_worth_saying(user_id, m.get("weather") or {})
+    if _w:
+        lines.append(_w)
         # The route writes this in their language and it is better than
         # anything assembled from the raw fields.
         if w.get("advice"):
