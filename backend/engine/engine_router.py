@@ -699,6 +699,20 @@ async def process_input(text: str, model: str,
                 # anything, and that is where most confirmations come from.
                 # Costs nothing when nothing is past due and unanswered, which
                 # is most of the day.
+                # Is she in danger right now?
+                #
+                # The alert engine ran only at session end, so "saans nahi aa
+                # rahi" at two in the morning reached her son when the session
+                # closed — hours later, or whenever the backstop sweep got to
+                # it. The most important path in the product was the slowest.
+                #
+                # One question, read in any language, on the message itself.
+                try:
+                    from memory.alert_engine import alert_now
+                    alert_now(user_id, text)
+                except Exception as _ae:
+                    print(f"[Router] urgent check failed: {_ae}")
+
                 from memory.day import note_from_message
                 note_from_message(user_id, text)
 

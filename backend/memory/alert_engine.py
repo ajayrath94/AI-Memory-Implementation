@@ -761,3 +761,134 @@ def run_alert_engine(user_id: str, allow_test: bool = False) -> dict:
         "alerts":          [a["alert_type"] for a in fresh_alerts],
         "sent":            sent_count,
     }
+
+
+def in_danger_now(text: str, user_id: str = "") -> dict:
+    """One question, asked of the message itself. Any language.
+
+    Returns {danger: bool, what: str, quote: str}. Errs toward danger when
+    the call fails — a false alarm costs a phone call, a miss costs
+    everything.
+    """
+    said = (text or "").strip()
+    if len(said) < 3:
+        return {"danger": False, "what": "", "quote": ""}
+
+    prompt = f"""Someone elderly, living alone or with family, just sent this
+message to their companion app:
+
+"{said[:600]}"
+
+Are they in danger RIGHT NOW, or describing something that needs someone to
+come or call immediately?
+
+JSON only: {{"danger": true/false, "what": "...", "quote": "..."}}
+
+  danger   true if something is happening to them now — they have fallen,
+           they cannot breathe, chest pain, bleeding, they cannot get up,
+           they are frightened for their safety, they are talking about
+           ending their life.
+
+           false for a condition they live with, something that happened
+           days ago, worry about someone else, or an ordinary bad day. "My
+           knee hurts" is not danger. "I fell and cannot get up" is.
+
+  what     four or five words, in English, for the person who will be
+           telephoned. "Fallen, cannot get up."
+
+  quote    their own words, exactly, in whatever language they wrote.
+
+The message may be in any language, or in more than one at once. There is no
+list of words to match — read what they mean."""
+
+    try:
+        from llm import ask
+        import json as _j
+        raw = ask(prompt, max_tokens=150).replace("```json", "").replace("```", "")
+        d = _j.loads(raw.strip())
+        return {
+            "danger": bool(d.get("danger")),
+            "what": str(d.get("what") or "")[:120],
+            "quote": str(d.get("quote") or said)[:300],
+        }
+    except Exception as e:
+        # Fail toward alerting. This is the one place in the system where
+        # being wrong in the cautious direction is right.
+        print(f"[Alert] danger read failed, erring toward alerting: {e}")
+        return {"danger": True, "what": "could not be read — please check",
+                "quote": said[:300]}
+
+
+def alert_now(user_id: str, text: str) -> bool:
+    """Check this message and, if it is urgent, tell her people at once.
+
+    Called on every message rather than at session end. Cheap — one
+    Flash-Lite call — and it is the difference between help arriving and
+    help arriving after the session closes.
+    """
+    read = in_danger_now(text, user_id)
+    if not read["danger"]:
+        return False
+
+    # Once every fifteen minutes, not once per message.
+    #
+    # Someone who has fallen says so more than once — "gir gayi", then "uth
+    # nahi pa rahi", then "koi hai". That is one emergency and one phone
+    # call, not three emails. The engine's 24-hour cooldown is right for a
+    # trend and far too long here: if something new happens an hour later,
+    # her son should hear about it.
+    from datetime import datetime, timezone, timedelta
+    try:
+        since = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
+        from supabase_store import get_client
+        recent = (get_client().table("care_alerts").select("id")
+                  .eq("user_id", user_id).eq("severity", "critical")
+                  .gte("sent_at", since).limit(1).execute()).data or []
+        if recent:
+            print(f"[Alert] {user_id}: urgent, but one went out in the last "
+                  f"fifteen minutes — same incident")
+            return False
+    except Exception as e:
+        # If the check fails, send. A duplicate email costs a second glance;
+        # a missed one costs everything.
+        print(f"[Alert] cooldown check failed, sending anyway: {e}")
+
+    print(f"[Alert] URGENT for {user_id}: {read['what']}")
+    try:
+        # Straight to the caregiver path, with her words. The session has not
+        # ended and may not for hours; that is the whole point.
+        sent = False
+        for link in get_caregivers_for_user(user_id):
+            cg = link.get("caregivers") or {}
+            if not cg.get("email"):
+                continue
+            from memory.profile_store import get_user_profile
+            prof = get_user_profile(user_id) or {}
+            sent = send_email_alert(
+                to_email=cg["email"],
+                caregiver_name=cg.get("name") or "",
+                user_name=prof.get("name") or user_id,
+                alerts=[{
+                    "type": "emergency",
+                    "severity": "critical",
+                    "summary": read["what"],
+                    # Her words, not a paraphrase. A son needs to know what
+                    # she actually said.
+                    "quote": read["quote"],
+                }],
+                user_id=user_id,
+            ) or sent
+            # Recorded, so the fifteen-minute cooldown has something to read
+            # — and so a caregiver saying "I never heard anything" can be
+            # checked against what actually went out.
+            try:
+                log_alert(user_id, cg.get("id") or "",
+                          {"alert_type": "emergency", "severity": "critical",
+                           "message": read["what"], "pillar": "HEALTH_WELLNESS"},
+                          sent, "email")
+            except Exception as _le:
+                print(f"[Alert] log failed: {_le}")
+        return sent
+    except Exception as e:
+        print(f"[Alert] urgent send failed: {e}")
+        return False
