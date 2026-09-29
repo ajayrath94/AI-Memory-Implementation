@@ -230,7 +230,14 @@ def _greet_arrival(user_id: str, where: str):
     from memory.persona_names import get_companion_name
     from supabase_store import save_message, session_for
 
-    r = generate_proactive_script(user_id, action="GREETING") or {}
+    # The arrival message is where orienting belongs — where the chemist is,
+    # where there is a park. Boundaries get none of it.
+    try:
+        from memory.away import hint as _away_hint
+        _oh = _away_hint(user_id, for_arrival=True)
+    except Exception:
+        _oh = ""
+    r = generate_proactive_script(user_id, action="GREETING", hints=_oh) or {}
     script = (r.get("script") or "").strip()
     if not script:
         return

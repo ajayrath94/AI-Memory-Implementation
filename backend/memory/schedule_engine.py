@@ -255,6 +255,7 @@ def generate_proactive_script(
     hour: int = None,
     force_slot: str = None,
     action: str = None,
+    hints: str = "",
 ) -> dict:
     """
     Generate a proactive message for Nancy to open with.
@@ -337,7 +338,7 @@ def generate_proactive_script(
     # has no drug data at all — it saw neither the routine nor a hint — and
     # invented one: "aap ka Digene ka dose abhi le lena chahiye" for a woman
     # who takes Amlodipine.
-    hints = ""
+    hints = hints or ""
     if intent == "medication":
         try:
             from memory.care_reader import get_due_schedule_items

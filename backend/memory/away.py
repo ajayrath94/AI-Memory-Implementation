@@ -104,7 +104,10 @@ _PLACE_FOR = {
 }
 
 # Everyone needs these wherever they are, whatever they like.
-_ESSENTIAL = ("pharmacy", "hospital")
+# A park before a chemist. For someone newly somewhere the warm thing is where
+# to sit outside; medicine is what the emergency screen is for, and leading
+# with it frames a trip as an illness waiting to happen.
+_ESSENTIAL = ("park", "pharmacy")
 
 
 def _interests_by_category(user_id: str) -> dict:
@@ -134,7 +137,7 @@ def _interests_by_category(user_id: str) -> dict:
     return out
 
 
-def suggestion(user_id: str) -> dict:
+def suggestion(user_id: str, for_arrival: bool = False) -> dict:
     """One place near her, tied to something she likes. Or nothing.
 
     Nothing is a fine answer — she is home, or she has been here long enough
@@ -155,6 +158,18 @@ def suggestion(user_id: str) -> dict:
 
     # Orienting: what she needs, not what she enjoys. Two days into a strange
     # city the chemist matters more than the cinema.
+    # Orienting belongs to the ARRIVAL message, not to every boundary.
+    #
+    # Five messages across three days each ended with somewhere to buy
+    # medicine, because this was appended to every boundary. Mentioned once,
+    # on the day she arrives, it is a neighbour being helpful; five times it
+    # reads as a companion expecting her to fall ill.
+    #
+    # _greet_arrival already fires when she reaches somewhere new, and that
+    # is the moment for it. A boundary is about her day.
+    if ph == "orient" and not for_arrival:
+        return {}
+
     if ph == "orient":
         for t in _ESSENTIAL:
             found = _nearby(user_id, t, limit=1)
@@ -190,14 +205,14 @@ def suggestion(user_id: str) -> dict:
     return {}
 
 
-def hint(user_id: str) -> str:
+def hint(user_id: str, for_arrival: bool = False) -> str:
     """A line for the composer, or nothing.
 
     Facts, not instructions about tone — the same rule as the weather. It is
     told what is nearby and what she likes; what to say about it is its own
     judgement.
     """
-    s = suggestion(user_id)
+    s = suggestion(user_id, for_arrival)
     if not s:
         return ""
 
