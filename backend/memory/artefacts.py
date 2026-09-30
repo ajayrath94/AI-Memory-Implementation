@@ -338,3 +338,171 @@ def _next_meal_label(subject: str = "") -> Optional[str]:
         return best
     except Exception:
         return None
+
+
+def _dietary(user_id: str) -> str:
+    """What she cannot or would not be offered — for the prompt, never for her.
+
+    Read from her conditions and her faith. The rule is the same as the knee:
+    it decides what is generated and is never named in the message.
+    """
+    bits = []
+    try:
+        from memory.profile_store import get_user_profile
+        p = get_user_profile(user_id) or {}
+        h = p.get("health") or {}
+        blob = " ".join(str(x) for x in
+                        (h.get("conditions") or []) + (h.get("medications") or [])
+                        ).lower()
+
+        if any(w in blob for w in ("blood pressure", "bp", "hypertension",
+                                   "amlodipine")):
+            bits.append("nothing heavily salted or deep fried")
+        if any(w in blob for w in ("diabet", "sugar", "metformin")):
+            bits.append("nothing sweet")
+        if any(w in blob for w in ("thyroid", "thyronorm")):
+            bits.append("go easy on raw cabbage and soya")
+
+        food = p.get("food") or {}
+        likes = " ".join(str(x) for x in (food.get("likes") or [])).lower()
+        avoid = " ".join(str(x) for x in (food.get("avoids") or [])).lower()
+        # Only when she has said so. Assuming a Hindu woman is vegetarian is
+        # exactly the kind of guess that ends trust in one message — and this
+        # one eats chicken.
+        if "veg" in avoid or any(m in avoid for m in
+                                 ("chicken", "mutton", "fish", "egg", "meat")):
+            bits.append("vegetarian only")
+        else:
+            # Neither, by default. 'chicken' appearing in her likes might be
+            # one meal the extractor caught, not a preference — and offering
+            # meat to a vegetarian is a serious mistake where offering
+            # vegetarian food to someone who eats meat is no mistake at all.
+            bits.append("suggest nothing with meat unless she has clearly "
+                        "said she eats it — vegetarian dishes are safe either way")
+
+        # A fasting day is not a day for it, whatever she usually eats.
+        try:
+            from memory.festivals import today as _festival_today
+            f = _festival_today()
+            if f and f.get("fasting"):
+                bits.append(f"today is {f['name']} and many people fast — "
+                            f"nothing heavy, and no meat")
+        except Exception:
+            pass
+
+        # Seventy, not thirty.
+        bits.append("nothing very rich or very spicy")
+    except Exception as e:
+        print(f"[Adjacent] dietary read failed: {e}")
+    return "; ".join(bits)
+
+
+def adjacent(user_id: str, label: str, category: str = "") -> list:
+    """Three or four things one step from this. Cached forever.
+
+    Not "similar" — adjacent. Who sang with him, what the dish actually is,
+    what else that film's director made. Things she would recognise as
+    connected rather than as an algorithm's opinion.
+    """
+    if not label:
+        return []
+
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        # Cached on the cluster. Who Kishore Kumar sang with does not change.
+        rows = (db.table("interest_clusters").select("id,attributes")
+                .eq("user_id", user_id).ilike("label", label)
+                .limit(1).execute()).data or []
+        if rows:
+            a = rows[0].get("attributes")
+            a = a if isinstance(a, dict) else {}
+            if a.get("adjacent"):
+                return list(a["adjacent"])
+    except Exception as e:
+        print(f"[Adjacent] cache read failed: {e}")
+        rows = []
+
+    diet = _dietary(user_id) if category == "khana" else ""
+    diet_line = f"\n\nFor food only: {diet}." if diet else ""
+
+    prompt = f"""Someone elderly in India likes this: "{label}"
+
+Name three or four things that sit NEXT to it — things she would recognise as
+connected, not things an algorithm calls similar.
+
+JSON only: {{"adjacent": ["...", "..."]}}
+
+  a singer   -> who they sang with, their music director, a contemporary she
+                would know
+  a film     -> its songs, its director's other films, its lead's other films
+  a cuisine  -> actual dishes from it, by name. Nobody eats "Chinese food".
+  a hobby    -> what someone who does it also does, or a thing it needs
+  a place    -> not applicable. Return an empty list.
+
+Specific, and nameable. "Old Hindi songs" is not a thing to offer; "Lata
+Mangeshkar" is. Use the name she would use — Hindi words in Hindi.
+
+Nothing she cannot have.{diet_line}
+
+No prose."""
+
+    try:
+        from llm import ask
+        import json as _j
+        raw = ask(prompt, max_tokens=200).replace("```json", "").replace("```", "")
+        out = [str(x).strip()[:60] for x in
+               (_j.loads(raw.strip()).get("adjacent") or []) if str(x).strip()]
+        out = out[:4]
+    except Exception as e:
+        print(f"[Adjacent] failed for {label!r}: {e}")
+        return []
+
+    if out and rows:
+        try:
+            a = rows[0].get("attributes")
+            a = a if isinstance(a, dict) else {}
+            a["adjacent"] = out
+            db.table("interest_clusters").update(
+                {"attributes": a}).eq("id", rows[0]["id"]).execute()
+        except Exception as e:
+            print(f"[Adjacent] cache write failed: {e}")
+
+    print(f"[Adjacent] {label} -> {', '.join(out)}")
+    return out
+
+
+def adjacent_hint(user_id: str, picked: dict) -> str:
+    """One thing next to what was drawn, that she has not been offered before.
+
+    Returns "" often, and that is fine — the caller falls back to offering the
+    subject itself, which is what it did before.
+    """
+    label = (picked or {}).get("label") or ""
+    attrs = picked.get("attributes") if isinstance(picked.get("attributes"), dict) else {}
+    cat = attrs.get("category") or ""
+    if not label:
+        return ""
+
+    options = adjacent(user_id, label, cat)
+    if not options:
+        return ""
+
+    # Not one she has already been offered. The whole point is that it is new.
+    try:
+        from supabase_store import get_client
+        from datetime import datetime, timezone, timedelta
+        since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        seen = {str(r.get("label") or "").lower() for r in
+                (get_client().table("suggestions").select("label")
+                 .eq("user_id", user_id).gte("created_at", since)
+                 .limit(60).execute()).data or []}
+        options = [o for o in options if o.lower() not in seen] or options
+    except Exception:
+        pass
+
+    import random
+    pick = random.choice(options)
+    return (f"\n\nThey like {label}, and {pick} sits right next to it. Offer "
+            f"{pick} — because of {label}, which is the reason it is worth "
+            f"mentioning. Not 'you might also like': a person would say why.")
