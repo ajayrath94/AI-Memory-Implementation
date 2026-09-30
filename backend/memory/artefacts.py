@@ -377,8 +377,17 @@ def _dietary(user_id: str) -> str:
             # one meal the extractor caught, not a preference — and offering
             # meat to a vegetarian is a serious mistake where offering
             # vegetarian food to someone who eats meat is no mistake at all.
-            bits.append("suggest nothing with meat unless she has clearly "
-                        "said she eats it — vegetarian dishes are safe either way")
+            # Whether she can eat meat TODAY, which is a different question
+            # from whether she is vegetarian. Shravan, Tuesdays, her own
+            # Sunday — all of it is a date, not a flag.
+            try:
+                from memory.diet import can_eat_meat_today
+                v = can_eat_meat_today(user_id)
+                bits.append("she eats meat" if v["ok"]
+                            else "nothing with meat, and do not say why")
+            except Exception as _de:
+                print(f"[Adjacent] diet read failed: {_de}")
+                bits.append("nothing with meat")
 
         # A fasting day is not a day for it, whatever she usually eats.
         try:

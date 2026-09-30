@@ -713,6 +713,36 @@ async def process_input(text: str, model: str,
                 except Exception as _ae:
                     print(f"[Router] urgent check failed: {_ae}")
 
+                # Did she just settle something about herself?
+                #
+                # "Main shakahari hoon", "ab Bangalore mein rehti hoon",
+                # "janamdin 14 March ko hai". Usually nothing — most of what
+                # she says is about her day, not about her. Costly ones are
+                # asked about before they are believed.
+                try:
+                    from memory.anchors import hear, settle
+                    settle(user_id, text)        # her answer to a question
+                    _ah = hear(user_id, text)    # and anything new
+                    if _ah:
+                        print(f"[Anchor] asking about: {_ah[:60]}")
+                except Exception as _ke:
+                    print(f"[Anchor] read failed: {_ke}")
+
+                # Did she just settle something about herself?
+                #
+                # "Main shakahari hoon", "ab Bangalore mein rehti hoon",
+                # "janamdin 14 March ko hai". Usually nothing — most of what
+                # she says is about her day, not about her. Costly ones are
+                # asked about before they are believed.
+                try:
+                    from memory.anchors import hear, settle
+                    settle(user_id, text)        # her answer to a question
+                    _ah = hear(user_id, text)    # and anything new
+                    if _ah:
+                        print(f"[Anchor] asking about: {_ah[:60]}")
+                except Exception as _ke:
+                    print(f"[Anchor] read failed: {_ke}")
+
                 from memory.day import note_from_message
                 note_from_message(user_id, text)
 
