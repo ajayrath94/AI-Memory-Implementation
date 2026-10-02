@@ -389,9 +389,40 @@ def generate_proactive_script(
             # her puja is done, and there is a natural pause. A festival wish
             # at nine at night is a day too late.
             from memory.festivals import hint_for as festival_hint
-            fh = festival_hint(user_id)
+
+            from memory.festivals import hint_for as festival_hint
+
+            # Once a day, in the first message. Not in every one.
+            #
+            # Four of five offers opened with "Happy Gandhi Jayanti", and so
+            # did every real message she got that day — breakfast, lunch and
+            # the evening. A festival is a fact that is true all day, always
+            # in the prompt, and always safe, so the composer opens with it,
+            # the way it did with the weather.
+            #
+            # The comment two sections up already said this: carried by the
+            # breakfast message, because a wish at nine at night is a day too
+            # late. It just never checked whether one had gone already.
+            from datetime import date as _fd
+            from supabase_store import get_client as _fgc
+            _already = False
+            try:
+                _r = (_fgc().table("user_profile").select("festival_wished_on")
+                      .eq("user_id", user_id).limit(1).execute()).data or []
+                _already = bool(_r and str(_r[0].get("festival_wished_on") or "")
+                                == _fd.today().isoformat())
+            except Exception:
+                pass
+
+            fh = "" if _already else festival_hint(user_id)
             if fh:
                 hints = (hints or "") + fh
+                try:
+                    _fgc().table("user_profile").update(
+                        {"festival_wished_on": _fd.today().isoformat()}
+                    ).eq("user_id", user_id).execute()
+                except Exception as _fe:
+                    print(f"[Schedule] festival stamp failed: {_fe}")
         except Exception as e:
             print(f"[Schedule] moment facts failed: {e}")
 
@@ -415,6 +446,15 @@ def generate_proactive_script(
             break
     except Exception as _re:
         print(f"[Rhythm] check failed: {_re}")
+
+    # An offer should know what kind of day she is having. Boundaries read
+    # the conversation and recommendations never did.
+    if intent == "recommendation":
+        try:
+            from memory.suggestions import recent_window
+            hints = (hints or "") + recent_window(user_id)
+        except Exception as _we:
+            print(f"[Schedule] window failed: {_we}")
 
     picked = None
     # A rhythm is a reason, and a reason beats a probability. If she has a
@@ -449,6 +489,19 @@ def generate_proactive_script(
                             f"came up. That gap is itself the reason to "
                             f"mention it — 'bahut din se' — and it should not "
                             f"sound like the first time.")
+
+                # One step out, before falling back to a variation on the
+                # same subject. The adjacency list was being generated and
+                # thrown away: Kishore Kumar expanded to Lata, Rafi and
+                # R.D. Burman, and the offer went out as another Kishore
+                # jukebox because nothing read it.
+                try:
+                    from memory.artefacts import offer_hint
+                    _oh = offer_hint(user_id, picked)
+                    if _oh:
+                        hints = (hints or "") + _oh
+                except Exception as _oe:
+                    print(f"[Offer] adjacency failed: {_oe}")
 
                 from memory.artefacts import (fetch_artefact, as_hint,
                                                fetch_along_axis, axis_hint)

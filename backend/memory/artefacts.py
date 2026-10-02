@@ -515,3 +515,99 @@ def adjacent_hint(user_id: str, picked: dict) -> str:
     return (f"\n\nThey like {label}, and {pick} sits right next to it. Offer "
             f"{pick} — because of {label}, which is the reason it is worth "
             f"mentioning. Not 'you might also like': a person would say why.")
+
+
+def what_to_offer(user_id: str, picked: dict) -> dict:
+    """What to actually put in front of her, from an interest she has.
+
+    Returns {kind, subject, with_, why} — kind is "paired", "alone" or
+    "subject". The composer phrases it; this only decides.
+    """
+    label = (picked or {}).get("label") or ""
+    attrs = picked.get("attributes") if isinstance(picked.get("attributes"), dict) else {}
+    cat = attrs.get("category") or ""
+    if not label:
+        return {"kind": "subject", "subject": "", "with_": "", "why": ""}
+
+    plain = {"kind": "subject", "subject": label, "with_": "",
+             "why": "nothing adjacent worth offering"}
+
+    options = adjacent(user_id, label, cat)
+    if not options:
+        return plain
+
+    from datetime import datetime, timezone, timedelta
+    scored = []
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+
+        # What has been offered, and what she did about it.
+        past = (db.table("suggestions").select("label,reaction,created_at")
+                .eq("user_id", user_id).gte("created_at", since)
+                .limit(80).execute()).data or []
+        week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+
+        # And what she has raised herself, which is worth more than a list
+        # saying the same thing.
+        hers = {str(r.get("subject") or "").lower() for r in
+                (db.table("subject_mentions").select("subject")
+                 .eq("user_id", user_id).limit(300).execute()).data or []}
+    except Exception as e:
+        print(f"[Offer] history read failed: {e}")
+        past, hers, week = [], set(), ""
+
+    for o in options:
+        low = o.lower()
+        score = 1.0
+        for p in past:
+            if str(p.get("label") or "").lower() != low:
+                continue
+            if str(p.get("created_at") or "") >= week:
+                score = -1.0           # offered this week; not again
+                break
+            r = str(p.get("reaction") or "")
+            if r == "no_response":
+                score -= 0.4           # she let it pass
+            elif r == "declined":
+                score -= 1.0           # she said no
+            elif r == "accepted":
+                score += 0.5           # she took it up
+        if any(low in h or h in low for h in hers):
+            score += 0.8               # she has said this herself
+        scored.append((score, o))
+
+    scored.sort(reverse=True)
+    best, pick = scored[0] if scored else (-1.0, "")
+    if best <= 0 or not pick:
+        return plain
+
+    # Paired when the connection is the point — a singer and a singer, a film
+    # and its songs. Alone when pairing would be strained: a dish is not
+    # offered "along with" a cuisine, it IS the cuisine.
+    paired = cat in ("sangeet", "dekhna")
+    return {
+        "kind": "paired" if paired else "alone",
+        "subject": pick,
+        "with_": label if paired else "",
+        "why": f"{pick} sits next to {label}",
+    }
+
+
+def offer_hint(user_id: str, picked: dict) -> str:
+    """The line for the composer. It decides the words; this decides the thing."""
+    o = what_to_offer(user_id, picked)
+    if not o["subject"]:
+        return ""
+
+    if o["kind"] == "paired":
+        return (f"\n\nOffer {o['subject']}, BECAUSE of {o['with_']} — they "
+                f"go together, and that connection is the reason it is worth "
+                f"mentioning. Not 'you might also like'; a person would say "
+                f"why.")
+    if o["kind"] == "alone":
+        return (f"\n\nOffer {o['subject']}. They like {picked.get('label')}, "
+                f"and this is the same kind of thing — but offer THIS, not "
+                f"that.")
+    return ""
