@@ -118,12 +118,22 @@ def weigh(subject: str, pillar: str = "", sentiment: float = 0.0,
   flags:     {', '.join(flags) if flags else 'none'}
   dated:     {dated or 'no'}
 
-Would this still matter in a month? Reply with one number, 0 to 1.
+Would a daughter ring her brother to tell him about this?
 
-1.0   a diagnosis, an operation, a death, a wedding, someone moving away
-0.7   a fall, a new medicine, a child's news, a trip being planned
-0.3   a good afternoon, a film watched, a neighbour visiting
-0.0   a meal, the weather, a passing mood
+That is a concrete test, where "would this still matter in a month" was an
+abstract one — and under it a plate of chole scored 1.00, the same as a knee
+operation, while poha scored 0.00. The model was guessing at a life.
+
+1.0   she would ring him about it — a diagnosis, an operation, a fall, a
+      death, a wedding, someone moving away
+0.7   she would mention it if he rang — a new medicine, a trip being
+      planned, news about a grandchild
+0.3   only if the conversation reached it — a film watched, a visitor
+0.0   she would not think to say it — what she ate, the weather, a mood
+
+If the subject is a FOOD or a DISH, the answer is 0.0, whatever the dish and
+however it is written. A meal she liked is not news. If she eats it every
+Sunday, repetition will find it without this.
 
 Only the number."""
 
