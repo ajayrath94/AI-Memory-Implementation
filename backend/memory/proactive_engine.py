@@ -155,6 +155,21 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
         # No pick means nothing they have shown they like, or everything has
         # been offered recently. Say nothing rather than invent something.
         if pick:
+            # At her hour, not fifteen minutes after a boundary.
+            #
+            # Six offers were decided over three days and none sent: the
+            # cadence gate wants ninety minutes since the last message, and
+            # every one was decided in the shadow of a boundary. An offer
+            # needs its own moment, and which moment is learnable — she has
+            # answered at some hours and not others.
+            try:
+                from memory.timing import good_moment
+                if not good_moment(user_id):
+                    return decision("SILENCE", "not_her_hour_for_offers",
+                                    "", "low")
+            except Exception as _te:
+                print(f"[Timing] check failed: {_te}")
+
             return decision("RECOMMENDATION", "something_they_like",
                             pick["label"], "low")
 
