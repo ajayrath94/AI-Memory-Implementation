@@ -68,7 +68,27 @@ def _known_entities(user_id: str, limit: int = 60) -> list:
                 break
         return seen
     except Exception as e:
-        print(f"[ProfileEnricher] known entities unavailable: {e}")
+        # Once more. This comes back 555 "JSON could not be generated" from
+        # Supabase now and then — transient, not structural, 155 rows and an
+        # indexed user_id. But when it fails the extractor runs blind, and the
+        # same knee becomes "ghutna" on Monday and "Ghutne mein dard" on
+        # Thursday. Both are in her clusters now, from exactly this.
+        try:
+            import time as _t
+            _t.sleep(0.4)
+            rows = (get_client().table("user_behavioral_events")
+                    .select("value").eq("user_id", user_id)
+                    .limit(300).execute()).data or []
+            seen = []
+            for r in rows:
+                v = (r.get("value") or "").strip()
+                if v and v not in seen:
+                    seen.append(v)
+                if len(seen) >= limit:
+                    break
+            return seen
+        except Exception as e2:
+            print(f"[ProfileEnricher] known entities unavailable twice: {e2}")
         return []
 
 
@@ -1063,7 +1083,18 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # Pune" and "Vikram works_as engineer" arrive together and the
             # second carried entity_type=other, so he was filed as other —
             # a person only by luck of ordering.
-            _RANK = ("person", "health", "artist", "media", "food", "hobby",
+            # artist and media outrank person, because the question is not
+            # "is this a human" but "what is this TO HER". Lata Mangeshkar is
+            # typed artist by one proposition and person by another — she IS
+            # a person — and with person first every singer she mentioned
+            # became kind=person, which the picker filters out.
+            #
+            # So conversation could never produce an offerable artist. Only
+            # Kishore Kumar was offerable in her real profile, and only
+            # because he came from the setup form.
+            #
+            # She listens to Lata; she does not know her. Rajesh she knows.
+            _RANK = ("artist", "media", "health", "person", "food", "hobby",
                      "belief", "place", "other")
             _types = [(pr.get("entity_type") or "other").lower()
                       for pr in subj_props]
@@ -1076,9 +1107,29 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # in whatever language she used. Membership of an English list is
             # what made devar into husband, and it could never have worked for
             # மருமகள் or ননদ.
-            _NOT_A_PERSON = ("", "self", "user", "pronoun", "i", "me")
-            if any(str(pr.get("subject_ref") or "").strip().lower()
-                   not in _NOT_A_PERSON for pr in subj_props):
+            # "proper_name" belongs here, and its absence is why every
+            # artist she mentioned became a person.
+            #
+            # Lata Mangeshkar extracts cleanly as entity_type=artist with
+            # subject_ref="proper_name". This rule then saw a subject_ref
+            # that was not self or a pronoun and made her a person, which
+            # the picker filters out — so conversation could never produce
+            # an offerable artist, and only Kishore Kumar was offerable in
+            # her real profile because he came from the setup form.
+            #
+            # The three other lists in this file all have proper_name. This
+            # one did not.
+            #
+            # And an artist is not a person for this purpose whatever her
+            # subject_ref says: the question is not whether she is a human
+            # but what she is TO HER. She listens to Lata; she knows Rajesh,
+            # and Rajesh carries a relation — beta — where Lata carries a
+            # name.
+            _NOT_A_PERSON = ("", "self", "user", "pronoun", "i", "me",
+                             "proper_name")
+            if etype not in ("artist", "media") and any(
+                    str(pr.get("subject_ref") or "").strip().lower()
+                    not in _NOT_A_PERSON for pr in subj_props):
                 etype = "person"
             # Gate: skip bare emotions ("proud") and vague complaints ("tabiyat
             # theek nahi") — they belong to the summary's texture, not durable
