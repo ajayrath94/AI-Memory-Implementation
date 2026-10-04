@@ -979,7 +979,18 @@ def _is_durable_fact(name: str, ptype: str = "", rel_type: str = "",
         #
         # Most mentions of a person are like this. Almost nobody says "mera
         # beta engineer hai" twice; they say he called.
-        if k != "transient_state" or ptype not in ("health", "person"):
+        # A hobby or a faith practice is durable even when the sentence is
+        # about tonight. "Aj caroom khelenge" is a Tuesday evening and carrom
+        # is still a thing she plays; "mangalvar ko vrat rakhti hoon" came
+        # back as a scheduled_event and vanished.
+        #
+        # Same reasoning as the person exception above: almost nobody says
+        # "main carrom khelti hoon" as a statement of fact. They say they are
+        # playing tonight.
+        if ptype in ("hobby", "belief") and k in ("transient_state",
+                                                  "scheduled_event"):
+            pass
+        elif k != "transient_state" or ptype not in ("health", "person"):
             return False
 
     n = (name or "").strip().lower()
@@ -1099,6 +1110,7 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             _types = [(pr.get("entity_type") or "other").lower()
                       for pr in subj_props]
             etype = next((t for t in _RANK if t in _types), "other")
+
             # entity_type describes the OBJECT, so "Rajesh lives_in Mumbai"
             # types him as a place and he came out "other". A subject_ref
             # that names a relation says what he is regardless of what the
