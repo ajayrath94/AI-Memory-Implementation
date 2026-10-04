@@ -37,6 +37,96 @@ def _db():
     return get_client()
 
 
+# Phrasings already resolved, so the same sentence never asks twice.
+_CANON: dict = {}
+
+
+def canonical(user_id: str, subject: str, seen_before: list = None) -> str:
+    """The name she has used for this thing before, or this one if it is new.
+
+    Every count groups by this string — rhythms, promotion, the diet check,
+    the weekday leanings. "Chicken" on one Sunday and "chicken curry and rice"
+    on the next were two subjects, so two Sundays of chicken grouped as
+    nothing.
+    """
+    s = (subject or "").strip()
+    if len(s) < 3:
+        return s
+
+    key = (user_id, s.lower())
+    if key in _CANON:
+        return _CANON[key]
+
+    if seen_before is None:
+        from datetime import date, timedelta
+        since = (date.today() - timedelta(days=90)).isoformat()
+        try:
+            seen_before = sorted({
+                str(r["subject"]).strip() for r in
+                (_db().table("subject_mentions").select("subject")
+                 .eq("user_id", user_id).gte("happened_on", since)
+                 .limit(600).execute()).data or []
+                if str(r.get("subject") or "").strip()})
+        except Exception as e:
+            print(f"[Mentions] canon read failed: {e}")
+            return s
+
+    # Exactly what she said before, give or take case.
+    for prev in seen_before:
+        if prev.lower() == s.lower():
+            _CANON[key] = prev
+            return prev
+
+    if not seen_before:
+        _CANON[key] = s
+        return s
+
+    listing = "\n".join("- " + p for p in seen_before[:60])
+    prompt = f"""Someone has mentioned these things before:
+
+{listing}
+
+They have now mentioned: "{s}"
+
+Is that the SAME THING as one of the above, said differently? Reply with that
+line exactly as written above, or the single word NEW.
+
+Same means the same thing — "chicken curry and rice" is chicken, "Mohammed
+Rafi ke gaane" is Mohammed Rafi, "ghutne mein dard" is ghutna, "sair" and
+"walk" are the same walk.
+
+Different means a different thing of the same kind. Two singers are not the
+same singer. Two dishes are not the same dish — chicken curry and chicken
+biryani are different, though both are chicken.
+
+NEW is the usual answer. When unsure, answer NEW: splitting one thing in two
+costs a pattern, merging two things costs the truth.
+
+One line, nothing else."""
+
+    try:
+        from llm import ask
+        got = (ask(prompt, max_tokens=40) or "").strip().strip('"').lstrip("- ")
+    except Exception as e:
+        print(f"[Mentions] canon failed for {s!r}: {e}")
+        _CANON[key] = s
+        return s
+
+    if not got or got.upper().startswith("NEW"):
+        _CANON[key] = s
+        return s
+
+    # Only a name she has actually used.
+    for prev in seen_before:
+        if prev.lower() == got.lower():
+            print(f"[Mentions] {s!r} -> {prev!r}")
+            _CANON[key] = prev
+            return prev
+
+    _CANON[key] = s
+    return s
+
+
 def record(user_id: str, topics: List[Dict], when: date = None) -> int:
     """One row per subject per day. Repeated mentions the same day are one.
 
@@ -61,11 +151,29 @@ def record(user_id: str, topics: List[Dict], when: date = None) -> int:
     except Exception as e:
         print(f"[Mentions] cluster read failed: {e}")
 
+    # One name for a thing, or nothing can be counted.
+    #
+    # "Chicken" on one Sunday and "chicken curry and rice" on the next were
+    # two rows, so two Sundays of chicken grouped as two unrelated meals —
+    # and every count here groups by this column.
+    from datetime import timedelta as _td
+    try:
+        _since = (date.fromisoformat(day) - _td(days=90)).isoformat()
+        _seen = sorted({str(r["subject"]).strip() for r in
+                        (_db().table("subject_mentions").select("subject")
+                         .eq("user_id", user_id).gte("happened_on", _since)
+                         .limit(600).execute()).data or []
+                        if str(r.get("subject") or "").strip()})
+    except Exception as _ce:
+        print(f"[Mentions] canon history failed: {_ce}")
+        _seen = []
+
     rows = []
     for t in topics:
         subject = str(t.get("subject") or "").strip()
         if len(subject) < 2:
             continue
+        subject = canonical(user_id, subject, _seen)
         low = subject.lower()
         cid = known.get(low)
         if not cid:
