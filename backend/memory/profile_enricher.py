@@ -1097,7 +1097,16 @@ def decide(subject: str, props: list) -> tuple:
     # Then her people, and what makes a person is a RELATION. Shubham arrives
     # as person and media together when she watches a film with him, and a
     # rank table put media first; "beta" is what settles it.
-    if "person" in types and rels:
+    # An artist is never her person, whatever the ref says. "Kishore da" is
+    # how she refers to a singer and "da" is elder brother in Bengali, so
+    # loosening the person rule to catch Mausi made him family.
+    if any(t in types for t in ("artist", "music", "media")):
+        pass
+    elif ("person" in types or rels) and rels:
+        # A relation is enough on its own. "Mausi ki tabiyat kharab hai"
+        # carries only a health proposition — she is mentioned solely through
+        # her illness — so person was never in the types and her aunt came
+        # out as "other". Somebody with a relation is somebody.
         return "person", "person", None, f"relation: {rels[0]}"
 
     # Then what she enjoys. An artist is a person and is not her person —
@@ -1148,7 +1157,13 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # ref=self, object=Lata. When ref says self, the statement is the USER's
             # and the thing to remember is the OBJECT, no matter what's in subject.
             if ref in ("self", "user", "i", "me") or subj.lower() in ("self", "user", "i", "me", ""):
-                key = obj                      # cluster the thing they mentioned
+                # The object, unless there is none — "kamar dard se pareshan
+                # hoon" comes back subject="Kamar dard", ref=self, object=null
+                # and her back pain was dropped entirely. The rule exists for
+                # "I love Lata", where the subject is wrongly the user; when
+                # the object is empty the subject IS the thing.
+                key = obj or (subj if subj.lower() not in
+                              ("self", "user", "i", "me", "") else "")
             else:
                 key = subj                     # cluster the named entity
             if not key or key.lower() in ("self", "user"):
