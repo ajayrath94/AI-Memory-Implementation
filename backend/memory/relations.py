@@ -70,11 +70,18 @@ TYPES = (
     "about",        # an event and who or what it concerns
     "lives_in",     # a person and a place
     "does",         # a person and an occupation
-    "related_to",   # worth recording, not worth traversing
+    # same_as was missing, so every edge find_same_as produced was rejected
+    # as an unknown type — which is why nothing ever linked ghutna to knee
+    # pain despite the judge getting it right.
+    "same_as",      # her word and the English for it
+    # and related_to is gone. It was the escape hatch for a model asked what
+    # relates and given sixty things: Bagwani does Lata Mangeshkar, Rajesh
+    # related_to Sholay, Jaipur related_to Mumbai. Two things in the same
+    # list are not related, and an invented edge is worse than none.
 )
 
 # Symmetric types are stored once and read both ways rather than twice.
-_SYMMETRIC = {"same_as", "related_to"}
+_SYMMETRIC = {"same_as"}
 
 
 def _db():
@@ -341,7 +348,13 @@ type is one of:
   lives_in     a person and where they live
   does         a person and their work
   about        an event and who or what it concerns
-  related_to   connected, but none of the above
+  same_as      her word and the English for it — ghutna and knee pain
+
+There is deliberately no "related_to". It was the escape hatch: every
+invented edge used it — Bagwani does Lata Mangeshkar, Rajesh related_to
+Sholay, Jaipur related_to Mumbai. Two things appearing in the same list is
+not a relationship, and if none of the types above fits, the answer is no
+edge.
 
 Use the labels EXACTLY as written above. Both ends must be in that list.
 
@@ -350,7 +363,12 @@ the world — that Pune is in Maharashtra is true and is not something she
 said.
 
 An empty list is the usual answer. Most messages establish no new
-relationship at all."""
+relationship at all.
+
+Before each edge, ask: does the SENTENCE say this? "Bagwani karti hoon
+subah subah" mentions gardening and nothing else — it says nothing about
+any singer, and an edge from it is invented. Only what she actually said,
+in this message, about two of the things listed."""
 
     try:
         from llm import ask
