@@ -183,6 +183,13 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                         gate = {"allow": True, "reason": "gate_error"}
                     if not gate["allow"]:
                         print(f"[Scheduler] {uid}: {action} held — {gate['reason']}")
+                        try:
+                            from memory.proactive_log import record_outcome
+                            if logged.get("id"):
+                                record_outcome(logged["id"],
+                                               "held:" + str(gate["reason"])[:40])
+                        except Exception:
+                            pass
                         continue
 
                     try:
