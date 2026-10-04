@@ -66,6 +66,47 @@ def _routine(user_id: str) -> str:
     return "Their daily routine:\n" + "\n".join(lines) if lines else ""
 
 
+def _due_now(user_id: str) -> str:
+    """What is due right now and has not been mentioned.
+
+    The routine above is her day in the abstract — the times. This is the
+    one thing happening NOW, so a reply can fold it in rather than a push
+    arriving separately while she is already talking.
+    #
+    Her tablets are taken with food and her meals are when the tablets are
+    taken; skipping the question because she happens to be mid-conversation
+    is worse than asking it. An OFFER never folds in this way — a song can
+    wait for its own moment.
+    """
+    try:
+        from memory.day import events, _mins_now
+        now = _mins_now(user_id)
+        due = []
+        for e in events(user_id):
+            at = str(e.get("due_at") or "")[:5]
+            if not at or ":" not in at:
+                continue
+            h, m = at.split(":")[:2]
+            if not h.isdigit():
+                continue
+            mins = int(h) * 60 + int(m)
+            # due in the last hour, or in the next twenty minutes
+            if -20 <= (now - mins) <= 60 and e.get("status") in ("pending", "sent"):
+                due.append((abs(now - mins), e, at))
+        if not due:
+            return ""
+        due.sort()
+        _, e, at = due[0]
+        what = e.get("label") or e.get("kind")
+        return (f"\n\nRIGHT NOW: their {what} was at {at} and they have not "
+                f"mentioned it. If the conversation allows, ask — once, in "
+                f"passing, at the end of whatever you are saying. Never as "
+                f"the whole reply, and never twice.")
+    except Exception as e:
+        print(f"[Context] due-now failed: {e}")
+        return ""
+
+
 def _interests(user_id: str) -> str:
     """What they like, from the profile. build_memory_prompt covers some of
     this via clusters; this adds what the profile holds explicitly."""
@@ -374,6 +415,7 @@ _SOURCES = {
     "voice":        _how_they_write,
     "memory":       _memory,
     "routine":      _routine,
+    "due_now":      _due_now,
     "interests":    _interests,
     "patterns":     _patterns,
     "integrations": _integrations,

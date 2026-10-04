@@ -832,8 +832,26 @@ async def process_input(text: str, model: str,
     # 9. Cross-session user memory
     # Her message goes too, so the thread can be found by TAG rather than
     # only by recency — she says "Rajesh" and the days about him are a lookup.
+    # What is due right now, folded into the reply rather than pushed.
+    #
+    # She may be mid-conversation when her lunch time passes, and a separate
+    # push arriving while she is already talking is absurd. Skipping it is
+    # worse: her thyronorm and amlodipine are taken with food, so the meal
+    # and the tablet are the same question.
+    #
+    # One line at the end of whatever she raised — not the whole reply, and
+    # not an offer. A song can wait for its own moment; a tablet cannot.
+    try:
+        from memory.context_builder import _due_now
+        _dn = _due_now(user_id)
+    except Exception as _de:
+        print(f"[Router] due-now failed: {_de}")
+        _dn = ""
+
     user_memory = build_memory_prompt(user_id, current_embedding=embedding,
                                       _query_text=text)
+    if _dn:
+        user_memory = (user_memory or '') + _dn
 
     # 10. Within-session memory (EMBEDDING-BASED!)
     # The text as well as the vector: events are matched on what she asked,
