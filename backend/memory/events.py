@@ -76,7 +76,10 @@ def record_event(user_id: str, what: str, said_on: datetime = None,
 
     row = {
         "user_id":     user_id,
-        "label":       (what or "").strip()[:120],
+        # Short. "Cooked chicken curry and rice at home" is a sentence, and
+        # the sentence already lives in the day's note — an event is a thing
+        # with a date on it, for finding later.
+        "label":       (what or "").strip()[:60],
         "kind":        "event",
         "happened_on": when,
         "pillar":      "GENERAL",
@@ -182,6 +185,15 @@ Did anything HAPPEN? Return JSON only:
 
 An event is a moment with a date. A visit, a festival they observed, an
 appointment they went to, a fall, news that arrived.
+
+"what" is SHORT — three or four words, the thing itself. "Chicken curry", not
+"cooked chicken curry and rice at home"; "Delhi trip", not "went to Delhi for
+a few days with Shubham". The sentence already lives in the day's note; this
+is a label with a date on it, for finding later.
+
+Use the same words for the same thing. "Delhi trip" twice, not "Delhi trip"
+and "Delhi Trip" and "trip to Delhi" — they become separate entries and the
+same journey is recorded three times.
 
 NOT an event:
 - a plan. "Shaam ko mandir jaungi" has not happened.
