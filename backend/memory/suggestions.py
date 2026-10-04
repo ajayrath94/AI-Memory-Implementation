@@ -187,6 +187,27 @@ No prose."""
     _SETTLED[key] = out
     return out
 
+_DECLINING: dict = {}
+
+
+def _declining(user_id: str) -> set:
+    """Subjects she enjoys less each time. Cached for the day."""
+    from datetime import date as _d
+    key = (user_id, _d.today().isoformat())
+    if key in _DECLINING:
+        return _DECLINING[key]
+    out = set()
+    try:
+        from memory.topics import declining
+        for d in (declining(user_id) or []):
+            s = str(d.get("subject") or "").strip().lower()
+            if s:
+                out.add(s)
+    except Exception as e:
+        print(f"[Suggest] declining read failed: {e}")
+    _DECLINING[key] = out
+    return out
+
 def pick_suggestion(user_id: str) -> Optional[dict]:
     """
     Choose the cluster worth surfacing, rather than letting the composer reach
@@ -248,6 +269,16 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
     except Exception as e:
         print(f"[Suggest] recent read failed: {e}")
 
+    # What this day of the week favours. A rhythm overrides the draw
+    # outright; a lean only makes something likelier, which is where most
+    # patterns live — two Sundays out of three is not certainty.
+    try:
+        from memory.leanings import leanings as _leanings
+        _lean = _leanings(user_id)
+    except Exception as _le:
+        print(f"[Suggest] leaning read failed: {_le}")
+        _lean = {}
+
     best = None
     eligible = []
     for r in rows:
@@ -271,6 +302,13 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
         # someone could say "mujhe unke gaane pasand nahi" and be offered the
         # same thing tomorrow. A recent explicit no overrides an old yes.
         if _last_reaction_was_refusal(user_id, r["id"]):
+            continue
+
+        # Something she is souring on. topics tracks how she feels about each
+        # subject over weeks, and declining() reports it — "was +0.7, now
+        # -0.1" — and until now only the dashboard read it. A thing she
+        # enjoys less each time she mentions it should not keep being offered.
+        if r["label"].lower() in _declining(user_id):
             continue
         rel = (r.get("relationship") or "").lower()
         if rel in ("concern", "person", "feeling", "action"):
@@ -303,7 +341,20 @@ def pick_suggestion(user_id: str) -> Optional[dict]:
     # ones becoming unreachable: at 8.9 against 4.0, Kishore Kumar comes up
     # about five times as often as Gadar, not always and not never.
     import random
-    weights = [max(float(r.get("strength") or 1.0), 0.1) ** 2 for r in eligible]
+    # Strength squared, lifted by what this weekday favours.
+    #
+    # A rhythm — three mentions, seventy per cent on one day — overrides the
+    # draw outright and is handled before this. A lean is the shoulder of
+    # that: two Sundays out of three makes chicken likelier on a Sunday than
+    # khichdi, without pretending to be certain.
+    weights = []
+    for r in eligible:
+        w = max(float(r.get("strength") or 1.0), 0.1) ** 2
+        lift = _lean.get(str(r.get("label") or "").lower(), 0.0)
+        if lift:
+            w *= (1.0 + lift)
+            print(f"[Suggest] {r['label']} leans into today (+{lift})")
+        weights.append(w)
     best = random.choices(eligible, weights=weights, k=1)[0]
     # The category comes along: it decides what kind of thing can be fetched
     # for this — a song, a recipe, or nothing at all.
@@ -600,6 +651,45 @@ def weather_worth_saying(user_id: str, w: dict) -> str:
 
     # A pleasant day is not news, and passing it guarantees it gets used.
     return ""
+
+
+def recent_window(user_id: str, hours: int = 6) -> str:
+    """What she has been saying today, for the offer to take its tone from.
+
+    Boundaries read the conversation; recommendations never did. So an offer
+    at three in the afternoon knew nothing about lunch — which is how "garma
+    garm chole" arrived two days after she had eaten chole.
+
+    Returns her lines only. What the companion said is not the signal.
+    """
+    from datetime import datetime, timezone, timedelta
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    try:
+        db = _db()
+        sess = (db.table("sessions").select("id")
+                .eq("user_id", user_id).gte("updated_at", since)
+                .order("updated_at", desc=True).limit(3).execute()).data or []
+        said = []
+        for s in sess:
+            said += [str(m.get("content") or "")[:160] for m in
+                     (db.table("messages").select("content,timestamp")
+                      .eq("session_id", s["id"]).eq("role", "user")
+                      .gte("timestamp", since).order("timestamp")
+                      .limit(20).execute()).data or []]
+    except Exception as e:
+        print(f"[Suggest] window read failed: {e}")
+        return ""
+
+    said = [s for s in said if len(s.strip()) > 1][-8:]
+    if not said:
+        return ""
+
+    return ("\n\nWhat she has said today:\n"
+            + "\n".join("- " + s for s in said)
+            + "\nLet this shape WHAT you offer and HOW you say it — a quiet "
+              "day takes a gentler offer than a talkative one, and something "
+              "she has already done today is not an offer. Do not refer back "
+              "to it; she knows what she said.")
 
 
 def moment_facts(user_id: str, moment: dict = None) -> str:
