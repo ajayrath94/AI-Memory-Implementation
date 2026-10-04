@@ -125,7 +125,7 @@ Use empty string/list if not found. Do NOT infer or guess.
   "interests": ["specific interest/hobby mentioned"],
   "wants_to": ["specific goal/aspiration mentioned"],
   "entities": [
-    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|hobby|health|place|food|media|other", "pillar": "{pillar_options}", "sentiment": "positive|negative|neutral", "salience": "0.0-1.0, how much this matters to them right now — pain and money worries are high, casual mentions low", "action": "what they did with it or what happened to it, one verb", "relationship_type": "concern|preference|person|routine|possession|aspiration — what KIND of thing this is to them", "attributes": {{"relationship": "son/daughter/husband/wife/etc IF a family member", "location": "city/place they live IF mentioned", "occupation": "their job IF mentioned"}} }}
+    {{"name": "canonical ENGLISH name for the thing", "surface_form": "exactly as the user wrote it, in their own language", "type": "person|artist|music|hobby|health|place|food|media|other", "pillar": "{pillar_options}", "sentiment": "positive|negative|neutral", "salience": "0.0-1.0, how much this matters to them right now — pain and money worries are high, casual mentions low", "action": "what they did with it or what happened to it, one verb", "relationship_type": "concern|preference|person|routine|possession|aspiration — what KIND of thing this is to them", "attributes": {{"relationship": "son/daughter/husband/wife/etc IF a family member", "location": "city/place they live IF mentioned", "occupation": "their job IF mentioned"}} }}
   ]
 }}
 
@@ -821,7 +821,7 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
 # leaks context, e.g. tea near health talk -> HEALTH. type is reliable, so map it.)
 _TYPE_TO_PILLAR = {
     "person": "FAMILY", "food": "GENERAL", "health": "HEALTH_WELLNESS",
-    "hobby": "ASPIRATIONS", "artist": "ENTERTAINMENT", "media": "ENTERTAINMENT",
+    "hobby": "ASPIRATIONS", "artist": "ENTERTAINMENT", "music": "ENTERTAINMENT", "media": "ENTERTAINMENT",
     "place": "GENERAL", "belief": "GENERAL", "other": "GENERAL",
 }
 
@@ -882,7 +882,7 @@ For EACH fact return an object:
   There is no list worth keeping. Write what she said.
 - relation: likes | stopped_liking | lives_in | works_as | is | has_condition | feels | did
 - object: canonical target ("Amreeka"->"America") or null
-- entity_type: person | food | health | hobby | artist | media | place | belief | other
+- entity_type: person | food | health | hobby | artist | music | media | place | belief | other
 - kind: durable_fact | action_request | scheduled_event | transient_state
     A FEELING IS NEVER durable. "Bahut khushi hui", "ghar khali lag raha
     hai", "mann nahi tha" are how a day went, not facts about her — they
@@ -1105,7 +1105,7 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # because he came from the setup form.
             #
             # She listens to Lata; she does not know her. Rajesh she knows.
-            _RANK = ("artist", "media", "health", "person", "food", "hobby",
+            _RANK = ("artist", "music", "media", "health", "person", "food", "hobby",
                      "belief", "place", "other")
             _types = [(pr.get("entity_type") or "other").lower()
                       for pr in subj_props]
@@ -1139,7 +1139,7 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # name.
             _NOT_A_PERSON = ("", "self", "user", "pronoun", "i", "me",
                              "proper_name")
-            if etype not in ("artist", "media") and any(
+            if etype not in ("artist", "music", "media") and any(
                     str(pr.get("subject_ref") or "").strip().lower()
                     not in _NOT_A_PERSON for pr in subj_props):
                 etype = "person"
@@ -1167,7 +1167,12 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # both ended up in the same list, and only one of them is
             # something to suggest on a quiet afternoon.
             _CATEGORY = {
-                "artist": "sangeet", "media": "dekhna", "food": "khana",
+                # music is its own type because media covered both films and
+                # songs, and a ghazal came out dekhna — something to watch.
+                # An artist is a person who performs; music is the thing
+                # itself, a ghazal or a bhajan or a film song.
+                "artist": "sangeet", "music": "sangeet",
+                "media": "dekhna", "food": "khana",
                 "hobby": "shauk", "belief": "bhakti",
             }
             if etype in _CATEGORY:
