@@ -447,10 +447,14 @@ JSON only: {{"adjacent": ["...", "..."]}}
                 by the same singer: she already has them, and the point is
                 to widen, not repeat.
 
-                Name the song and that other singer: for Kishore Kumar,
-                "Lag Ja Gale by Lata Mangeshkar" or "Chaudhvin Ka Chand by
-                Mohammed Rafi". Not "Roop Tera Mastana by Kishore Kumar",
-                which is Kishore again.
+                Always "<song> by <other artist>" — a real song title and
+                a real name, never a description like "their music director"
+                or a bare name, both of which search to an hour-long
+                compilation.
+
+                No examples here: with them the model returned the same two
+                songs whatever the subject was, including for the artist who
+                sang them.
 
                 A name alone searches to an hour-long compilation — "Best Of
                 Mohammad Rafi Hit Songs | Old Hindi Superhit Songs" — and
