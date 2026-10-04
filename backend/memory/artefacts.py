@@ -442,8 +442,23 @@ connected, not things an algorithm calls similar.
 
 JSON only: {{"adjacent": ["...", "..."]}}
 
-  a singer   -> who they sang with, their music director, a contemporary she
-                would know
+  a singer   -> a song by SOMEONE ELSE — a duet partner, their music
+                director, a contemporary she would know. Never another song
+                by the same singer: she already has them, and the point is
+                to widen, not repeat.
+
+                Name the song and that other singer: for Kishore Kumar,
+                "Lag Ja Gale by Lata Mangeshkar" or "Chaudhvin Ka Chand by
+                Mohammed Rafi". Not "Roop Tera Mastana by Kishore Kumar",
+                which is Kishore again.
+
+                A name alone searches to an hour-long compilation — "Best Of
+                Mohammad Rafi Hit Songs | Old Hindi Superhit Songs" — and
+                that is not an offer to a woman of seventy. It is also three
+                artists in one title, and the message then names all three
+                instead of the one chosen.
+
+                Same reason a cuisine becomes a dish below.
   a film     -> its songs, its director's other films, its lead's other films
   a cuisine  -> actual dishes from it, by name. Nobody eats "Chinese food".
   a hobby    -> what someone who does it also does, or a thing it needs
