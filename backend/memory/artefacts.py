@@ -574,11 +574,20 @@ def what_to_offer(user_id: str, picked: dict) -> dict:
                 score -= 1.0           # she said no
             elif r == "accepted":
                 score += 0.5           # she took it up
-        if any(low in h or h in low for h in hers):
+        # Whole subjects, not substrings. "dosa" is in her mentions and
+        # "padosan" contains it, so a dish she ate boosted a 1968 film and
+        # Kishore Kumar expanded to Padosan six times out of six.
+        if low in hers:
             score += 0.8               # she has said this herself
         scored.append((score, o))
 
-    scored.sort(reverse=True)
+    # Shuffle before sorting, so ties are not broken alphabetically. Every
+    # option scores 1.0 until she has been offered one, and sort(reverse)
+    # then picks the last name every time — Kishore Kumar expanded to Lata,
+    # Rafi, R.D. Burman and Padosan, and Padosan won twice in a row.
+    import random as _r
+    _r.shuffle(scored)
+    scored.sort(key=lambda x: -x[0])
     best, pick = scored[0] if scored else (-1.0, "")
     if best <= 0 or not pick:
         return plain
