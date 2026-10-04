@@ -1049,6 +1049,75 @@ def _node_for(user_id: str, label: str, kind: str, pillar: str = "GENERAL"):
         print(f"[Prop] could not create node {label!r}: {e}")
         return None
 
+# What a subject_ref has to look like to make something a person. Not a list
+# of relations — devar, padosan, mausi and மருமகள் are all relations and no
+# list could hold them. These are the refs that are NOT one.
+_NOT_A_RELATION = ("", "self", "user", "pronoun", "i", "me", "proper_name",
+                   "name", "none", "null")
+
+# type -> (kind, category). A category is what makes something offerable, so
+# only things worth offering have one.
+_AS = {
+    "artist": ("interest", "sangeet"),
+    "music":  ("interest", "sangeet"),
+    "media":  ("interest", "dekhna"),
+    "food":   ("interest", "khana"),
+    "hobby":  ("interest", "shauk"),
+    "belief": ("interest", "bhakti"),
+    "health": ("concern", None),
+    "person": ("person", None),
+    "place":  ("place", None),
+}
+
+
+def decide(subject: str, props: list) -> tuple:
+    """What is this, to her? Returns (etype, kind, category, why).
+
+    One decision rather than a chain of overrides, ordered by what a thing IS
+    rather than by which type is most specific — which is what a rank table
+    answers and is the wrong question.
+    """
+    types = [str(p.get("entity_type") or "other").lower() for p in props]
+    refs = [str(p.get("subject_ref") or "").strip().lower() for p in props]
+    rels = [r for r in refs if r not in _NOT_A_RELATION]
+
+    # Her body, first and without exception. The extractor returned
+    # subject_ref "ghutne" for her knee — the knee's own name — and the
+    # person rule turned a condition into a person. Nothing about a knee
+    # makes it anything but a concern.
+    # Her body, first and without exception — but HERS.
+    #
+    # "Arjun se baat hui, wo theek hai" carries a health proposition about
+    # her son, and health-first made him a medical concern. A person with a
+    # relation is a person whatever is said about their health; the knee
+    # this rule exists for has no relation, because a knee is not somebody.
+    if "health" in types and not rels:
+        return "health", "concern", None, "health comes first"
+
+    # Then her people, and what makes a person is a RELATION. Shubham arrives
+    # as person and media together when she watches a film with him, and a
+    # rank table put media first; "beta" is what settles it.
+    if "person" in types and rels:
+        return "person", "person", None, f"relation: {rels[0]}"
+
+    # Then what she enjoys. An artist is a person and is not her person —
+    # she listens to Lata, she knows Shubham — so a name alone never makes
+    # one, which is why proper_name is not a relation.
+    for t in ("artist", "music", "media", "food", "hobby", "belief"):
+        if t in types:
+            kind, cat = _AS[t]
+            return t, kind, cat, f"{t}, no relation"
+
+    # A person named with no relation at all — someone she mentioned once.
+    if "person" in types:
+        return "person", "person", None, "a person, unrelated"
+
+    if "place" in types:
+        return "place", "place", None, "a place"
+
+    return "other", "other", None, "nothing more specific"
+
+
 def record_propositions(props: list, classified, user_id: str, session_id: str = "") -> dict:
     """Turn propositions into cluster operations:
     - pillar from entity_type (deterministic)
@@ -1105,98 +1174,37 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # because he came from the setup form.
             #
             # She listens to Lata; she does not know her. Rajesh she knows.
-            _RANK = ("artist", "music", "media", "health", "person", "food", "hobby",
-                     "belief", "place", "other")
-            _types = [(pr.get("entity_type") or "other").lower()
-                      for pr in subj_props]
-            etype = next((t for t in _RANK if t in _types), "other")
+# What is this, to her? One decision, with a reason — see
+            # decide() above for why this is not a rank table.
+            etype, _kind, _cat, _why = decide(subj, subj_props)
+            print(f"[Prop] {subj!r} -> {_kind}"
+                  + (f"/{_cat}" if _cat else "") + f" ({_why})")
 
-            # entity_type describes the OBJECT, so "Rajesh lives_in Mumbai"
-            # types him as a place and he came out "other". A subject_ref
-            # that names a relation says what he is regardless of what the
-            # sentence was about.
-            # Anything that is not self, a pronoun, or empty names a PERSON —
-            # in whatever language she used. Membership of an English list is
-            # what made devar into husband, and it could never have worked for
-            # மருமகள் or ননদ.
-            # "proper_name" belongs here, and its absence is why every
-            # artist she mentioned became a person.
-            #
-            # Lata Mangeshkar extracts cleanly as entity_type=artist with
-            # subject_ref="proper_name". This rule then saw a subject_ref
-            # that was not self or a pronoun and made her a person, which
-            # the picker filters out — so conversation could never produce
-            # an offerable artist, and only Kishore Kumar was offerable in
-            # her real profile because he came from the setup form.
-            #
-            # The three other lists in this file all have proper_name. This
-            # one did not.
-            #
-            # And an artist is not a person for this purpose whatever her
-            # subject_ref says: the question is not whether she is a human
-            # but what she is TO HER. She listens to Lata; she knows Rajesh,
-            # and Rajesh carries a relation — beta — where Lata carries a
-            # name.
-            _NOT_A_PERSON = ("", "self", "user", "pronoun", "i", "me",
-                             "proper_name")
-            if etype not in ("artist", "music", "media") and any(
-                    str(pr.get("subject_ref") or "").strip().lower()
-                    not in _NOT_A_PERSON for pr in subj_props):
-                etype = "person"
-            # Gate: skip bare emotions ("proud") and vague complaints ("tabiyat
-            # theek nahi") — they belong to the summary's texture, not durable
-            # fact clusters. Uses already-extracted fields, no extra LLM call.
+            # Gate: skip bare emotions ("proud") and vague complaints
+            # ("tabiyat theek nahi") — they belong to the summary's texture,
+            # not durable fact clusters.
             _rt = (first.get("relationship_type") or "").lower()
-            _kind = (first.get("kind") or "").strip().lower()
-            if not _is_durable_fact(subj, etype, _rt, _kind):
+            _k = (first.get("kind") or "").strip().lower()
+            if not _is_durable_fact(subj, etype, _rt, _k):
                 continue
 
-            # merge attributes across all of this subject's props
             attrs = {}
             for pr in subj_props:
                 a = pr.get("attributes") or {}
                 if isinstance(a, dict):
                     attrs.update({k: v for k, v in a.items() if v})
 
-            # What KIND of thing this is, carried from the extraction rather
-            # than guessed later. Without it every conversational cluster had
-            # no category, offerable_now could not place any of them, and a
-            # month of memory was invisible to the offer path.
-            #
-            # A concern is not an interest. "Knee pain" and "Kishore Kumar"
-            # both ended up in the same list, and only one of them is
-            # something to suggest on a quiet afternoon.
-            _CATEGORY = {
-                # music is its own type because media covered both films and
-                # songs, and a ghazal came out dekhna — something to watch.
-                # An artist is a person who performs; music is the thing
-                # itself, a ghazal or a bhajan or a film song.
-                "artist": "sangeet", "music": "sangeet",
-                "media": "dekhna", "food": "khana",
-                "hobby": "shauk", "belief": "bhakti",
-            }
-            if etype in _CATEGORY:
-                attrs["category"] = _CATEGORY[etype]
-                attrs["kind"] = "interest"
-            elif etype == "health":
-                attrs["kind"] = "concern"
-            elif etype == "person":
-                attrs["kind"] = "person"
-                # Everyone has a relation, not only family. A padosan and a
-                # doodhwala are how she refers to them, and storing it only
-                # for family meant the neighbour Priya ji carried nothing —
-                # so nothing distinguished her from the daughter-in-law Priya
-                # and the two became one person.
-                _NOT_REL = ("", "self", "user", "pronoun", "i", "me",
-                            "proper_name")
+            attrs["kind"] = _kind
+            if _cat:
+                attrs["category"] = _cat
+            if _kind == "person":
                 _r = next((str(pr.get("subject_ref") or "").strip()
                            for pr in subj_props
                            if str(pr.get("subject_ref") or "").strip().lower()
-                           not in _NOT_REL), "")
+                           not in _NOT_A_RELATION), "")
                 if _r:
                     attrs["relation"] = _r
-            else:
-                attrs["kind"] = "other"
+
 
             # A person WITH a family relationship is FAMILY regardless of type
             # ("Vikram lives_in America" arrives as type=place, but he is her son).
