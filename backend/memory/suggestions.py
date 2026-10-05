@@ -711,7 +711,7 @@ def moment_facts(user_id: str, moment: dict = None) -> str:
         lines.append(_w)
         # The route writes this in their language and it is better than
         # anything assembled from the raw fields.
-        if w.get("advice"):
+        if False:   # the raw weather dict is gone — see weather_worth_saying
             lines.append(str(w["advice"]))
 
     v = m.get("valence")

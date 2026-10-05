@@ -456,6 +456,41 @@ def generate_proactive_script(
         except Exception as _we:
             print(f"[Schedule] window failed: {_we}")
 
+    # If a message is going to name something she likes, name the one that
+    # was CHOSEN — not whichever the model happens to know best.
+    #
+    # Kishore Kumar appeared in three of four messages one day and twice more
+    # the next, none of them through the offer path. He is her strongest
+    # interest, so he is in the thread, the summary and the cluster block,
+    # and a composer told it may mention an interest reaches for him every
+    # time. Shuffling the list changed nothing, because the list is not where
+    # he comes from.
+    #
+    # So: pick one, expand it a step, and say that is the only one.
+    if intent != "recommendation" and not _rhythm_fired:
+        try:
+            from memory.suggestions import pick_suggestion as _ps
+            from memory.artefacts import what_to_offer as _wto
+            _p = _ps(user_id)
+            if _p:
+                _o = _wto(user_id, _p)
+                _thing = _o.get("subject") or _p["label"]
+                _because = _o.get("with_")
+                hints = (hints or "") + (
+                    f"\n\nIf you mention something she enjoys, mention "
+                    f"{_thing}"
+                    + ""
+                    + ". That one, and nothing else. Do not name any other "
+                      "artist, film or dish, whatever else you know she "
+                      "likes — and do NOT credit it to anyone else. "
+                      "'Kishore Kumar ka Chaudhvin Ka Chand' is Rafi's song "
+                      "with the wrong singer's name on it, which came from "
+                      "telling the composer WHY the song was chosen. One mention, at "
+                      "most, and only if the message has room for it.")
+                print(f"[Offer] {user_id}: boundary may mention {_thing}")
+        except Exception as _oe:
+            print(f"[Offer] boundary pick failed: {_oe}")
+
     picked = None
     # A rhythm is a reason, and a reason beats a probability. If she has a
     # Sunday and it is Sunday, that IS the offer — drawing a second one on top
@@ -508,17 +543,31 @@ def generate_proactive_script(
                 cat = ((picked.get("attributes") or {}).get("category")
                        if isinstance(picked.get("attributes"), dict) else None)
 
-                # One step along a direction she follows, if there is one:
-                # another R. D. Burman song rather than Sholay again. Falls
-                # back to the thing itself, which is what this did before axes
-                # existed.
-                art = fetch_along_axis(user_id, picked)
-                if art:
-                    hints = (hints + "\n" if hints else "") + axis_hint(art)
-                else:
-                    art = fetch_artefact(user_id, cat or "", picked["label"])
-                    hints = (hints + "\n" if hints else "") + as_hint(art, picked["label"])
+                # Fetch for the thing being OFFERED, not the thing drawn.
+                #
+                # The hint said "offer R.D. Burman because of Kishore Kumar"
+                # and then a Kishore Kumar jukebox was attached, because this
+                # used picked["label"] regardless. The composer took the link,
+                # reasonably, and the offer came out as Kishore again.
+                from memory.artefacts import what_to_offer
+                _o = what_to_offer(user_id, picked)
+                _subject = _o.get("subject") or picked["label"]
+
+                art = fetch_artefact(user_id, cat or "", _subject)
+                if not art:
+                    # Nothing for the adjacent thing — fall back to a step
+                    # along an axis from the original, which is what this did
+                    # before adjacency existed.
+                    art = fetch_along_axis(user_id, picked)
+                    if art:
+                        hints = (hints + "\n" if hints else "") + axis_hint(art)
+                        _subject = picked["label"]
+                if art and _subject != picked["label"]:
+                    hints = (hints + "\n" if hints else "") + as_hint(art, _subject)
+                elif art and _subject == picked["label"]:
+                    hints = (hints + "\n" if hints else "") + as_hint(art, _subject)
                 picked["artefact"] = art
+                picked["offering"] = _subject
         except Exception as e:
             print(f"[Schedule] pick_suggestion failed: {e}")
 
