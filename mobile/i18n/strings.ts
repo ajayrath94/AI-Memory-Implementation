@@ -106,7 +106,6 @@ const english: Dict = {
   'reminders.title':    'Reminders',
   'reminders.upcoming': 'Coming up',
   'reminders.past':     'Earlier',
-  'reminders.empty':    'Nothing yet',
 
   'calendar.title':  'My calendar',
   'calendar.today':  'Today',
@@ -197,7 +196,6 @@ const hinglish: Dict = {
   'reminders.title':    'Yaad dilana',
   'reminders.upcoming': 'Aage',
   'reminders.past':     'Pehle',
-  'reminders.empty':    'Abhi kuch nahi',
 
   'calendar.title':  'Meri calendar',
   'calendar.today':  'Aaj',
@@ -288,7 +286,6 @@ const hindi: Dict = {
   'reminders.title':    'याद दिलाना',
   'reminders.upcoming': 'आगे',
   'reminders.past':     'पहले',
-  'reminders.empty':    'अभी कुछ नहीं',
 
   'calendar.title':  'मेरा कैलेंडर',
   'calendar.today':  'आज',
@@ -372,7 +369,6 @@ const punjabi: Dict = {
   'reminders.title':    'ਯਾਦ ਕਰਵਾਉਣਾ',
   'reminders.upcoming': 'ਅੱਗੇ',
   'reminders.past':     'ਪਹਿਲਾਂ',
-  'reminders.empty':    'ਹਾਲੇ ਕੁਝ ਨਹੀਂ',
 
   'calendar.title':  'ਮੇਰਾ ਕੈਲੰਡਰ',
   'calendar.today':  'ਅੱਜ',
@@ -454,7 +450,6 @@ const gujarati: Dict = {
   'reminders.title':    'યાદ કરાવવું',
   'reminders.upcoming': 'આગળ',
   'reminders.past':     'પહેલાં',
-  'reminders.empty':    'હજી કંઈ નથી',
 
   'calendar.title':  'મારું કૅલેન્ડર',
   'calendar.today':  'આજે',
@@ -537,7 +532,6 @@ const marathi: Dict = {
   'reminders.title':    'आठवण',
   'reminders.upcoming': 'पुढे',
   'reminders.past':     'आधी',
-  'reminders.empty':    'अजून काही नाही',
 
   'calendar.title':  'माझं कॅलेंडर',
   'calendar.today':  'आज',
@@ -620,7 +614,6 @@ const bengali: Dict = {
   'reminders.title':    'মনে করানো',
   'reminders.upcoming': 'সামনে',
   'reminders.past':     'আগে',
-  'reminders.empty':    'এখনও কিছু নেই',
 
   'calendar.title':  'আমার ক্যালেন্ডার',
   'calendar.today':  'আজ',
@@ -703,7 +696,6 @@ const tamil: Dict = {
   'reminders.title':    'நினைவூட்டல்',
   'reminders.upcoming': 'வரவிருப்பது',
   'reminders.past':     'முன்பு',
-  'reminders.empty':    'இன்னும் ஒன்றுமில்லை',
 
   'calendar.title':  'என் நாட்காட்டி',
   'calendar.today':  'இன்று',
@@ -786,7 +778,6 @@ const telugu: Dict = {
   'reminders.title':    'గుర్తు చేయడం',
   'reminders.upcoming': 'ముందు',
   'reminders.past':     'ఇంతకుముందు',
-  'reminders.empty':    'ఇంకా ఏమీ లేదు',
 
   'calendar.title':  'నా క్యాలెండర్',
   'calendar.today':  'ఈరోజు',
