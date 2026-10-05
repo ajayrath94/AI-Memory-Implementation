@@ -55,6 +55,10 @@ export default function ChatScreen() {
   // Which message is speaking, so its icon can show it.
   const [speakingId, setSpeakingId] = useState<string | null>(null)
   const [playback, setPlayback] = useState<Playback>('tap')
+  // Whether an offer reads itself too. A tap always speaks — that is her
+  // asking — but an offer arriving unbidden is a different thing from a
+  // tablet reminder.
+  const [speakOffers, setSpeakOffers] = useState(false)
   // The last message spoken on its own — so opening the app does not read
   // the whole history aloud.
   const spokenRef = useRef<string | null>(null)
@@ -62,7 +66,9 @@ export default function ChatScreen() {
   useEffect(() => onPlayingChange(setSpeakingId), [])
 
   useEffect(() => {
-    getPreference(userId).then((p) => setPlayback(p.playback)).catch(() => {})
+    getPreference(userId)
+      .then((p) => { setPlayback(p.playback); setSpeakOffers(!!(p as any).speak_offers) })
+      .catch(() => {})
   }, [userId])
 
   // Speak a new arrival, when she has asked for that. Only the newest, and
@@ -73,9 +79,12 @@ export default function ChatScreen() {
     const last = messages[messages.length - 1]
     if (!last || last.role !== 'assistant') return
     if (spokenRef.current === last.id) return
+    // An offer waits to be asked for, unless she has said otherwise.
+    const isOffer = /youtube\.com\/watch/.test(last.content)
+    if (isOffer && !speakOffers) { spokenRef.current = last.id; return }
     spokenRef.current = last.id
     speak(last.content, { id: last.id, userId })
-  }, [messages, playback, userId])
+  }, [messages, playback, speakOffers, userId])
 
   // A voice still talking about the last thing while she writes the next is
   // the worst of it.

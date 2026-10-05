@@ -121,6 +121,14 @@ const english: Dict = {
 }
 
 const hinglish: Dict = {
+  'settings.voice': 'Sandesh sunna',
+  'settings.voiceAuto': 'Har sandesh apne aap sunayi de',
+  'settings.voiceTap': 'Speaker dabane par sunayi de',
+  'settings.voiceOff': 'Kuch na sunayi de',
+  'settings.voiceOffers': 'Sujhav bhi sunayi dein',
+  'settings.voiceTry': 'Awaaz sunkar dekhiye',
+  'settings.voicePlaying': 'Chal raha hai...',
+  'settings.voiceSample': 'Namaste. Aaj aapka din kaisa raha?',
   'common.loadingSoft': 'Ek minute…',
   'reminders.empty': 'Abhi kuch yaad dilane ko nahi hai',
   'sessions.title': 'Hamari baatein',
@@ -204,6 +212,14 @@ const hinglish: Dict = {
 }
 
 const hindi: Dict = {
+  'settings.voice': 'संदेश सुनना',
+  'settings.voiceAuto': 'हर संदेश अपने आप सुनाई दे',
+  'settings.voiceTap': 'स्पीकर दबाने पर सुनाई दे',
+  'settings.voiceOff': 'कुछ न सुनाई दे',
+  'settings.voiceOffers': 'सुझाव भी सुनाई दें',
+  'settings.voiceTry': 'आवाज़ सुनकर देखिए',
+  'settings.voicePlaying': 'चल रहा है...',
+  'settings.voiceSample': 'नमस्ते। आज आपका दिन कैसा रहा?',
   'common.loadingSoft': 'एक मिनट…',
   'reminders.empty': 'अभी कुछ याद दिलाने को नहीं है',
   'sessions.title': 'हमारी बातें',
