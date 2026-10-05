@@ -129,10 +129,23 @@ def _interests(user_id: str) -> str:
         interests = p.get("interests") or {}
     if not isinstance(interests, dict):
         return ""
+    # Shuffled within each category, because the composer takes the first
+    # name it reads and the list is ordered by strength — so Kishore Kumar
+    # has been first in sangeet every day for three weeks, and three of
+    # today's four messages mentioned him.
+    #
+    # Seeded by the day, so one message does not contradict the next within
+    # a conversation.
+    import random as _r
+    from datetime import date as _d
+    rng = _r.Random(f"{user_id}:{_d.today().isoformat()}")
+
     bits = []
     for key, items in interests.items():
         if isinstance(items, list) and items:
-            bits.append(f"  {key}: {', '.join(str(i) for i in items[:5])}")
+            shown = list(items)[:5]
+            rng.shuffle(shown)
+            bits.append(f"  {key}: {', '.join(str(i) for i in shown)}")
     return "What they enjoy:\n" + "\n".join(bits) if bits else ""
 
 
