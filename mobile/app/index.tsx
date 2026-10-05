@@ -14,6 +14,7 @@ import { syncLocation } from '../services/locationService'
 import { useChat } from '../hooks/useChat'
 import { useT } from '../hooks/useT'
 import { MessageBubble } from '../components/chat/MessageBubble'
+import { speak, stop as stopVoice, getPreference, onPlayingChange, type Playback } from '../services/voiceService'
 import { ChatInput } from '../components/chat/ChatInput'
 
 // Takes the companion's name rather than assuming it. Someone whose companion
@@ -50,6 +51,35 @@ export default function ChatScreen() {
     })()
   }, [userId])
   const listRef   = useRef<FlatList>(null)
+
+  // Which message is speaking, so its icon can show it.
+  const [speakingId, setSpeakingId] = useState<string | null>(null)
+  const [playback, setPlayback] = useState<Playback>('tap')
+  // The last message spoken on its own — so opening the app does not read
+  // the whole history aloud.
+  const spokenRef = useRef<string | null>(null)
+
+  useEffect(() => onPlayingChange(setSpeakingId), [])
+
+  useEffect(() => {
+    getPreference(userId).then((p) => setPlayback(p.playback)).catch(() => {})
+  }, [userId])
+
+  // Speak a new arrival, when she has asked for that. Only the newest, and
+  // only once: auto-play is for the message that just came in, not for the
+  // conversation she is scrolling back through.
+  useEffect(() => {
+    if (playback !== 'auto' || !messages.length) return
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'assistant') return
+    if (spokenRef.current === last.id) return
+    spokenRef.current = last.id
+    speak(last.content, { id: last.id, userId })
+  }, [messages, playback, userId])
+
+  // A voice still talking about the last thing while she writes the next is
+  // the worst of it.
+  useEffect(() => () => { stopVoice() }, [])
   const appState  = useRef(AppState.currentState)
   const pulseAnim = useRef(new Animated.Value(1)).current
 
@@ -208,7 +238,17 @@ export default function ChatScreen() {
         ref={listRef}
         data={messages}
         keyExtractor={(m, i) => m.id || String(i)}
-        renderItem={({ item }) => <MessageBubble message={item} onResend={resend} />}
+        renderItem={({ item }) => (
+          <MessageBubble
+            message={item}
+            onResend={resend}
+            speaking={speakingId === item.id}
+            onSpeak={() => {
+              if (speakingId === item.id) { stopVoice(); return }
+              speak(item.content, { id: item.id, userId })
+            }}
+          />
+        )}
         contentContainerStyle={[styles.list, { backgroundColor: Colors.bg }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={

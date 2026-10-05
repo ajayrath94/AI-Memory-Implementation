@@ -22,6 +22,8 @@ interface Message {
 interface Props {
   message:   Message
   onResend?: (text: string, messageId: string) => void
+  onSpeak?:  () => void
+  speaking?: boolean
 }
 
 // Extract YouTube video ID from text
@@ -35,7 +37,7 @@ function cleanText(text: string): string {
   return text.replace(/https?:\/\/www\.youtube\.com\/watch\?v=[\w-]+/g, '').trim()
 }
 
-export function MessageBubble({ message, onResend }: Props) {
+export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
   const isUser = message.role === 'user'
   const time   = new Date(message.timestamp).toLocaleTimeString([], {
     hour: '2-digit', minute: '2-digit'
@@ -83,6 +85,26 @@ export function MessageBubble({ message, onResend }: Props) {
             )}
 
             <View style={styles.footer}>
+              {/* Hearing it rather than reading it. She is seventy; for
+                  anyone whose eyes are going this is the difference between
+                  using the app and not.
+
+                  Always shown, not hidden behind a setting — she will not go
+                  looking. The preference decides whether it also plays on
+                  its own. */}
+              {!isUser && (
+                <TouchableOpacity
+                  onPress={onSpeak}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={styles.speakBtn}
+                >
+                  <Ionicons
+                    name={speaking ? 'volume-high' : 'volume-medium-outline'}
+                    size={15}
+                    color={speaking ? Colors.accent : Colors.textHint}
+                  />
+                </TouchableOpacity>
+              )}
               {!isUser && message.memoryUsed && (
                 <View style={styles.memoryTag}>
                   <Text style={styles.memoryText}>🧠</Text>
@@ -169,6 +191,10 @@ const styles = StyleSheet.create({
   bubbleBot:   { backgroundColor: Colors.bgCard, borderBottomLeftRadius: Radius.sm, borderWidth: 0.5, borderColor: Colors.border },
   textUser:    { ...Typography.body, color: Colors.text, lineHeight: 24 },
   footer:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: Spacing.xs, gap: Spacing.xs },
+  speakBtn: {
+    paddingRight: 6,
+    paddingVertical: 2,
+  },
   memoryTag:   { backgroundColor: Colors.accentPurple + '15', borderRadius: Radius.sm, paddingHorizontal: 5, paddingVertical: 1 },
   memoryText:  { fontSize: 10 },
   time:        { ...Typography.caption, color: Colors.textHint },
