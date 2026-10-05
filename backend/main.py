@@ -56,6 +56,9 @@ import os as _os
 def _memory_view():
     return _FileResponse(_os.path.join(_os.path.dirname(__file__),
                                        "static", "dashboard.html"))
+from routes.voice import router as voice_router
+app.include_router(voice_router, prefix="/voice", tags=["voice"], dependencies=[Depends(require_api_key)])
+
 from routes.emergency import router as emergency_router
 app.include_router(emergency_router, prefix="/emergency", tags=["emergency"], dependencies=[Depends(require_api_key)])
 # The dashboard page itself carries no key — the browser has none to send.
