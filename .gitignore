@@ -17,3 +17,4 @@ mobile/dist/
 project.zip
 *.zip
 mobile/fcm-service-account.json
+profile_backup_*.json
