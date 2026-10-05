@@ -10,6 +10,7 @@ import { isLocationEnabled, setLocationEnabled, requestLocationPermission, syncL
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY, MODELS } from '../constants'
 import { useAppStore } from '../store/appStore'
 import { useT } from '../hooks/useT'
+import { speak, getPreference, setPreference, type Playback } from '../services/voiceService'
 
 const BACKGROUNDS = [
   { id: 'dark',       label: 'Black',    color: '#0a0a0a' },
@@ -59,6 +60,36 @@ export default function SettingsScreen() {
   const model      = useAppStore(s => s.model)
   const setModel   = useAppStore(s => s.setModel)
   const userId     = useAppStore(s => s.userId)
+
+  // How she hears her messages, and whether offers speak too.
+  const [playback, setPlayback] = useState<Playback>('tap')
+  const [speakOffers, setSpeakOffers] = useState(false)
+  const [trying, setTrying] = useState(false)
+
+  useEffect(() => {
+    getPreference(userId)
+      .then((p) => { setPlayback(p.playback); setSpeakOffers(!!(p as any).speak_offers) })
+      .catch(() => {})
+  }, [userId])
+
+  const tryVoice = async () => {
+    if (trying) return
+    setTrying(true)
+    try { await speak(t('settings.voiceSample'), { userId }) }
+    finally { setTimeout(() => setTrying(false), 3500) }
+  }
+
+  const changePlayback = async (value: Playback) => {
+    setPlayback(value)
+    await setPreference(value, userId, speakOffers)
+    if (value !== 'off') tryVoice()
+  }
+
+  const changeSpeakOffers = async (value: boolean) => {
+    setSpeakOffers(value)
+    await setPreference(playback, userId, value)
+  }
+
   const setBgColor = useAppStore(s => s.setBgColor)
   const [weights,    setWeights]    = useState<Record<string, number>>({})
   const [loadingW,   setLoadingW]   = useState(true)
@@ -196,6 +227,43 @@ export default function SettingsScreen() {
               )
             })}
           </View>
+        </View>
+
+        {/* How she hears it. Three states, so three rows rather than a
+            switch — and the labels say what happens, because "auto" and
+            "tap" mean nothing to someone who has never set up an app. */}
+        <SectionHeader title={t('settings.voice')} theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+          {([['auto', t('settings.voiceAuto'), 'volume-high-outline'],
+             ['tap',  t('settings.voiceTap'),  'volume-medium-outline'],
+             ['off',  t('settings.voiceOff'),  'volume-mute-outline']] as const
+           ).map(([value, label, icon]) => (
+            <TouchableOpacity key={value} style={styles.settingRow}
+              onPress={() => changePlayback(value as Playback)} activeOpacity={0.7}>
+              <Ionicons name={icon as any} size={20} color={theme.textMuted} />
+              <Text style={[styles.settingLabel, { color: theme.text }]}>{label}</Text>
+              {playback === value && <Ionicons name="checkmark" size={20} color={Colors.accent} />}
+            </TouchableOpacity>
+          ))}
+
+          {/* Only does anything when messages read themselves. Dimmed
+              otherwise: a control that does nothing when touched is worse
+              than no control. */}
+          <View style={[styles.settingRow, playback !== 'auto' && { opacity: 0.4 }]}>
+            <Ionicons name="musical-notes-outline" size={20} color={theme.textMuted} />
+            <Text style={[styles.settingLabel, { color: theme.text }]}>{t('settings.voiceOffers')}</Text>
+            <Switch value={speakOffers} disabled={playback !== 'auto'} onValueChange={changeSpeakOffers} />
+          </View>
+
+          {/* She is choosing a voice she will hear every day. Choosing it
+              without hearing it is choosing blind. */}
+          <TouchableOpacity style={styles.settingRow} onPress={tryVoice} activeOpacity={0.7} disabled={trying}>
+            <Ionicons name="play-circle-outline" size={20} color={Colors.accent} />
+            <Text style={[styles.settingLabel, { color: Colors.accent }]}>
+              {trying ? t('settings.voicePlaying') : t('settings.voiceTry')}
+            </Text>
+            {trying && <ActivityIndicator size="small" color={Colors.accent} />}
+          </TouchableOpacity>
         </View>
 
         {/* Data & Privacy */}

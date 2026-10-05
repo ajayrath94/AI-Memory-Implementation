@@ -52,13 +52,19 @@ def preference(user_id: str):
     """auto | tap | off, and which voice she would hear."""
     from memory.voice import playback_preference, _voice_for
     speaker, lang = _voice_for(user_id)
+    from memory.profile_store import get_user_profile
+    _p = (get_user_profile(user_id) or {}).get("preferences") or {}
     return {"playback": playback_preference(user_id),
+            "speak_offers": bool(_p.get("voice_speak_offers")),
             "voice": speaker, "language": lang}
 
 
 class PreferenceRequest(BaseModel):
     user_id: str = "default"
     playback: str = "tap"
+    # Whether an offer speaks too, when messages read themselves. Off by
+    # default: a tablet reminder she should hear, a song she can choose to.
+    speak_offers: bool = False
 
 
 @router.post("/preference")
@@ -77,6 +83,7 @@ def set_preference(req: PreferenceRequest):
         p = get_user_profile(req.user_id) or {}
         prefs = p.get("preferences") if isinstance(p.get("preferences"), dict) else {}
         prefs["voice_playback"] = req.playback
+        prefs["voice_speak_offers"] = req.speak_offers
         db.table("user_profile").update({"preferences": prefs}) \
           .eq("user_id", req.user_id).execute()
         return {"ok": True, "playback": req.playback}
