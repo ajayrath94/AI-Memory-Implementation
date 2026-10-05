@@ -168,6 +168,13 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                 # is idempotent per user/day/action, so `duplicate` is the
                 # cadence guard: at most one of each kind per day, however
                 # often the heartbeat runs.
+                if action and action != "SILENCE" and not logged.get("logged"):
+                    # Logged-but-duplicate looks identical to held-by-cadence
+                    # from the outside: the row says "decided" and nothing
+                    # says why it stopped there.
+                    print(f"[Scheduler] {uid}: {action} not sent — "
+                          f"duplicate={logged.get('duplicate')}")
+
                 if (action and action != "SILENCE"
                         and logged.get("logged") and not logged.get("duplicate")):
                     # log_decision's idempotency already caps one of each kind
