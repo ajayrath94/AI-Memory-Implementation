@@ -93,7 +93,11 @@ export async function speak(
   if (body.length < 2) return false
 
   await stop()
-  await configureAudio()
+  // configureAudio has been a suspect: setAudioModeAsync's options changed
+  // between expo-av versions, and an unknown key throws. Guarded rather than
+  // awaited, because audio that plays through the ringer switch is better
+  // than audio that does not play at all.
+  try { await configureAudio() } catch (e) { console.log('[voice] audio mode', e) }
 
   try {
     // expo-file-system downloads it straight to a file.
@@ -105,17 +109,27 @@ export async function speak(
     // nothing and said nothing.
     const uri = `${FileSystem.cacheDirectory}voice_${Date.now()}.wav`
     const result = await FileSystem.downloadAsync(
-      `${API_BASE}/voice/speak?` + new URLSearchParams({
-        text: body.slice(0, 1500),
-        user_id: opts.userId || 'default',
-        intent: opts.intent || '',
-      }).toString(),
+      // encodeURIComponent, not URLSearchParams — another browser global
+      // that may not be in this runtime, and the last one cost a day.
+      `${API_BASE}/voice/speak`
+        + `?text=${encodeURIComponent(body.slice(0, 1500))}`
+        + `&user_id=${encodeURIComponent(opts.userId || 'default')}`
+        + `&intent=${encodeURIComponent(opts.intent || '')}`,
       uri,
       { headers: await getAuthHeaders() },
     )
     if (result.status !== 200) {
       console.log('[voice] no audio', result.status)
       return false
+    }
+
+    // Named, so a failure says which half broke even when Hermes gives no
+    // stack: 'undefined is not a function' alone has cost most of a morning.
+    if (typeof (FileSystem as any).downloadAsync !== 'function') {
+      throw new Error('FileSystem.downloadAsync missing')
+    }
+    if (typeof (Audio as any)?.Sound?.createAsync !== 'function') {
+      throw new Error('Audio.Sound.createAsync missing - expo-av not linked')
     }
 
     const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true })
@@ -135,7 +149,12 @@ export async function speak(
   } catch (e) {
     // Loud while this is new. A silent failure is what hid btoa for a day.
     console.log('[voice] speak failed', e)
-    try { const { Alert } = require('react-native'); Alert.alert('Voice', String(e).slice(0, 180)) } catch {}
+    try {
+      const { Alert } = require('react-native')
+      // The message alone says 'undefined is not a function' with no name.
+      // The stack says which line, which is what is actually needed.
+      Alert.alert('Voice', String((e as any)?.stack || e).slice(0, 700))
+    } catch {}
     announce(null)
     return false
   }
