@@ -86,7 +86,13 @@ SCOPE = {
         "task": ("A medication is due right now. Remind them warmly and name "
                  "it. One line. Do not mention meals, walks, music, films, or anything "
                  "else they like — only the dose that is due. Do not say how "
-                 "you feel about reminding them."
+                 "you feel about reminding them.\n"
+                 "And do NOT name their conditions. What it is FOR is not the "
+                 "reminder: 'aaj Chronic knee pain aur Back pain ka dhyan "
+                 "rakhna' went out one morning, which is a chart being read "
+                 "to her. The summary above describes her so you understand "
+                 "her; it is not a thing to recite. Name the tablet, say it "
+                 "warmly, stop."
                  ),
         "forbid_medication": False,
     },
