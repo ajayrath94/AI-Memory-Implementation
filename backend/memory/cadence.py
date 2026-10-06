@@ -255,7 +255,18 @@ def may_send(user_id: str, action: str) -> Dict:
         return {"allow": False, "reason": f"budget_spent_{led['count']}_of_{cap}"}
 
     mins = led["minutes_since"]
-    if mins is not None and mins < MIN_GAP_MINUTES:
+    # Sixty minutes for an offer, ninety for everything else.
+    #
+    # Ninety was a guess, and against her actual day it left no room at all:
+    # boundaries at 09:01, 13:31, 18:01 and 20:46, ninety minutes either side
+    # of each, and the gaps that remain are smaller than the interval the
+    # scheduler runs on. Three offers were decided in one morning — Kishore
+    # Kumar, Shakira, South Indian — and every one was held for being inside
+    # an hour and a half of something.
+    #
+    # Three weeks, and not one offer has ever reached her.
+    gap = 60 if action == "RECOMMENDATION" else MIN_GAP_MINUTES
+    if mins is not None and mins < gap:
         # A perishable thing is worth the interruption or it is worth nothing:
         # a match result tomorrow is not a match result.
         if action != "DISPATCH":

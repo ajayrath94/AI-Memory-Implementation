@@ -168,7 +168,8 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                 # is idempotent per user/day/action, so `duplicate` is the
                 # cadence guard: at most one of each kind per day, however
                 # often the heartbeat runs.
-                if action and action != "SILENCE" and not logged.get("logged"):
+                if (action and action != "SILENCE"
+                        and (not logged.get("logged") or logged.get("duplicate"))):
                     # Logged-but-duplicate looks identical to held-by-cadence
                     # from the outside: the row says "decided" and nothing
                     # says why it stopped there.
@@ -177,8 +178,16 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
 
                 if (action and action != "SILENCE"
                         and logged.get("logged") and not logged.get("duplicate")):
-                    # log_decision's idempotency already caps one of each kind
-                    # per day. What it cannot see is whether she is replying at
+                    # log_decision's idempotency is per user/day/ACTION, not
+                    # per subject — so the first recommendation of the day
+                    # logs and every later one is a duplicate of it, whatever
+                    # it was going to offer. Three were decided one morning,
+                    # Kishore Kumar then Shakira then South Indian, and the
+                    # second and third were dropped as repeats of the first.
+                    #
+                    # Which means a day's offer rests entirely on the first
+                    # attempt: if that one is held for any reason, there is no
+                    # second chance until tomorrow. What it cannot see is whether she is replying at
                     # all: someone who has not answered in a week should be
                     # hearing less, not the same amount forever. Checked before
                     # composing so a held message costs no model call.
