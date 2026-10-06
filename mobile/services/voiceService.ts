@@ -132,6 +132,15 @@ export async function speak(
       throw new Error('Audio.Sound.createAsync missing - expo-av not linked')
     }
 
+    // Named, so a failure says which half broke even when Hermes gives no
+    // stack: 'undefined is not a function' alone has cost most of a morning.
+    if (typeof (FileSystem as any).downloadAsync !== 'function') {
+      throw new Error('FileSystem.downloadAsync missing')
+    }
+    if (typeof (Audio as any)?.Sound?.createAsync !== 'function') {
+      throw new Error('Audio.Sound.createAsync missing - expo-av not linked')
+    }
+
     const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true })
     current = sound
     announce(opts.id || null)
