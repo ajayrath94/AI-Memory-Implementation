@@ -591,6 +591,22 @@ def note_from_message(user_id: str, user_text: str) -> Optional[str]:
                     .replace("(", " ").replace(")", " ").split()
                     if len(w) > 3 and w in said)
         if len(meds_open) > 1 and not named:
+            # She said "le li" with two tablets open and named neither. The
+            # old answer was to record nothing, on the reasoning that the
+            # wrong tablet is worse than none — and she confirmed twice in a
+            # morning and both stayed pending all day, which a caregiver
+            # would read as two missed doses.
+            #
+            # Nobody takes one tablet of two and says "le li". If every open
+            # one is already overdue, she means all of them.
+            # open_events already returns only what is past due, so every
+            # tablet here is one she should have taken by now.
+            if got["status"] == "confirmed":
+                for e in meds_open:
+                    set_status(e["id"], "confirmed", got.get("detail", ""))
+                print(f"[Day] {user_id}: {len(meds_open)} overdue tablets "
+                      f"confirmed together")
+                return None
             print(f"[Day] {user_id}: a tablet was mentioned but not which one")
             return None
 
