@@ -47,6 +47,14 @@ def speak(req: SpeakRequest):
     )
 
 
+@router.get("/speak")
+def speak_get(text: str, user_id: str = "default", intent: str = "",
+              valence: float = 0.0):
+    """The same thing by GET, because expo-file-system can only download."""
+    return speak(SpeakRequest(text=text, user_id=user_id, intent=intent,
+                              valence=valence))
+
+
 @router.get("/preference/{user_id}")
 def preference(user_id: str):
     """auto | tap | off, and which voice she would hear."""

@@ -96,44 +96,27 @@ export async function speak(
   await configureAudio()
 
   try {
-    const res = await fetch(`${API_BASE}/voice/speak`, {
-      method: 'POST',
-      headers: { ...(await getAuthHeaders()) },
-      body: JSON.stringify({
-        text: body,
+    // expo-file-system downloads it straight to a file.
+    //
+    // Two earlier attempts went through fetch: the first base64'd the body
+    // by hand with btoa, which does not exist in this runtime, and the
+    // second used res.blob() with FileReader, whose polyfill is incomplete
+    // here. Both threw and the catch swallowed it, so the speaker did
+    // nothing and said nothing.
+    const uri = `${FileSystem.cacheDirectory}voice_${Date.now()}.wav`
+    const result = await FileSystem.downloadAsync(
+      `${API_BASE}/voice/speak?` + new URLSearchParams({
+        text: body.slice(0, 1500),
         user_id: opts.userId || 'default',
         intent: opts.intent || '',
-        valence: opts.valence ?? 0,
-      }),
-      // Generous: synthesis is a second or two, and a message that arrives
-      // late is better than one that never speaks.
-      signal: AbortSignal.timeout(25000),
-    })
-
-    // 204 means the backend could not synthesise. The text is on screen.
-    if (res.status === 204 || !res.ok) return false
-
-    const type = res.headers.get('content-type') || ''
-    const ext = type.includes('wav') ? 'wav' : 'mp3'
-
-    // Straight to a file. The first version read the body into an
-    // ArrayBuffer and base64'd it by hand with btoa — which does not exist
-    // in React Native's runtime, so it threw on every message and the catch
-    // swallowed it. The speaker did nothing and said nothing.
-    const uri = `${FileSystem.cacheDirectory}voice_${Date.now()}.${ext}`
-    const blob = await res.blob()
-    const b64: string = await new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const s = String(reader.result || '')
-        resolve(s.slice(s.indexOf(',') + 1))   // strip the data: prefix
-      }
-      reader.onerror = reject
-      reader.readAsDataURL(blob)
-    })
-    await FileSystem.writeAsStringAsync(uri, b64, {
-      encoding: FileSystem.EncodingType.Base64,
-    })
+      }).toString(),
+      uri,
+      { headers: await getAuthHeaders() },
+    )
+    if (result.status !== 200) {
+      console.log('[voice] no audio', result.status)
+      return false
+    }
 
     const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true })
     current = sound
