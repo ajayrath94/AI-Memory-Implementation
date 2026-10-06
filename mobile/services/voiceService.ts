@@ -176,7 +176,6 @@ export async function getPreference(userId = 'default'): Promise<{
   try {
     const res = await fetch(`${API_BASE}/voice/preference/${userId}`, {
       headers: { ...(await getAuthHeaders()) },
-      signal: AbortSignal.timeout(8000),
     })
     if (res.ok) return await res.json()
   } catch (e) {
@@ -195,7 +194,6 @@ export async function setPreference(
       method: 'POST',
       headers: { ...(await getAuthHeaders()) },
       body: JSON.stringify({ user_id: userId, playback, speak_offers: speakOffers }),
-      signal: AbortSignal.timeout(8000),
     })
     return res.ok
   } catch {
