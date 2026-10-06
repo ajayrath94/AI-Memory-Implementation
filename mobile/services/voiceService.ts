@@ -116,10 +116,21 @@ export async function speak(
     const type = res.headers.get('content-type') || ''
     const ext = type.includes('wav') ? 'wav' : 'mp3'
 
-    // expo-av wants a URI, so the bytes go to the cache first.
-    const buf = await res.arrayBuffer()
-    const b64 = arrayBufferToBase64(buf)
+    // Straight to a file. The first version read the body into an
+    // ArrayBuffer and base64'd it by hand with btoa — which does not exist
+    // in React Native's runtime, so it threw on every message and the catch
+    // swallowed it. The speaker did nothing and said nothing.
     const uri = `${FileSystem.cacheDirectory}voice_${Date.now()}.${ext}`
+    const blob = await res.blob()
+    const b64: string = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const s = String(reader.result || '')
+        resolve(s.slice(s.indexOf(',') + 1))   // strip the data: prefix
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
     await FileSystem.writeAsStringAsync(uri, b64, {
       encoding: FileSystem.EncodingType.Base64,
     })
@@ -139,7 +150,9 @@ export async function speak(
     })
     return true
   } catch (e) {
+    // Loud while this is new. A silent failure is what hid btoa for a day.
     console.log('[voice] speak failed', e)
+    try { const { Alert } = require('react-native'); Alert.alert('Voice', String(e).slice(0, 180)) } catch {}
     announce(null)
     return false
   }
@@ -177,18 +190,4 @@ export async function setPreference(
   } catch {
     return false
   }
-}
-
-// Chunked, because a long message's audio is a few hundred kilobytes and
-// String.fromCharCode over the whole array blows the stack.
-function arrayBufferToBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf)
-  let binary = ''
-  const chunk = 8192
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode.apply(
-      null, Array.from(bytes.subarray(i, i + chunk)) as any,
-    )
-  }
-  return global.btoa ? global.btoa(binary) : btoa(binary)
 }
