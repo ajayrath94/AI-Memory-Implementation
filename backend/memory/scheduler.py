@@ -79,6 +79,16 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                 # learning her habits.
                 from memory.promotion import review as _promotion_review
                 _promotion_review(_uid, dry_run=False)
+
+                # And at the end of her day, what to carry into tomorrow.
+                # Guards itself: after her sleep hour, once per day.
+                from memory.carry import write as _carry_write
+                _carry_write(_uid)
+
+                # And at the end of her day, what to carry into tomorrow.
+                # Guards itself: after her sleep hour, once per day.
+                from memory.carry import write as _carry_write
+                _carry_write(_uid)
             except Exception as _e:
                 print(f"[Scheduler] cluster clean failed for {_uid}: {_e}")
     # Fire due reminders — the reactive engine delivering prospective memory.
