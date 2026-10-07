@@ -256,6 +256,12 @@ def generate_proactive_script(
     force_slot: str = None,
     action: str = None,
     hints: str = "",
+    # What the decision chose. Without it this re-derived the dose from the
+    # clock and found a different answer — her 07:00 thyronorm and 08:00
+    # amlodipine in one message, an hour early.
+    #
+    # Whoever decides something passes it on. Nobody looks it up twice.
+    detail: str = "",
 ) -> dict:
     """
     Generate a proactive message for Nancy to open with.
@@ -342,9 +348,23 @@ def generate_proactive_script(
     if intent == "medication":
         try:
             from memory.care_reader import get_due_schedule_items
-            due = get_due_schedule_items(user_id, hour=hour) or []
-            labels = [d.get("label") for d in due
-                      if d.get("label") and d.get("type") == "medication"]
+            # The decision already chose ONE dose — proactive_engine sorts the
+            # due medications and takes the first, deliberately, so that two
+            # tablets an hour apart are two reminders an hour apart.
+            #
+            # Looking them up again here by hour threw that away: a 45-minute
+            # window at 07:16 reached 08:01, so her 07:00 thyronorm and her
+            # 08:00 amlodipine both went into one message and she was told to
+            # take her BP tablet three quarters of an hour early.
+            #
+            # Honour what was decided. The lookup is only for when nothing
+            # was passed.
+            if detail:
+                labels = [detail]
+            else:
+                due = get_due_schedule_items(user_id, hour=hour) or []
+                labels = [d.get("label") for d in due
+                          if d.get("label") and d.get("type") == "medication"]
             if labels:
                 hints = ("The dose due right now is: " + ", ".join(labels) +
                          ". Name it exactly. Do not name any other medicine.")
@@ -467,7 +487,27 @@ def generate_proactive_script(
     # he comes from.
     #
     # So: pick one, expand it a step, and say that is the only one.
-    if intent != "recommendation" and not _rhythm_fired:
+    # Occasionally, not every time.
+    #
+    # Three of four boundaries one day carried a song — "Pal Bhar Ke Liye" at
+    # breakfast, "Chaudhvin Ka Chand" at lunch, a dosa in the evening. Each
+    # was a fair suggestion and together they made every message an offer,
+    # when a boundary is meant to ask about her day.
+    #
+    # Seeded by the day and the slot, so it is stable within a conversation:
+    # the same boundary regenerated does not change its mind.
+    _may_offer = False
+    # Never on a medication reminder. Its own task says name the dose and
+    # nothing else, and "baad mein garam-garam dosa ka maza lenge" went out
+    # attached to her thyroid tablet.
+    if intent not in ("recommendation", "medication") and not _rhythm_fired:
+        import hashlib as _h
+        from datetime import date as _d
+        _seed = f"{user_id}:{_d.today().isoformat()}:{slot or ''}"
+        # roughly one boundary in three
+        _may_offer = int(_h.md5(_seed.encode()).hexdigest(), 16) % 3 == 0
+
+    if _may_offer:
         try:
             from memory.suggestions import pick_suggestion as _ps
             from memory.artefacts import what_to_offer as _wto

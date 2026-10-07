@@ -214,7 +214,9 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                         from memory.persona_names import get_companion_name
 
                         try:
-                            _r = generate_proactive_script(uid, action=action)
+                            _r = generate_proactive_script(
+                                uid, action=action,
+                                detail=str(decision.get('detail') or ''))
                         except Exception as _ge:
                             # "no script, skipped" was hiding the reason.
                             print(f"[Proactive] compose failed for {uid}: {_ge}")
