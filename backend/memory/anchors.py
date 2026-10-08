@@ -95,6 +95,16 @@ her son lives, not where she does. "Padosan shakahari hai" is the neighbour.
 
 Only when she states it, not when she is asked. A question settles nothing.
 
+AND READ THE NEGATION. "Is saal Navratri ka vrat nahi rakhungi" means she is
+NOT keeping it — that sentence came back as avoids_meat_on: ["Navratri"],
+which is the opposite of what she said. A denial is a value too: return the
+field with "none" when she says she does not do the thing.
+
+  "Navratri mein vrat rakhti hoon"       -> avoids_meat_on: ["Navratri"]
+  "Is saal vrat nahi rakhungi"           -> avoids_meat_on: "none"
+  "Main shakahari nahi hoon"             -> eats_meat: "yes"
+  "Ab mandir nahi jaati"                 -> keeps_fasts: "none"
+
 eats_meat is "no" only when she says she does NOT eat meat — a statement
 about what she avoids, not a meal. "Shudh shakahari hoon" is true; "roz dal
 chawal khati hoon" is not, because eating dal daily says nothing about
@@ -123,6 +133,17 @@ An empty list is the usual answer. No prose."""
     for f in found:
         field = str(f.get("field") or "").strip()
         if field not in ANCHORS or f.get("value") in (None, ""):
+            continue
+        # "none" is a real answer — she has stopped doing the thing. Without
+        # this, "is saal vrat nahi rakhungi" was stored as though she keeps
+        # it, because the subject survived and the negation did not.
+        if str(f.get("value")).strip().lower() in ("none", "nothing", "[]"):
+            try:
+                _db().table("profile_anchors").delete() \
+                    .eq("user_id", user_id).eq("field", field).execute()
+                print(f"[Anchor] {field} cleared — she says she does not")
+            except Exception as _de:
+                print(f"[Anchor] clear failed: {_de}")
             continue
         out.append({
             "field": field,
