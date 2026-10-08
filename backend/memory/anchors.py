@@ -209,6 +209,27 @@ def hear(user_id: str, text: str) -> str:
         spec = ANCHORS[field]
         was = current(user_id, field)
 
+        # Does this contradict something else she has told us? "Navratri
+        # mein bhi chicken khaya" sets eats_meat to yes, which it already
+        # was — so nothing changed and nothing was asked, while
+        # avoids_meat_on still said she keeps Navratri without meat.
+        #
+        # A contradiction is a change. Ask, the same as any other.
+        if field == "eats_meat" and str(value).lower() in ("yes", "true"):
+            avoid = current(user_id, "avoids_meat_on")
+            said = (a.get("quote") or "").lower()
+            if avoid:
+                for d in str(avoid.get("value") or "").lower().replace(
+                        "[", " ").replace("]", " ").replace("'", " ").split(","):
+                    d = d.strip()
+                    if d and d in said:
+                        hints.append(
+                            f"\n\nShe has eaten meat during {d}, and it is "
+                            f"on record that she keeps {d} without it. Ask "
+                            f"— lightly, once — whether she still keeps it, "
+                            f"or whether that has changed.")
+                        break
+
         # Nothing to do if it is already what she just said.
         if was and str(was.get("value")) == str(value):
             record(user_id, field, value, "said", a["quote"])

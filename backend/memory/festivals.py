@@ -287,7 +287,19 @@ def hint_for(user_id: str, when=None) -> str:
     s = soon(days=3, when=when)
     if s and _relevant(s["name"], observes):
         w = "tomorrow" if s["in_days"] == 1 else f"in {s['in_days']} days"
-        return (f"\n\n{s['name']} is {w}. Ask what they are planning — a "
-                f"festival is one of the few dates they reliably have plans "
-                f"for, and it is something to look forward to together.")
+        line = (f"\n\n{s['name']} is {w}. It has not started. If they "
+                f"speak as though it has, they are mistaken — do not agree, "
+                f"and do not correct them either: ask what they are "
+                f"planning, which is true to the date and makes the "
+                f"difference clear.\n"
+                f"A festival is one of the few dates they reliably have "
+                f"plans for, and it is something to look forward to "
+                f"together.")
+        if s.get("fasting"):
+            line += ("\nMany people fast on this one and you do not know "
+                     "whether they do. Say nothing about what they should "
+                     "eat, or how to keep it — they have observed this "
+                     "festival their whole life and you have read a "
+                     "calendar.")
+        return line
     return ""
