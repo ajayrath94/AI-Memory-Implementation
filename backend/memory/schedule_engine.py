@@ -394,7 +394,20 @@ def generate_proactive_script(
 
     if intent == "boundary":
         from memory.day import boundary as day_boundary, boundary_hint
-        b = day_boundary(user_id)
+        # The hour that was decided on, and the event that was decided —
+        # the boundary marks itself spent, so by the time the composer asks
+        # again it is gone and the message is written with no idea what it
+        # is for. Her lunch boundary fired at 13:33 and talked about Kishore
+        # Kumar; she said "aj lunch k liye toh pucha nai tumne" twice.
+        b = day_boundary(user_id,
+                         now_min=(hour * 60) if hour is not None else None)
+        if not b and detail:
+            from memory.day import events as _devs
+            _m = next((e for e in (_devs(user_id) or [])
+                       if (e.get("label") or e.get("kind") or "").lower()
+                       == str(detail).lower()), None)
+            if _m:
+                b = {"done": _m, "next": None}
         if b:
             hints = (hints + "\n" if hints else "") + boundary_hint(user_id, b)
 

@@ -282,7 +282,29 @@ def _said_since(user_id: str, ev: Dict) -> str:
     try:
         from supabase_store import get_client
         db = get_client()
+        # Since the LAST boundary, not the last five hours.
+        #
+        # She was asked at 09:03 how breakfast had gone and answered at
+        # 11:30, "aloo ke parathe khaye". The lunch boundary at 13:33 read a
+        # five-hour window, swept that up as its own, decided lunch was
+        # already answered and did not ask — and she said "aj lunch k liye
+        # toh pucha nai tumne" twice.
+        #
+        # A message belongs to the boundary it came after. That is a
+        # timestamp, not a judgement, and proactive_events has every one.
         since = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+        try:
+            prev = (db.table("proactive_events")
+                    .select("created_at")
+                    .eq("user_id", user_id).eq("action", "BOUNDARY")
+                    .not_.is_("delivered_at", "null")
+                    .gte("created_at", since)
+                    .order("created_at", desc=True)
+                    .limit(1).execute()).data or []
+            if prev:
+                since = prev[0]["created_at"]
+        except Exception as _pe:
+            print(f"[Day] previous boundary read failed: {_pe}")
         sess = (db.table("sessions").select("id")
                 .eq("user_id", user_id).gte("updated_at", since)
                 .order("updated_at", desc=True).limit(3).execute()).data or []
@@ -305,11 +327,23 @@ def _said_since(user_id: str, ev: Dict) -> str:
 
 {chr(10).join('- ' + s for s in said[-12:])}
 
-Did any of it say something about their {label}? If so, reply with that one
-line, exactly as they wrote it. Otherwise reply NONE.
+Is any of it about the {label} that is COMING UP — something she has
+already decided or already done about it?
 
-Anything counts — that they did it, that they did not, that they are not
-going to, how it went, or that something got in the way.
+Reply with that line exactly as written, or NONE.
+
+Yes:
+  "aaj lunch mein khichdi banaungi"     she has decided lunch
+  "shaam ko sair nahi jaungi"           she has decided the walk
+  "mandir ho aayi"                      she has done the puja
+
+No:
+  "aloo ke parathe khaye"               a meal she ate, not this one
+  "aj lunch k liye toh pucha nai"       asking to be asked
+  "thak gayi hoon"                      about her, not about this
+
+Her own words count — sair is the walk, vrat is the fast. But food is not
+lunch and a walk she took yesterday is not tonight's.
 
 One line, nothing else."""
     try:
