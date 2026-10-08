@@ -268,6 +268,22 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                             entry["delivered"] = n
                             print(f"[Proactive] {action} sent to {uid}: {script[:60]}")
 
+                            if n and action == "RECOMMENDATION":
+                                # An offer is recorded when it reaches her,
+                                # not when it is written. Recording at
+                                # compose time meant every held offer and
+                                # every probe became a suggestion she had
+                                # ignored — twenty-nine over a month, one of
+                                # which was ever delivered.
+                                try:
+                                    from memory.suggestions import record_suggestion
+                                    record_suggestion(
+                                        uid, None,
+                                        str(decision.get("detail") or ""),
+                                        intent="recommendation")
+                                except Exception as _rse:
+                                    print(f"[Proactive] record failed: {_rse}")
+
                             if n:
                                 # record_outcome("delivered") has existed since
                                 # the beginning and nothing called it, so every

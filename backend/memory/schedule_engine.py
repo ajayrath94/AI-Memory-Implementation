@@ -651,13 +651,16 @@ def generate_proactive_script(
     composed = compose(user_id, intent=intent, slot=slot,
                        priority=priority, hints=hints)
 
-    if composed and picked:
-        try:
-            from memory.suggestions import record_suggestion
-            record_suggestion(user_id, picked.get("cluster_id"),
-                              picked["label"], intent="recommendation")
-        except Exception as e:
-            print(f"[Schedule] record_suggestion failed: {e}")
+    # NOT recorded here. Composing is not offering.
+    #
+    # This ran inside generate_proactive_script, so every held offer and
+    # every probe became a suggestion she had ignored: twenty-nine of them
+    # over a month, one of which was ever delivered. The appetite signal
+    # read her as someone who ignores everything, the cooldown skipped
+    # subjects she never saw, and strength dropped 0.3 for each silence
+    # about a message that did not exist.
+    #
+    # The scheduler records it when the push goes.
     if composed:
         script = composed
     elif action in ("BOUNDARY", "RECOMMENDATION", "GREETING"):
