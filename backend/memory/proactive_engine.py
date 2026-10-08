@@ -116,7 +116,14 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
     try:
         from memory.day import rebuild as day_rebuild, boundary
         day_rebuild(user_id)
-        b = boundary(user_id)
+        # The hour that was asked about, not the wall clock. override_hour
+        # exists so a pass can be run for nine in the morning, and boundary()
+        # takes now_min — it just was not given one, so every simulated hour
+        # was judged against the real time and nothing ever matched.
+        #
+        # Fifth time today something decided upstream was re-derived
+        # downstream and came back different.
+        b = boundary(user_id, now_min=(hour * 60) if hour is not None else None)
         if b:
             label = ((b.get("done") or b.get("next") or {}).get("label") or "")
             return decision("BOUNDARY", "day_boundary", label, "low")

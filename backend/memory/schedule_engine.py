@@ -392,16 +392,6 @@ def generate_proactive_script(
         except Exception as _ce:
             print(f"[Carry] morning hint failed: {_ce}")
 
-    # What last night left. On a greeting or the first boundary of the day —
-    # she said she had a cold on Tuesday and nothing asked after it on
-    # Wednesday, which is the whole reason this exists.
-    if intent in ("greeting", "boundary"):
-        try:
-            from memory.carry import hint as _carry_hint
-            hints = (hints or "") + _carry_hint(user_id)
-        except Exception as _ce:
-            print(f"[Carry] morning hint failed: {_ce}")
-
     if intent == "boundary":
         from memory.day import boundary as day_boundary, boundary_hint
         b = day_boundary(user_id)
