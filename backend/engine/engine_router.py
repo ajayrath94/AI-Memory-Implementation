@@ -723,6 +723,12 @@ async def process_input(text: str, model: str,
                     from memory.anchors import hear, settle
                     settle(user_id, text)        # her answer to a question
                     _ah = hear(user_id, text)    # and anything new
+
+                    # And her days. "Mangalvar aur Shanivar ko vrat rakhti
+                    # hoon" is four facts: two fasts, no meat on either, and
+                    # a temple visit worth having something to say about.
+                    from memory.observances import hear as _obs_hear
+                    _obs_hear(user_id, text)
                     if _ah:
                         print(f"[Anchor] asking about: {_ah[:60]}")
                 except Exception as _ke:

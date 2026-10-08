@@ -85,6 +85,20 @@ def observed_meat_days(user_id: str, weeks: int = 8) -> Dict:
     return {"days": days, "weekdays": wds, "any": bool(days)}
 
 
+def _running_festival() -> dict:
+    """A festival happening today, including its later days.
+
+    festivals.today() matches the start date only, so day four of a nine-day
+    fast looked like an ordinary Tuesday.
+    """
+    try:
+        from memory.festival_brief import running_today
+        return running_today() or {}
+    except Exception as e:
+        print(f"[Diet] festival read failed: {e}")
+        return {}
+
+
 def _season_today() -> str:
     """A stretch of the year she may keep, or ''. From the real calendar."""
     try:
@@ -108,6 +122,17 @@ def can_eat_meat_today(user_id: str, on: date = None) -> Dict:
     """
     on = on or date.today()
 
+    # Her own calendar first: four weekdays, a festival span, a one-off.
+    # It knows what she keeps and the brief knows how long a festival runs,
+    # so day four of Navratri is not an ordinary Tuesday.
+    try:
+        from memory.observances import for_day
+        d = for_day(user_id, on)
+        if "meat" in (d.get("avoids") or "").lower():
+            return {"ok": False, "why": d.get("because") or "a day she keeps"}
+    except Exception as e:
+        print(f"[Diet] observances read failed: {e}")
+
     # What she has said outright, which beats anything observed.
     said = _anchor(user_id, "eats_meat")
     if str(said).lower() in ("no", "false", "never"):
@@ -124,6 +149,16 @@ def can_eat_meat_today(user_id: str, on: date = None) -> Dict:
     season = _season_today()
     if season and season in avoids:
         return {"ok": False, "why": f"it is {season}"}
+
+    # A festival she keeps, on any of its days. The brief knows how long it
+    # runs and what the fast avoids; the anchor knows whether she keeps it.
+    f = _running_festival()
+    if f.get("fasts"):
+        nm = str(f.get("name") or "").split()[-1].lower()
+        if nm and nm in avoids:
+            return {"ok": False,
+                    "why": f"{f.get('name')} — day {f.get('day_of', 1)} of "
+                           f"{f.get('days', 1)}, and she keeps it"}
 
     # A fasting day from the calendar. Not everyone keeps every one, so this
     # only holds when she has given some sign that she keeps fasts at all.

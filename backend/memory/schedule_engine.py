@@ -447,7 +447,18 @@ def generate_proactive_script(
             except Exception:
                 pass
 
-            fh = "" if _already else festival_hint(user_id)
+            # The brief first: it knows the festival is on day four of
+            # nine, what the fast avoids, and what to suggest instead.
+            # festival_hint only knows the start date.
+            fh = ""
+            if not _already:
+                try:
+                    from memory.festival_brief import hint as _brief_hint
+                    fh = _brief_hint(user_id)
+                except Exception as _fe:
+                    print(f"[Brief] hint failed: {_fe}")
+                if not fh:
+                    fh = festival_hint(user_id)
             if fh:
                 hints = (hints or "") + fh
                 try:
