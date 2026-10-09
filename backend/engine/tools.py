@@ -299,7 +299,156 @@ def _handle_update_food(args, user_id):
     return update_food(user_id, prefs)
 
 
+LIST_ADD_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "add_to_list",
+        "description": (
+            "Put something on one of her lists. Use this the moment she "
+            "names a thing she needs to get, do, remember or ask about — "
+            "'sabudana lena hai', 'doctor se yeh poochna hai', 'beta ko "
+            "batana hai'. She is seventy and writing on paper; the whole "
+            "point is that she can say it in passing and it is kept.\n\n"
+            "Add it even if she has not asked for a list. A list starts "
+            "itself the first time she names something.\n\n"
+            "Do NOT use this for things with a time — 'teen baje dawai "
+            "leni hai' is a reminder, not a list item."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "what": {
+                    "type": "string",
+                    "description": (
+                        "The thing itself, in her words. 'sabudana', not "
+                        "'sago for fasting'."
+                    ),
+                },
+                "fields": {
+                    "type": "object",
+                    "description": (
+                        "Anything else she said about it, as key-value "
+                        "pairs in HER words: {'kitna': 'do kilo'}, "
+                        "{'kahan se': 'Big Bazaar'}. Leave it out when she "
+                        "said nothing else. Do not invent fields and do "
+                        "not translate her words into English."
+                    ),
+                },
+                "list_name": {
+                    "type": "string",
+                    "description": (
+                        "Which list, if she named one — 'bazar ki list', "
+                        "'doctor ke sawaal'. Omit it and the most recent "
+                        "list is used, which is almost always right."
+                    ),
+                },
+            },
+            "required": ["what"],
+        },
+    },
+}
+
+LIST_READ_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "read_list",
+        "description": (
+            "Read back what is on a list. Use this when she asks — 'list "
+            "mein kya hai', 'kya kya lena tha' — and when she is about to "
+            "go out and the list is plainly relevant.\n\n"
+            "Do not read it back unprompted at other times. A companion "
+            "that recites a shopping list every morning is a nuisance."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "list_name": {
+                    "type": "string",
+                    "description": "Which one, if she named it. Usually omit.",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+LIST_TICK_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "tick_off_list",
+        "description": (
+            "Cross something off, when she says she has got it or done it "
+            "— 'sabudana le liya', 'woh ho gaya'. It stays on the list, "
+            "crossed off, because a market list is worth seeing again next "
+            "month and she will want the same things."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "what": {
+                    "type": "string",
+                    "description": "The thing she has got, in her words.",
+                },
+                "list_name": {"type": "string"},
+            },
+            "required": ["what"],
+        },
+    },
+}
+
+LIST_CLOSE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "close_list",
+        "description": (
+            "Finish with a list, when she says she is done — 'sab le "
+            "liya', 'list khatam'. Do not close it because everything is "
+            "ticked; she may add more."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "list_name": {"type": "string"},
+            },
+            "required": [],
+        },
+    },
+}
+
+
+# ── handlers ──────────────────────────────────────────────────────────────
+
+def _handle_list_add(args: dict, user_id: str) -> dict:
+    from memory.lists import add
+    return add(user_id,
+               args.get("what") or "",
+               args.get("fields") or {},
+               args.get("list_name") or "")
+
+
+def _handle_list_read(args: dict, user_id: str) -> dict:
+    from memory.lists import read
+    return read(user_id, args.get("list_name") or "")
+
+
+def _handle_list_tick(args: dict, user_id: str) -> dict:
+    from memory.lists import tick
+    return tick(user_id, args.get("what") or "",
+                args.get("list_name") or "")
+
+
+def _handle_list_close(args: dict, user_id: str) -> dict:
+    from memory.lists import close
+    return close(user_id, args.get("list_name") or "")
+
+
 TOOL_REGISTRY = {
+    # Her lists. She said she was going to the market and the companion
+    # offered to keep things for her, with nowhere to put them.
+    "add_to_list":   {"schema": LIST_ADD_SCHEMA,   "handler": _handle_list_add},
+    "read_list":     {"schema": LIST_READ_SCHEMA,  "handler": _handle_list_read},
+    "tick_off_list": {"schema": LIST_TICK_SCHEMA,  "handler": _handle_list_tick},
+    "close_list":    {"schema": LIST_CLOSE_SCHEMA, "handler": _handle_list_close},
 
     "get_recipes": {
         "schema":  RECIPES_SCHEMA,
