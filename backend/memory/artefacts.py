@@ -426,8 +426,11 @@ def adjacent(user_id: str, label: str, category: str = "") -> list:
         if rows:
             a = rows[0].get("attributes")
             a = a if isinstance(a, dict) else {}
-            if a.get("adjacent"):
-                return list(a["adjacent"])
+            # v2 carries when each one belongs. The old key was a list
+            # of strings and is left alone rather than migrated — it will
+            # simply be refilled.
+            if a.get("adjacent_v2"):
+                return list(a["adjacent_v2"])
     except Exception as e:
         print(f"[Adjacent] cache read failed: {e}")
         rows = []
@@ -440,7 +443,20 @@ def adjacent(user_id: str, label: str, category: str = "") -> list:
 Name three or four things that sit NEXT to it — things she would recognise as
 connected, not things an algorithm calls similar.
 
-JSON only: {{"adjacent": ["...", "..."]}}
+JSON only:
+{{"adjacent": [{{"what": "...", "when": "anytime"}}, ...]}}
+
+  when   where it belongs in an ordinary day, so it is offered at a moment
+         it suits rather than whenever a gap appears:
+
+           before_meal   a dish or a recipe — useless an hour after lunch
+           evening       a film, a serial: it needs two hours and a settled
+                         evening
+           morning       gardening, a walk, anything done while it is cool
+           anytime       a song, a short video — three minutes, any gap
+
+         The thing decides, not its category. A film and a film song are
+         both "watching" and belong at different hours.
 
   a singer   -> a song by SOMEONE ELSE — a duet partner, their music
                 director, a contemporary she would know. Never another song
@@ -465,7 +481,10 @@ JSON only: {{"adjacent": ["...", "..."]}}
                 Same reason a cuisine becomes a dish below.
   a film     -> its songs, its director's other films, its lead's other films
   a cuisine  -> actual dishes from it, by name. Nobody eats "Chinese food".
-  a hobby    -> what someone who does it also does, or a thing it needs
+  a hobby    -> something she could DO, not something she would buy.
+                Gardening gives a plant worth growing or a thing worth
+                planting now — not khad, gamla and khurpi, which are a
+                shopping list.
   a place    -> not applicable. Return an empty list.
 
 Specific, and nameable. "Old Hindi songs" is not a thing to offer; "Lata
@@ -478,9 +497,22 @@ No prose."""
     try:
         from llm import ask
         import json as _j
-        raw = ask(prompt, max_tokens=200).replace("```json", "").replace("```", "")
-        out = [str(x).strip()[:60] for x in
-               (_j.loads(raw.strip()).get("adjacent") or []) if str(x).strip()]
+        raw = ask(prompt, max_tokens=300).replace("```json", "").replace("```", "")
+        got = _j.loads(raw.strip()).get("adjacent") or []
+        out = []
+        for x in got:
+            # v1 returned bare strings and the cache may still hold some.
+            if isinstance(x, str):
+                if x.strip():
+                    out.append({"what": x.strip()[:60], "when": "anytime"})
+                continue
+            what = str((x or {}).get("what") or "").strip()[:60]
+            if not what:
+                continue
+            when = str((x or {}).get("when") or "anytime").strip().lower()
+            if when not in ("before_meal", "evening", "morning", "anytime"):
+                when = "anytime"
+            out.append({"what": what, "when": when})
         out = out[:4]
     except Exception as e:
         print(f"[Adjacent] failed for {label!r}: {e}")
@@ -490,13 +522,14 @@ No prose."""
         try:
             a = rows[0].get("attributes")
             a = a if isinstance(a, dict) else {}
-            a["adjacent"] = out
+            a["adjacent_v2"] = out
             db.table("interest_clusters").update(
                 {"attributes": a}).eq("id", rows[0]["id"]).execute()
         except Exception as e:
             print(f"[Adjacent] cache write failed: {e}")
 
-    print(f"[Adjacent] {label} -> {', '.join(out)}")
+    print(f"[Adjacent] {label} -> "
+          + ", ".join(f"{o['what']} ({o['when']})" for o in out))
     return out
 
 
