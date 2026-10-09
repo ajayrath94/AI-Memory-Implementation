@@ -575,7 +575,11 @@ def generate_proactive_script(
             print(f"[Offer] boundary pick failed: {_oe}")
 
     # An offer arrives resolved. Nothing is looked up here.
-    if intent == "recommendation" and offer is not None:
+    # A rhythm is a reason and a reason beats a frontier. If she has a
+    # Sunday and it is Sunday, that IS the offer — adding something new on
+    # top gives the composer two things and it picks whichever reads
+    # better, which is not a decision anyone made.
+    if intent == "recommendation" and offer is not None and not _rhythm_fired:
         try:
             from memory.offers import hint as _offer_hint
             hints = (hints or "") + _offer_hint(offer)
