@@ -665,7 +665,8 @@ def recent_window(user_id: str, hours: int = 6) -> str:
     from datetime import datetime, timezone, timedelta
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     try:
-        db = _db()
+        from supabase_store import get_client
+        db = get_client()
         sess = (db.table("sessions").select("id")
                 .eq("user_id", user_id).gte("updated_at", since)
                 .order("updated_at", desc=True).limit(3).execute()).data or []

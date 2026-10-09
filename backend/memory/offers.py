@@ -214,6 +214,11 @@ def _fits(when: str, window, now_min: Optional[int]) -> bool:
         # own end is the meal, which is what makes this answerable.
         if window is None:
             return True
+        # And the window must actually end at a meal. The last stretch of
+        # her day ends at bedtime, so idli sambar was offered at nine at
+        # night, an hour after dinner.
+        if "meal" not in (window.before or "").lower() and (window.before or "").lower() not in ("breakfast", "lunch", "dinner"):
+            return False
         return (window.ends - now_min) <= 90
     return True
 

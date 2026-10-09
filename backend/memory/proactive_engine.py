@@ -152,33 +152,45 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
     # action: at most one RECOMMENDATION a day however often the heartbeat
     # runs. Deliberately not mornings (they are getting the day started) or
     # night (winding down).
-    if slot in ("midday", "afternoon", "evening"):
-        try:
-            from memory.suggestions import pick_suggestion
-            pick = pick_suggestion(user_id)
-        except Exception as e:
-            print(f"[Proactive] pick_suggestion failed: {e}")
-            pick = None
-        # No pick means nothing they have shown they like, or everything has
-        # been offered recently. Say nothing rather than invent something.
-        if pick:
-            # At her hour, not fifteen minutes after a boundary.
-            #
-            # Six offers were decided over three days and none sent: the
-            # cadence gate wants ninety minutes since the last message, and
-            # every one was decided in the shadow of a boundary. An offer
-            # needs its own moment, and which moment is learnable — she has
-            # answered at some hours and not others.
-            try:
-                from memory.timing import good_moment
-                if not good_moment(user_id):
-                    return decision("SILENCE", "not_her_hour_for_offers",
-                                    "", "low")
-            except Exception as _te:
-                print(f"[Timing] check failed: {_te}")
+    # Is she in a stretch of her own day with nothing in it?
+    #
+    # Not a slot and not a learned hour. slot in (midday, afternoon,
+    # evening) excluded her 09:30 to 13:00 — the longest gap she has — and
+    # timing.good_moment, which replaced it, computed her free hours as 10,
+    # 11 and 15 while the hours she actually answers at are 9, 13 and 18.
+    #
+    # windows.py takes the gaps from her schedule and shuts the ones she has
+    # spoken for: "thoda aaram karungi" closes the afternoon, whatever the
+    # schedule says.
+    try:
+        from memory.windows import current as _window_now
+        win = _window_now(user_id)
+    except Exception as _we:
+        print(f"[Proactive] window read failed: {_we}")
+        win = None
 
-            return decision("RECOMMENDATION", "something_they_like",
-                            pick["label"], "low")
+    if win:
+        # Only inside an open window, because choosing costs two model
+        # calls and sixty ticks a day would pay it sixty times.
+        try:
+            from memory.offers import choose as _choose
+            # The hour too, or _fits has nothing to judge against and a
+            # film meant for the evening is offered at eleven.
+            from memory.day import _mins_now as _mn
+            offer = _choose(user_id, win, _mn(user_id))
+        except Exception as _oe:
+            print(f"[Proactive] offer failed: {_oe}")
+            offer = None
+
+        if offer:
+            d = decision("RECOMMENDATION", "something_new", offer.what, "low")
+            # Carried, not looked up again — the composer ran
+            # pick_suggestion a second time, got None, and every block
+            # hanging off it was skipped. The prompt reached the model
+            # containing the weather and nothing else.
+            d["offer"] = offer
+            d["window"] = win
+            return d
 
     # ── 6. Nothing worth interrupting ──
     return decision("SILENCE", "nothing_pressing")

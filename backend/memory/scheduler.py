@@ -226,7 +226,8 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                         try:
                             _r = generate_proactive_script(
                                 uid, action=action,
-                                detail=str(decision.get('detail') or ''))
+                                detail=str(decision.get('detail') or ''),
+                                offer=decision.get("offer"))
                         except Exception as _ge:
                             # "no script, skipped" was hiding the reason.
                             print(f"[Proactive] compose failed for {uid}: {_ge}")
@@ -268,7 +269,20 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                             entry["delivered"] = n
                             print(f"[Proactive] {action} sent to {uid}: {script[:60]}")
 
-                            if n and action == "RECOMMENDATION":
+                            if n and action == "RECOMMENDATION" and decision.get("offer"):
+                                # Recorded when it REACHES her, with the
+                                # circumstances: which window, what hour,
+                                # what kind of day. In a month that says
+                                # whether new things land in the afternoon
+                                # and not at breakfast.
+                                try:
+                                    from memory.offers import record as _rec
+                                    _rec(uid, decision["offer"],
+                                         decision.get("window"))
+                                except Exception as _re2:
+                                    print(f"[Proactive] offer record failed: {_re2}")
+
+                            if False and n and action == "RECOMMENDATION":
                                 # An offer is recorded when it reaches her,
                                 # not when it is written. Recording at
                                 # compose time meant every held offer and

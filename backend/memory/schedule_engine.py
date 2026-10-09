@@ -262,6 +262,12 @@ def generate_proactive_script(
     #
     # Whoever decides something passes it on. Nobody looks it up twice.
     detail: str = "",
+    # The Offer the decision resolved — expanded, with its artefact, and
+    # the reason it was chosen. Without it this ran pick_suggestion a
+    # second time, got None at that moment, and every block hanging off it
+    # was skipped: the prompt reached the model containing the weather and
+    # nothing else.
+    offer=None,
 ) -> dict:
     """
     Generate a proactive message for Nancy to open with.
@@ -568,85 +574,13 @@ def generate_proactive_script(
         except Exception as _oe:
             print(f"[Offer] boundary pick failed: {_oe}")
 
-    picked = None
-    # A rhythm is a reason, and a reason beats a probability. If she has a
-    # Sunday and it is Sunday, that IS the offer — drawing a second one on top
-    # gives the composer two things to choose between and it picks whichever
-    # reads better, which is not a decision anyone made.
-    if intent == "recommendation" and not _rhythm_fired:
+    # An offer arrives resolved. Nothing is looked up here.
+    if intent == "recommendation" and offer is not None:
         try:
-            from memory.suggestions import pick_suggestion
-            picked = pick_suggestion(user_id)
-            if picked:
-                # Fetch something she can actually act on. Offering "Kishore
-                # Kumar" is a conversation about an interest; offering a song
-                # she can tap is an offer. Returns None often — no key, no
-                # result, or a category that should never fetch — and the hint
-                # falls back to naming the subject, which is what this did
-                # before.
-                # How long since she last had it. The same subject is three
-                # different offers depending on when — and the picker was
-                # handing over a label with no date, so chole she ate two days
-                # ago arrived as a fresh idea.
-                _d = picked.get("days_ago")
-                if _d is not None:
-                    if _d <= 3:
-                        hints = ((hints + "\n") if hints else "") + (
-                            f"They had {picked['label']} {'today' if _d == 0 else f'{_d} day(s) ago'}. "
-                            f"So this is picking something up, not introducing "
-                            f"it — 'phir se' rather than 'try kijiye'.")
-                    elif _d >= 14:
-                        hints = ((hints + "\n") if hints else "") + (
-                            f"It has been {_d} days since {picked['label']} "
-                            f"came up. That gap is itself the reason to "
-                            f"mention it — 'bahut din se' — and it should not "
-                            f"sound like the first time.")
-
-                # One step out, before falling back to a variation on the
-                # same subject. The adjacency list was being generated and
-                # thrown away: Kishore Kumar expanded to Lata, Rafi and
-                # R.D. Burman, and the offer went out as another Kishore
-                # jukebox because nothing read it.
-                try:
-                    from memory.artefacts import offer_hint
-                    _oh = offer_hint(user_id, picked)
-                    if _oh:
-                        hints = (hints or "") + _oh
-                except Exception as _oe:
-                    print(f"[Offer] adjacency failed: {_oe}")
-
-                from memory.artefacts import (fetch_artefact, as_hint,
-                                               fetch_along_axis, axis_hint)
-                cat = ((picked.get("attributes") or {}).get("category")
-                       if isinstance(picked.get("attributes"), dict) else None)
-
-                # Fetch for the thing being OFFERED, not the thing drawn.
-                #
-                # The hint said "offer R.D. Burman because of Kishore Kumar"
-                # and then a Kishore Kumar jukebox was attached, because this
-                # used picked["label"] regardless. The composer took the link,
-                # reasonably, and the offer came out as Kishore again.
-                from memory.artefacts import what_to_offer
-                _o = what_to_offer(user_id, picked)
-                _subject = _o.get("subject") or picked["label"]
-
-                art = fetch_artefact(user_id, cat or "", _subject)
-                if not art:
-                    # Nothing for the adjacent thing — fall back to a step
-                    # along an axis from the original, which is what this did
-                    # before adjacency existed.
-                    art = fetch_along_axis(user_id, picked)
-                    if art:
-                        hints = (hints + "\n" if hints else "") + axis_hint(art)
-                        _subject = picked["label"]
-                if art and _subject != picked["label"]:
-                    hints = (hints + "\n" if hints else "") + as_hint(art, _subject)
-                elif art and _subject == picked["label"]:
-                    hints = (hints + "\n" if hints else "") + as_hint(art, _subject)
-                picked["artefact"] = art
-                picked["offering"] = _subject
-        except Exception as e:
-            print(f"[Schedule] pick_suggestion failed: {e}")
+            from memory.offers import hint as _offer_hint
+            hints = (hints or "") + _offer_hint(offer)
+        except Exception as _oe:
+            print(f"[Schedule] offer hint failed: {_oe}")
 
     composed = compose(user_id, intent=intent, slot=slot,
                        priority=priority, hints=hints)
