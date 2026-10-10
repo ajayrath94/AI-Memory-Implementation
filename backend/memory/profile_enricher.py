@@ -907,7 +907,23 @@ For EACH fact return an object:
 
     durable_fact    = still true next month. "knee pain", "son Shubham in Bangalore", "loves Kishore Kumar"
     action_request  = asking for something to be done. "remind me in 5 minutes", "paanch minute mein yaad dilana"
-    scheduled_event = a specific thing at a specific time. "doctor kal 12 baje", "beta Sunday ko aa raha hai"
+    scheduled_event = a specific thing at a specific time, worth remembering
+                      NEXT WEEK. "doctor kal 12 baje", "beta Sunday ko aa
+                      raha hai", "bazar gayi thi Navratri ke liye".
+
+                      Not the ordinary furniture of a day. She ate lunch;
+                      that is what lunch is. Six clusters in two days were
+                      "Lunch", "Light Meal", "breakfast" and "Aloo parathe"
+                      twice — none of which anyone would recall on Friday.
+
+                      The test: does it have a TOMORROW? A market trip does
+                      — she bought things and the festival is coming. A meal
+                      is finished when it is eaten.
+
+                      And ANSWERING is not an event. "Lunch kaisa raha?"
+                      "Acha raha" is a reply to a question. Volunteering is
+                      different: "aaj pehli baar dhokla banaya" is a day she
+                      would tell someone about.
     transient_state = how they feel right now, not a trait. "thak gayi hoon", "confused", "theek hoon"
   Judge the MEANING, not the words - this must work in any language.
   When unsure between durable_fact and anything else, choose the other one:

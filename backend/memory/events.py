@@ -62,6 +62,84 @@ def _resolve_when(text: str, said_on: datetime) -> Optional[str]:
     return None
 
 
+# Judged once per label and remembered. "Lunch" comes up every day and is
+# the same answer every time.
+_WORTH: dict = {}
+
+# Not a list of what to skip — a list would hold the words someone thought
+# of. These are only the ones seen so often that a model call for them is
+# waste.
+_NEVER = {"lunch", "dinner", "breakfast", "nashta", "khana", "meal",
+          "light meal", "snack", "chai", "tea"}
+
+
+def worth_keeping(what: str, text: str = "") -> bool:
+    """Would anyone recall this next week?
+
+    The day chain records an event every time she confirms a meal, so
+    "lunch acha raha" became a cluster called Lunch, and six of the eight
+    clusters made in two days were Lunch, Light Meal, breakfast and Aloo
+    parathe twice. None of them is a thing that happened; they are the
+    ordinary furniture of a day.
+
+    The gate is here rather than in the caller because the caller is not
+    the only caller, and the next one will not know to check.
+    """
+    label = (what or "").strip()
+    if not label:
+        return False
+
+    low = label.lower()
+    # "ate Lunch acha raha" — the day chain prefixes what she said.
+    for lead in ("ate ", "had ", "khaya ", "kha liya "):
+        if low.startswith(lead):
+            low = low[len(lead):].strip()
+            break
+
+    if low in _NEVER:
+        print(f"[Events] not keeping {label!r} — a meal is not an event")
+        return False
+
+    if low in _WORTH:
+        return _WORTH[low]
+
+    prompt = f"""An elderly woman in India said this:
+
+"{(text or label)[:300]}"
+
+Which was recorded as: "{label[:80]}"
+
+Would anyone recall it NEXT WEEK? Answer yes or no, one word.
+
+yes — it has a tomorrow. A trip out, a visitor, a doctor, something that
+      went wrong, something she did for the first time, a festival
+      preparation. Things she would tell someone about.
+
+no  — the ordinary furniture of a day. She ate lunch; that is what lunch
+      is. She drank tea. She rested. Answering "lunch kaisa raha?" with
+      "acha raha" is a reply to a question, not an event.
+
+The test is not whether it was pleasant or whether it mattered to her
+then. It is whether, on Friday, it is a thing that happened.
+
+One word."""
+
+    try:
+        from llm import ask
+        a = (ask(prompt, max_tokens=6) or "").strip().lower()
+        keep = a.startswith("y")
+    except Exception as e:
+        # A failed read keeps it. Losing something that happened is worse
+        # than a cluster nobody reads.
+        print(f"[Events] worth-keeping read failed for {label!r}: {e}")
+        return True
+
+    _WORTH[low] = keep
+    if not keep:
+        print(f"[Events] not keeping {label!r} — finished when it happened")
+    return keep
+
+
 def record_event(user_id: str, what: str, said_on: datetime = None,
                  text: str = "", kind: str = "", people: List[str] = None,
                  feeling: str = "", happened_on: str = None) -> Optional[str]:
@@ -71,6 +149,12 @@ def record_event(user_id: str, what: str, said_on: datetime = None,
     tha" on the 12th records the 11th.
     """
     said_on = said_on or datetime.now(timezone.utc)
+
+    # Here, not in the caller — the caller is not the only caller, and the
+    # next one will not know to check.
+    if not worth_keeping(what, text):
+        return None
+
     when = happened_on or _resolve_when(text or what, said_on) \
         or said_on.date().isoformat()
 
