@@ -32,7 +32,7 @@ nothing marks itself spent — those were the two things that made boundary()
 impossible to test and made her lunch message miss.
 """
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 # Below this, two events are back to back and there is no gap between them —
@@ -86,6 +86,160 @@ def _mins(hhmm) -> int:
         return int(h) * 60 + int(m)
     except Exception:
         return -1
+
+
+# ── what she has said about being busy ──────────────────────────────────────
+#
+# She said "thoda aaram karungi" at two and the afternoon shut, which is
+# right. It stayed shut through the five o'clock walk boundary where she
+# said "haan sair kar aayi" — which plainly means the resting is over.
+#
+# Nothing ever cleared it, because the shut was derived fresh from a flat
+# list of her messages with no order and no end.
+#
+# So it is written down, and it expires at the next boundary. A boundary
+# goes whatever she has said — her lunch happens whether she is resting or
+# not — and her answer to it is what decides the rest of the day. Which
+# means a shut window can never outlive one boundary, and nothing stays
+# wrong for more than a few hours.
+
+
+def _next_boundary_after(user_id: str, now_min: int) -> int:
+    """The next thing on her day that will be asked about.
+
+    A shut window lasts until this and no longer.
+    """
+    try:
+        from memory.day import events, _mins, CONVERSATIONAL_KINDS
+        after = [_mins(e.get("due_at")) for e in (events(user_id) or [])
+                 if (e.get("kind") or "") in CONVERSATIONAL_KINDS
+                 and _mins(e.get("due_at")) > now_min]
+        return min(after) if after else 24 * 60
+    except Exception as e:
+        print(f"[Windows] next boundary failed: {e}")
+        return now_min + 180
+
+
+def shut_window(user_id: str, starts: int, why: str,
+                now_min: int = None) -> bool:
+    """She has said she is busy. Until the next boundary asks."""
+    if now_min is None:
+        try:
+            from memory.day import _mins_now
+            now_min = _mins_now(user_id)
+        except Exception:
+            now_min = starts
+    try:
+        _db().table("window_state").upsert({
+            "user_id": user_id,
+            "on_day": date.today().isoformat(),
+            "starts": int(starts),
+            "shut": True,
+            "why": (why or "")[:160],
+            "said_at": datetime.now(timezone.utc).isoformat(),
+            "until": _next_boundary_after(user_id, now_min),
+        }, on_conflict="user_id,on_day,starts").execute()
+        print(f"[Windows] {user_id}: shut {starts // 60:02d}:"
+              f"{starts % 60:02d} — {why}")
+        return True
+    except Exception as e:
+        print(f"[Windows] shut write failed: {e}")
+        return False
+
+
+def clear_shut(user_id: str, why: str = "") -> int:
+    """She is about again. Everything shut today reopens.
+
+    Called when a boundary answer says the resting is over — which is the
+    reset the design was missing.
+    """
+    try:
+        r = (_db().table("window_state").delete()
+             .eq("user_id", user_id)
+             .eq("on_day", date.today().isoformat())
+             .execute())
+        n = len(r.data or [])
+        if n:
+            print(f"[Windows] {user_id}: {n} window(s) reopened"
+                  + (f" — {why}" if why else ""))
+        return n
+    except Exception as e:
+        print(f"[Windows] clear failed: {e}")
+        return 0
+
+
+def _stored_shut(user_id: str, now_min: int) -> dict:
+    """What is shut right now, by start minute.
+
+    A row past its `until` has expired — the boundary it was waiting for
+    has been and gone.
+    """
+    out = {}
+    try:
+        rows = (_db().table("window_state").select("*")
+                .eq("user_id", user_id)
+                .eq("on_day", date.today().isoformat())
+                .eq("shut", True).execute()).data or []
+        for r in rows:
+            if int(r.get("until") or 0) <= now_min:
+                continue
+            out[int(r["starts"])] = str(r.get("why") or "she said so")
+    except Exception as e:
+        print(f"[Windows] stored read failed: {e}")
+    return out
+
+
+# ── and the boundary is what resets it ──────────────────────────────────────
+
+def hear_status(user_id: str, text: str) -> str:
+    """Is she busy, or is she about again? Called on each of her messages.
+
+    The boundary goes whatever she has said — her lunch happens whether
+    she is resting or not — and this reads her answer.
+    """
+    said = (text or "").strip()
+    if len(said) < 3:
+        return ""
+
+    prompt = f"""An elderly woman said: "{said[:200]}"
+
+Is she telling you about her own availability for the NEXT FEW HOURS?
+One word:
+
+busy   — she is about to rest, sleep, go out, or has someone coming.
+         Something ahead of her that takes up her time.
+free   — she has just been out, finished resting, or is back and about.
+         Something she HAS DONE, which means she is available now.
+neither— anything else, which is almost everything.
+
+Tense is the whole question. "Aaram karungi" is ahead of her and busy.
+"Sair kar aayi" is behind her and free. "Thak gayi hoon" is how she feels
+and is neither.
+
+One word."""
+
+    try:
+        from llm import ask
+        a = (ask(prompt, max_tokens=6) or "").strip().lower()
+    except Exception as e:
+        print(f"[Windows] status read failed: {e}")
+        return ""
+
+    if a.startswith("free"):
+        clear_shut(user_id, said[:60])
+        return "free"
+    if a.startswith("busy"):
+        try:
+            from memory.day import _mins_now
+            now = _mins_now(user_id)
+            for w in windows_today(user_id, read_her_words=False):
+                if w.holds(now) or w.starts >= now:
+                    shut_window(user_id, w.starts, said[:120], now)
+                    break
+        except Exception as e:
+            print(f"[Windows] shut failed: {e}")
+        return "busy"
+    return ""
 
 
 def _her_day(user_id: str) -> List[Dict]:
@@ -189,6 +343,22 @@ only:
     "lunch acha tha"             about a meal, not about her time
     "aaj kuch kaam nahi hai"     that is her saying she IS free
 
+  TENSE DECIDES IT, and it is the whole question.
+
+  A stretch is shut by something still AHEAD of her. Anything she has
+  already done is finished and takes up none of her day. An errand she
+  had completed shut four hours of her morning, because the reading saw
+  an errand and did not see that it was over.
+
+  Ahead of her: jana hai, jaungi, aa rahe hain, karna hai.
+  Behind her: ho aayi, kar liya, aa gaye, gayi thi, khatam.
+
+  And TODAY only. "Beti kal aayi thi" is yesterday and shuts nothing
+  today; "beti kal aa rahi hai" is tomorrow and shuts nothing today
+  either.
+
+  If she is reporting rather than planning, shut nothing.
+
   Only her own time, today, and only when she has actually said it. An
   empty list is the usual answer — most of what she says is not about her
   availability.
@@ -239,8 +409,18 @@ def windows_today(user_id: str, read_her_words: bool = True) -> List[Window]:
             before=str(b.get("label") or b.get("kind") or ""),
         ))
 
-    if read_her_words and out:
-        _plans(user_id, _said_today(user_id), out)
+    # What she has said she is doing, as written down — not re-derived
+    # from a flat list of her messages every call. A shut window lasts
+    # until the next boundary and no longer.
+    try:
+        from memory.day import _mins_now
+        for starts, why in _stored_shut(user_id, _mins_now(user_id)).items():
+            for w in out:
+                if w.starts == starts:
+                    w.open = False
+                    w.why_shut = why
+    except Exception as e:
+        print(f"[Windows] stored shut failed: {e}")
 
     return out
 
