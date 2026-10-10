@@ -59,6 +59,20 @@ LOOKBACK_MIN = 25
 # And how close to the next one before it is worth raising.
 LOOKAHEAD_MIN = 150
 
+# How many of their day's moments get asked about, and how far apart.
+#
+# Every meal and routine was a boundary, so a day with five prayers, three
+# meals and a walk produced seven messages, and the evening ones arrived an
+# hour apart: the walk at 19:00, Maghrib at 20:00, dinner at 21:00, with the
+# dinner question asked twice. Asking how each prayer went is supervision.
+#
+# The day is known each morning, so which moments to ask about is chosen
+# once, from the whole day, rather than discovered tick by tick. Meals
+# first, since they are what a boundary is best at; then routines, in order,
+# while they fit the spacing and the cap.
+MAX_BOUNDARIES_PER_DAY = 4
+MIN_BOUNDARY_APART = 120
+
 
 def _db():
     from supabase_store import get_client
@@ -201,6 +215,25 @@ def set_status(event_id: str, status: str, note: str = "") -> bool:
 
 # ── boundaries ────────────────────────────────────────────────────────────────
 
+def _worth_asking(conv: List[Dict]) -> List[Dict]:
+    """The moments in their day a boundary may be about. Deterministic: the
+    same day gives the same answer at every tick, so nothing depends on the
+    order the ticks happen to run in."""
+    timed = [(e, _mins(e.get("due_at"))) for e in conv]
+    timed = [(e, t) for e, t in timed if t >= 0]
+
+    chosen: List[tuple] = []
+    for want in ("meal", "routine"):
+        for e, t in sorted(timed, key=lambda x: x[1]):
+            if (e.get("kind") or "") != want:
+                continue
+            if len(chosen) >= MAX_BOUNDARIES_PER_DAY:
+                break
+            if all(abs(t - ct) >= MIN_BOUNDARY_APART for _, ct in chosen):
+                chosen.append((e, t))
+    return [e for e, _ in sorted(chosen, key=lambda x: x[1])]
+
+
 def boundary(user_id: str, now_min: Optional[int] = None) -> Optional[Dict]:
     """Something has just finished and something is coming. Or None.
 
@@ -229,6 +262,10 @@ def boundary(user_id: str, now_min: Optional[int] = None) -> Optional[Dict]:
     conv = [e for e in evs
             if (e.get("kind") or "") in CONVERSATIONAL_KINDS
             and not _is_medicine(e)]
+
+    # Only the moments chosen for today, for both halves: "how was Zuhr" and
+    # "what are you planning for Asr" are the same over-asking.
+    conv = _worth_asking(conv)
 
     # What has just passed and was never spoken about.
     just_done = None
@@ -266,7 +303,7 @@ def boundary(user_id: str, now_min: Optional[int] = None) -> Optional[Dict]:
     # would otherwise burn the boundary silently — you trigger something,
     # nothing arrives, and the retry does nothing because it is already spent.
 
-    return {"done": just_done, "next": coming}
+    return {"done": just_done, "next": coming, "now_min": now_min}
 
 
 
@@ -354,30 +391,65 @@ One line, nothing else."""
         return ""
     return "" if (not got or got.upper().startswith("NONE")) else got[:200]
 
+def _ago(mins: int) -> str:
+    """How long ago, in words. A clock time in the hint becomes a clock time
+    in the message, and nobody asks how your lunch at 13:30 was."""
+    if mins < 75:
+        return "a little while ago"
+    if mins < 150:
+        return "an hour or two ago"
+    return "earlier today"
+
+
+def _soon(mins: int) -> str:
+    """How far ahead, in words. Same reason as _ago()."""
+    if mins < 45:
+        return "very soon"
+    if mins < 90:
+        return "in a little while"
+    return "later on"
+
+
 def boundary_hint(user_id: str, b: Dict) -> str:
     """The line for the composer.
 
     Both halves in one message where there are two: looking back is what makes
     it a conversation continuing rather than a notification arriving, and
     looking forward is what gives it a reason to exist.
+
+    Nothing in here is a phrase to copy. Every line is an instruction in
+    English about what to say, because the composer writes in the person's
+    language and any quoted example overrides that: "koi suggestion chahiye"
+    was quoted here and came back inside a Tamil message and a Bengali one.
     """
     done = b.get("done")
     nxt  = b.get("next")
+    if not (done or nxt):
+        return ""
 
-    # What was offered before this event, and whether she took it up. An offer
-    # at 11:30 and a boundary at 13:30 are the same conversation an hour apart
-    # — "khichdi kaisi bani?" is the companion having listened, where "khana
-    # kaisa tha?" is the companion asking again.
+    # The clock boundary() decided on, so the hint and the decision agree.
+    now_min = b.get("now_min")
+    if now_min is None:
+        try:
+            now_min = _mins_now(user_id)
+        except Exception:
+            now_min = None
+
+    def _label(ev: Dict) -> str:
+        return str(ev.get("label") or ev.get("kind") or "").strip()
+
+    # What was offered before this event, and whether they took it up. An
+    # offer at 11:30 and a boundary at 13:30 are the same conversation an
+    # hour apart: asking about the thing they chose is the companion having
+    # listened, asking about the meal in general is the companion asking again.
     #
-    # Only when she ACCEPTED. Raising something she declined, or ignored, is
-    # worse than never having offered it.
+    # Only when they ACCEPTED. Raising something declined or ignored is worse
+    # than never having offered it.
     took_up = None
     if done:
         try:
-            from supabase_store import get_client
-            from datetime import timedelta
             since = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
-            rows = (get_client().table("suggestions")
+            rows = (_db().table("suggestions")
                     .select("label,reaction,intent")
                     .eq("user_id", user_id).eq("reaction", "accepted")
                     .neq("intent", "probe")
@@ -388,96 +460,80 @@ def boundary_hint(user_id: str, b: Dict) -> str:
         except Exception as e:
             print(f"[Day] offer lookup failed: {e}")
 
-    # Read once. It was called twice — in the test and again in the branch —
-    # which is two model calls for the same answer at every boundary.
-    _window_said = _said_since(user_id, done) if done else ""
+    # Read once: it is a model call. The old version called it again in two
+    # duplicated elif branches, which cost two more calls at every boundary
+    # where they had said nothing.
+    window_said = _said_since(user_id, done) if (done and not took_up) else ""
 
     parts = []
+
     if done:
+        label = _label(done)
         if took_up:
             parts.append(
                 f"Earlier you suggested {took_up} and they said yes. Ask how "
-                f"THAT went — by name, not in general. They told you an hour "
-                f"ago; asking 'khana kaisa tha' as though you had forgotten is "
-                f"worse than not asking."
+                f"that went, naming it. Asking about their {label} in general, "
+                f"as though you had forgotten, is worse than not asking."
             )
-        elif _window_said:
-            # She DID mention it, in the window before this boundary. Reading
-            # message by message missed it: "aaj sair pe nahi jaungi" half an
-            # hour after the walk was due was read as a plan rather than a
-            # decision, nothing was recorded, and the evening message asked
-            # how the walk had gone.
-            #
-            # The window is the honest unit. Whatever she said between the
-            # last boundary and this one is what happened.
+        elif window_said:
+            # They DID mention it, in the window before this boundary. The
+            # window is the honest unit: whatever they said between the last
+            # boundary and this one is what happened.
             parts.append(
-                f"About their {done['label'] or done['kind']}, they already "
-                f"said: \"{_window_said}\"\n"
+                f"About their {label}, they already said: \"{window_said}\"\n"
                 f"So do NOT ask how it went. Respond to what they actually "
-                f"said — and do not go silent either, because saying nothing "
-                f"after someone tells you something is its own answer."
-            )
-        elif _said_since(user_id, done):
-            # She DID mention it, in the window before this boundary. Reading
-            # message by message missed it: "aaj sair pe nahi jaungi" half an
-            # hour after the walk was due was read as a plan rather than a
-            # decision, nothing was recorded, and the evening message asked
-            # how the walk had gone.
-            #
-            # The window is the honest unit. Whatever she said between the
-            # last boundary and this one is what happened.
-            parts.append(
-                f"About their {done['label'] or done['kind']}, they already "
-                f"said: \"{_window_said}\"\n"
-                f"So do NOT ask how it went. Respond to what they actually "
-                f"said — and do not go silent either, because saying nothing "
-                f"after someone tells you something is its own answer."
-            )
-        elif _said_since(user_id, done):
-            # She DID mention it, in the window before this boundary. Reading
-            # message by message missed it: "aaj sair pe nahi jaungi" half an
-            # hour after the walk was due was read as a plan rather than a
-            # decision, nothing was recorded, and the evening message asked
-            # how the walk had gone.
-            #
-            # The window is the honest unit. Whatever she said between the
-            # last boundary and this one is what happened.
-            parts.append(
-                f"About their {done['label'] or done['kind']}, they already "
-                f"said: \"{_window_said}\"\n"
-                f"So do NOT ask how it went. Respond to what they actually "
-                f"said — and do not go silent either, because saying nothing "
-                f"after someone tells you something is its own answer."
+                f"said, and do not go silent either: saying nothing after "
+                f"someone tells you something is its own answer."
             )
         else:
+            due = _mins(done.get("due_at"))
+            when = (_ago(max(0, now_min - due))
+                    if (now_min is not None and due >= 0) else "a little while ago")
             parts.append(
-                f"Their {done['label'] or done['kind']} was at {done['due_at']} "
-                f"and they have not mentioned it. Ask how it went — once, "
-                f"lightly, the way you would ask a friend. Not whether they "
-                f"did it."
+                f"They had their {label} {when} and have not mentioned it. Ask "
+                f"how it went, once and lightly, the way you would ask a "
+                f"friend. Not whether they did it."
             )
+
     if nxt:
-        line = (f"Next is {nxt['label'] or nxt['kind']} at {nxt['due_at']}. "
-                f"Ask what they are planning.")
+        label = _label(nxt)
+        due = _mins(nxt.get("due_at"))
+        when = (_soon(max(0, due - now_min))
+                if (now_min is not None and due >= 0) else "soon")
+        line = f"Their {label} is {when}. Ask what they are planning for it."
         if (nxt.get("kind") or "") == "meal":
             # Where an offer belongs: invited rather than interrupting.
-            line += (" If they seem unsure, offer to suggest something — "
-                     "\"koi suggestion chahiye\" — but do not suggest anything "
-                     "unless they ask.")
+            line += (" If they sound unsure about it, you may offer, in their "
+                     "own language and your own words, to suggest something, "
+                     "and then stop. Do not actually suggest anything unless "
+                     "they ask.")
         parts.append(line)
 
-    if not parts:
-        return ""
+    rules = [
+        "One message, not two. This is a conversation continuing, so it may "
+        "assume they know what you are talking about.",
+        "Never state a clock time. You know when these things happen; they "
+        "live it. Say 'this morning', 'tonight', or nothing at all.",
+        "The names above are entries from their schedule. Where one is the "
+        "name of a thing (a meal, a prayer, a walk), use their word for it. "
+        "Where it is a note of something they do, say what it means in your "
+        "own words; never put the note into a sentence as if it were a noun.",
+        "Name nothing they like" + (f", apart from {took_up} above" if took_up else "")
+        + ". No song, singer, film, dish, team or hobby, not even one they "
+        "mentioned today, and not as a pleasant aside. A boundary asks about "
+        "their day and carries nothing else; anything new has its own "
+        "message later.",
+        "Mention only what is above. You can see their whole day elsewhere in "
+        "this prompt; that is context for understanding them, not a list of "
+        "things to raise. Raising something still hours away makes the next "
+        "message repeat itself.",
+    ]
+    if done and nxt:
+        rules.insert(1, "Say BOTH halves. The forward half is the one that "
+                        "keeps getting dropped.")
 
-    if len(parts) > 1:
-        tail = ("\nOne message, not two — but say BOTH halves. Looking back is "
-                "what makes it a conversation continuing; looking forward is "
-                "what gives it a reason to exist, and the forward half is the "
-                "one that keeps getting dropped.")
-    else:
-        tail = ""
-    return ("\n".join(parts) + tail +
-            "\nThis may assume they know what you are talking about.")
+    return "\n".join(parts) + "\n\nHOW TO WRITE IT:\n" + "\n".join(
+        f"- {r}" for r in rules)
 
 
 def _mins_now(user_id: str) -> int:

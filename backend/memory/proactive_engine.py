@@ -14,6 +14,55 @@ Precedence (first match wins, SILENCE is a valid answer):
 """
 
 
+# How far ahead of now a scheduled dose counts as "this one". Wider than any
+# due window get_due_schedule_items uses, so the dose being reminded about is
+# always counted.
+_DOSE_AHEAD_MIN = 90
+
+
+def _dose_covered(user_id: str, label: str, now_min) -> bool:
+    """Has every dose of this drug up to now already had its reminder?
+
+    Counted rather than timed. Doses of the drug scheduled up to now, against
+    reminders for it delivered today: Metformin at 08:00 and 20:00 is one
+    dose by mid-morning and two by evening, so the second reminder goes and
+    a repeat of the first does not. Counting needs no comparison between the
+    scheduler's clock and the database's, which is what lets a simulated day
+    and a real one behave the same.
+    """
+    try:
+        from supabase_store import get_client
+        from memory.day import _today, _mins, _mins_now
+        db = get_client()
+        if now_min is None:
+            now_min = _mins_now(user_id)
+
+        rows = (db.table("care_schedule").select("label,time_of_day")
+                .eq("user_id", user_id).eq("type", "medication")
+                .eq("active", True).execute()).data or []
+        doses = sum(1 for r in rows
+                    if str(r.get("label") or "").lower() == label.lower()
+                    and 0 <= _mins(r.get("time_of_day")) <= now_min + _DOSE_AHEAD_MIN)
+        if doses == 0:
+            doses = 1     # it is due, so at least this one counts
+
+        now, _, _ = _today(user_id)
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        from datetime import timezone as _tz
+        since = midnight.astimezone(_tz.utc).isoformat()
+        sent = (db.table("proactive_events").select("id")
+                .eq("user_id", user_id).eq("action", "MEDICATION_REMINDER")
+                .eq("detail", label)
+                .not_.is_("delivered_at", "null")
+                .gte("created_at", since).execute()).data or []
+        return len(sent) >= doses
+    except Exception as e:
+        # Unknown means remind. A duplicate reminder is a nuisance; a missed
+        # dose is not.
+        print(f"[Proactive] dose check failed for {label}: {e}")
+        return False
+
+
 def proactive_check(user_id: str, override_hour: int = None) -> dict:
     from memory.time_context import time_context, _slot, _mode
     from memory.care_reader import get_due_schedule_items
@@ -81,8 +130,21 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
         #
         # One reminder per drug per day. Two tablets an hour apart are two
         # reminders an hour apart, which is what she actually needs.
-        names = sorted(m.get("label", "dawai") for m in meds)
-        return decision("MEDICATION_REMINDER", "dose_due", names[0], "high")
+        #
+        # And one reminder per DOSE, decided here. A dose is "due" for every
+        # tick inside its window, so Calcium at 08:30 was due at the 08:00
+        # tick and again at 09:00, and Amlodipine at 19:30 at 19:00 and
+        # 20:00. Nothing here remembered the first; the only guard was
+        # log_decision's per-day key further down, which a direct caller
+        # never reaches and which would also swallow a second daily dose
+        # of the same drug.
+        now_min = (hour * 60) if hour is not None else None
+        names = sorted({m.get("label", "dawai") for m in meds})
+        pending = [n for n in names if not _dose_covered(user_id, n, now_min)]
+        if pending:
+            return decision("MEDICATION_REMINDER", "dose_due", pending[0], "high")
+        # Every due dose has had its reminder. Fall through: something else
+        # may still be worth saying this hour.
 
     # ── 0. Quiet gate — deep night, nothing non-critical ──
     if slot == "late_night":

@@ -192,29 +192,42 @@ def _stored_shut(user_id: str, now_min: int) -> dict:
 # ── and the boundary is what resets it ──────────────────────────────────────
 
 def hear_status(user_id: str, text: str) -> str:
-    """Is she busy, or is she about again? Called on each of her messages.
+    """Are they busy, or about again? Called on each of their messages.
 
-    The boundary goes whatever she has said — her lunch happens whether
-    she is resting or not — and this reads her answer.
+    The boundary goes whatever they have said — their lunch happens whether
+    they are resting or not — and this reads the answer.
     """
     said = (text or "").strip()
     if len(said) < 3:
         return ""
 
-    prompt = f"""An elderly woman said: "{said[:200]}"
+    prompt = f"""Someone said: "{said[:200]}"
 
-Is she telling you about her own availability for the NEXT FEW HOURS?
-One word:
+Does this tell you whether they are free to be interrupted for the next hour
+or two? Answer with one word: busy, free, or neither.
 
-busy   — she is about to rest, sleep, go out, or has someone coming.
-         Something ahead of her that takes up her time.
-free   — she has just been out, finished resting, or is back and about.
-         Something she HAS DONE, which means she is available now.
-neither— anything else, which is almost everything.
+busy    — something takes up their time from now on. Resting, sleeping,
+          going out, leaving, travelling, running late, a visitor coming,
+          starting any activity they will be in the middle of.
+free    — they are back and unoccupied. Something is finished and nothing
+          has replaced it.
+neither — anything else, which is most things. How they feel, what they
+          ate, a memory, an opinion, a question.
 
-Tense is the whole question. "Aaram karungi" is ahead of her and busy.
-"Sair kar aayi" is behind her and free. "Thak gayi hoon" is how she feels
-and is neither.
+THREE RULES, IN THIS ORDER:
+
+1. If the message mentions something finished AND something ahead, it is
+   BUSY. The thing ahead is what decides it. "I've had lunch, now I'll lie
+   down" is busy, not free — the lunch is irrelevant, the lying down is not.
+
+2. Judge what the words MEAN, not their grammatical tense. Many languages
+   describe something starting with a completed form. "Sleep has come to me"
+   means sleep is ahead of them: busy. "I got tired" is a feeling, not a
+   plan: neither.
+
+3. Something finished with NOTHING ahead is never busy. "I went for a walk
+   with friends, it was nice" reports a walk that is over: neither, or free
+   if they say they are back.
 
 One word."""
 
@@ -225,10 +238,14 @@ One word."""
         print(f"[Windows] status read failed: {e}")
         return ""
 
+    # Logged either way. This fired on nothing for three people and nobody
+    # could tell, because a miss and a 'neither' looked identical.
     if a.startswith("free"):
+        print(f"[Windows] free: {said[:50]!r}")
         clear_shut(user_id, said[:60])
         return "free"
     if a.startswith("busy"):
+        print(f"[Windows] busy: {said[:50]!r}")
         try:
             from memory.day import _mins_now
             now = _mins_now(user_id)
@@ -239,6 +256,7 @@ One word."""
         except Exception as e:
             print(f"[Windows] shut failed: {e}")
         return "busy"
+    print(f"[Windows] neither ({a[:12]!r}): {said[:50]!r}")
     return ""
 
 

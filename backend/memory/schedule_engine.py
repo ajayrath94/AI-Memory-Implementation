@@ -669,6 +669,49 @@ def _care_schedule_context(user_id: str, slot: str) -> str:
     return "Their daily routine:\n" + "\n".join(lines) if lines else ""
 
 
+# ── the character guard ─────────────────────────────────────────────────────
+#
+# A message that BEGINS by narrating the task has broken character; a message
+# that happens to contain a common English phrase has not. "let me know" was
+# matched anywhere, so a warm English reply to "Long day. Traffic was awful."
+# was thrown away and Rupa got nothing at 19:00. It only ever bit the English
+# speaker, which is why it survived every test on Shobha.
+
+_META_ANYWHERE = (
+    "as an ai", "as an assistant", "language model",
+    "i don't have any information", "i do not have any information",
+    "no information about", "not enough context",
+    "based on the information provided", "i'm unable to", "i am unable to",
+)
+
+# Only at the very start, where they mean the model is announcing the task
+# rather than doing it. Mid-message these are ordinary speech.
+_META_OPENER = (
+    "here's a", "here is a", "to write a", "i'd be happy to",
+    "i would be happy to", "sure,", "sure!", "certainly,", "of course,",
+    "could you share", "could you tell me",
+)
+
+
+def _broke_character(text: str, user_id: str = "") -> bool:
+    """Did the composer stop speaking to the person and start speaking about
+    the task? Logs which phrase decided it — the previous version logged only
+    that something had gone wrong, so the one failure in a three-person run
+    was not reproducible."""
+    low = (text or "").lower().lstrip(" \"'*-\n")
+    for m in _META_ANYWHERE:
+        if m in low:
+            print(f"[Schedule] composer broke character for {user_id} "
+                  f"on {m!r}: {text[:80]}")
+            return True
+    for m in _META_OPENER:
+        if low.startswith(m):
+            print(f"[Schedule] composer opened with {m!r} for {user_id}: "
+                  f"{text[:80]}")
+            return True
+    return False
+
+
 def _compose_script(user_id: str, slot: str, priority: str, reason: str,
                     profile: dict, memory: dict) -> str:
     """
@@ -752,8 +795,8 @@ RULES:
 - Do not invent events, appointments, or things they did not tell you. If their
   routine above does not mention coffee, do not ask about coffee. Everything you
   reference must appear in the routine or the memory above, verbatim or close.
-- If you have little to go on, a short warm greeting is the right answer. Say
-  "Namaste, kaise ho aap?" and nothing more.
+- If you have little to go on, a short warm greeting in their own language is
+  the right answer, and nothing more.
 - NEVER address the operator, ask for more context, or explain what you do or do
   not know. You are speaking to the person, not about them. There is no one else
   to ask. Output that begins "I don't have" or asks for information about them is
@@ -775,16 +818,7 @@ Write only the message itself. No preamble, no quotation marks."""
         # "I don't have any information about Sim's routine... could you share
         # a bit about them?" — which would go to an elderly user as a push
         # notification. Reject it and let the caller fall back to the template.
-        low = text.lower()
-        _META = (
-            "i don't have", "i do not have", "i don't know", "could you share",
-            "could you tell me", "to write a", "let me know", "as an ai",
-            "i'd need", "i would need", "no information", "not enough context",
-            "based on the information provided", "here's a", "here is a",
-        )
-        if any(m in low for m in _META):
-            print(f"[Schedule] composer broke character for {user_id}, "
-                  f"falling back: {text[:80]}")
+        if _broke_character(text, user_id):
             return ""
 
         return text if text else ""

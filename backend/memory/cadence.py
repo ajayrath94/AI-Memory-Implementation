@@ -36,6 +36,12 @@ REPLY_WINDOW_HOURS = 6
 # Two in ten minutes reads as malfunction.
 MIN_GAP_MINUTES = 90
 
+# An offer has its own floor, smaller than the conversational one. With none
+# at all, a window opening the minute after a boundary meant a boundary at
+# 06:00 was followed by an offer at 07:00, and a reminder at 08:00 by an offer
+# at 09:00.
+OFFER_GAP_MINUTES = 40
+
 BASE_BUDGET = 4
 
 # Kinds that are conversation, and therefore budgeted. Care is not: a
@@ -256,20 +262,22 @@ def may_send(user_id: str, action: str) -> Dict:
 
     mins = led["minutes_since"]
 
-    # An offer is not spaced here, because the window already spaced it.
+    # An offer gets a smaller floor than conversation, not none.
     #
-    # A window IS the gap between two boundaries — an offer only happens
-    # inside one, so asking again whether it is far enough from the last
-    # message is the same question twice, and the second answer is wrong.
+    # The window already spaces offers from each other, so the 90-minute
+    # conversational gap was the same question asked twice, and it was
+    # wrong: BOUNDARY is not in CONVERSATIONAL, so a boundary sends when it
+    # is due and then sits in the ledger as "the last message". Sixty to
+    # ninety minutes after each boundary covered nearly every hour a window
+    # is open in, and for three weeks no offer cleared it.
     #
-    # Wrong because BOUNDARY is not in CONVERSATIONAL: a boundary sends
-    # whenever it is due and then sits in the ledger as "the last message".
-    # Her day is boundaries at 09:00, 13:00, 17:30 and 20:00, and sixty
-    # minutes after each covers nearly every hour a window is open in. So
-    # the offer was blocked by exactly the thing it is meant to follow.
-    #
-    # Three weeks, and not one ever cleared it.
-    gap = 0 if action == "RECOMMENDATION" else MIN_GAP_MINUTES
+    # Removing the floor entirely fixed that and created the opposite
+    # problem: a window can open the minute after a boundary, so an offer
+    # followed a boundary or a reminder by an hour every time. Forty minutes
+    # keeps two messages from arriving back to back without letting a
+    # boundary swallow the hour after it.
+    gap = (OFFER_GAP_MINUTES if action == "RECOMMENDATION"
+           else MIN_GAP_MINUTES)
     if gap and mins is not None and mins < gap:
         # A perishable thing is worth the interruption or it is worth nothing:
         # a match result tomorrow is not a match result.

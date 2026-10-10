@@ -382,19 +382,23 @@ def hint(offer: Offer) -> str:
 
     line = (f"\n\nOffer {offer.what}. That one and nothing else — do not "
             f"name any other artist, film or dish, whatever else you know "
-            f"she likes, and do not credit it to anyone else.")
+            f"they like, and do not credit it to anyone else.")
 
     if offer.because:
-        line += (f"\nShe already loves {offer.because}, and this sits next "
-                 f"to it. That connection is the reason it is worth "
-                 f"mentioning — a person would say why, rather than 'you "
-                 f"might also like'.")
+        # Describe the RELATION, not the geometry. "Sits next to it" is how
+        # this is drawn on a whiteboard and it does not survive translation.
+        line += (f"\nThey already love {offer.because}, and this is the same "
+                 f"kind of thing — someone who loves one usually knows the "
+                 f"other. Say why it reminded you of them, in their own "
+                 f"language and in your own words. Do not use the words "
+                 f"'similar', 'related' or 'you might also like', and do not "
+                 f"describe one as being near or next to the other.")
 
     if offer.artefact:
         title = str(offer.artefact.get("title") or "")[:120]
         url = offer.artefact.get("url") or ""
         if title:
-            line += (f"\nThere is something she can tap: \"{title}\""
+            line += (f"\nThere is something they can tap: \"{title}\""
                      + (f" — {url}" if url else "")
                      + ". Offer that, in one line.")
 
