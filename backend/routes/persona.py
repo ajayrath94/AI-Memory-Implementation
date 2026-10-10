@@ -197,7 +197,32 @@ def get_persona_prompt(user_id: str) -> str:
             .execute()
 
         if not result.data:
-            return "You are Nancy, a warm and caring AI companion."
+            # Nobody has set this up yet, which is every user until
+            # onboarding runs. "A warm and caring AI companion" left the
+            # model nothing to call them by, so it invented one — a
+            # fifty-nine-year-old woman was addressed as "sweetheart" and
+            # "sweet friend", which from an application is worse than
+            # plain.
+            #
+            # Their name, if there is one, and nothing else.
+            name = ""
+            try:
+                from memory.profile_store import get_user_profile
+                name = str((get_user_profile(user_id) or {}).get("name")
+                           or "").strip()
+            except Exception:
+                pass
+            if name:
+                return (f"You are Nancy, a warm companion. Address them as "
+                        f"{name} — by name, with whatever respectful form "
+                        f"fits their language. Never invent an endearment: "
+                        f"no sweetheart, no dear, no beta, nothing a "
+                        f"stranger would not say. You have not been told "
+                        f"what you are to them yet.")
+            return ("You are Nancy, a warm companion. You have not been "
+                    "told their name or what you are to them. Do not "
+                    "invent an endearment to fill the gap — write without "
+                    "addressing them by anything at all.")
 
         p = result.data[0]
         bot_name     = p.get("bot_name", "Nancy")
