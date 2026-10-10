@@ -166,12 +166,20 @@ def as_hint(artefact: Optional[dict], subject: str) -> str:
             f"{url}") if url else ""
 
     if kind == "song":
-        return (f"Offer this one song: \"{title}\". They like {subject}. "
+        # The SUBJECT is what to say; the title is only what the link points
+        # at. A YouTube title is written for a search engine — "Gulabi
+        # Aankhen Jo Teri Dekhi | Rajesh Khanna, Nanda | The Train (1970) |
+        # Mohd Rafi | Superhit Song" went out verbatim as a markdown link,
+        # pipes and year and all, because this handed it over as the thing
+        # to offer.
+        return (f"Offer this one song: {subject}. Name it that way — not "
+                f"whatever the link is called, which is written for a "
+                f"search engine and reads like one. "
                 f"Say it the way someone would who thought of it just now — "
                 f"do not describe it as a recommendation." + tail)
     if kind == "clip":
-        return (f"Offer this: \"{title}\", from {subject}. Brief and warm."
-                + tail)
+        return (f"Offer this: {subject}. Name it that way, not whatever the "
+                f"link is called. Brief and warm." + tail)
     if kind == "recipe":
         note = artefact.get("note")
         return (f"Suggest making this: \"{title}\". They like {subject}."
@@ -458,10 +466,20 @@ JSON only:
          The thing decides, not its category. A film and a film song are
          both "watching" and belong at different hours.
 
-  a singer   -> a song by SOMEONE ELSE — a duet partner, their music
-                director, a contemporary she would know. Never another song
-                by the same singer: she already has them, and the point is
-                to widen, not repeat.
+  a singer   -> a song SUNG BY SOMEONE ELSE. Not one of his own with
+                another name attached.
+
+                "Roop Tera Mastana by Mohammad Rafi" and "Chala Jata
+                Hoon by Lata Mangeshkar" both went out for Kishore Kumar.
+                They are Kishore's songs. The instruction to name someone
+                else was met by changing the credit, which is worse than
+                repeating him — she has known these records for fifty
+                years and would see it at once.
+
+                Pick a song the OTHER person actually sang. A duet
+                partner singing their own hit, a contemporary, someone
+                from the same films. If you are not sure who sang it,
+                choose a different song you are sure about.
 
                 Always "<song> by <other artist>" — a real song title and
                 a real name, never a description like "their music director"

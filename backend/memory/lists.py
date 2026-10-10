@@ -175,18 +175,46 @@ def tick(user_id: str, what: str, list_name: str = "") -> Dict:
     return {"ok": False, "why": f"{what} is not on it"}
 
 
-def close(user_id: str, list_name: str = "") -> Dict:
+def tick_all(user_id: str, list_name: str = "") -> Dict:
+    """Everything at once. "Sab le liya" is how someone talks after a shop,
+    not four separate confirmations."""
+    left = items(user_id, list_name)
+    if not left:
+        return {"ok": False, "why": "nothing left on it"}
+    done = []
+    for r in left:
+        try:
+            _db().table("list_items").update({"done": True}) \
+                .eq("id", r["id"]).execute()
+            done.append((r.get("fields") or {}).get("what"))
+        except Exception as e:
+            print(f"[Lists] tick_all failed on one: {e}")
+    print(f"[Lists] {user_id}: ticked {len(done)} item(s)")
+    return {"ok": True, "ticked": done}
+
+def close(user_id: str, list_name: str = "", keep: bool = True) -> Dict:
+    # She decides whether the items stay. A kept list makes next Navratri
+    # easier; it also accumulates a record of an elderly woman's errands
+    # and her medical questions, which her son can see.
+    #
+    # So the companion asks — band kar dein, ya rakh lein agli baar ke
+    # liye — and keeping is the default, because dropping something she
+    # did not ask to drop is the worse mistake.
     """Done with. The items stay — a market list is worth seeing again
     next month, and she will want the same things."""
     lst = _find(user_id, list_name)
     if not lst:
         return {"ok": False, "why": "no list"}
     try:
+        if not keep:
+            _db().table("list_items").delete() \
+                .eq("list_id", lst["id"]).execute()
         _db().table("lists").update(
             {"closed_at": datetime.now(timezone.utc).isoformat()}
         ).eq("id", lst["id"]).execute()
-        print(f"[Lists] {user_id}: closed {lst['name']!r}")
-        return {"ok": True, "closed": lst["name"]}
+        print(f"[Lists] {user_id}: closed {lst['name']!r}"
+              + ("" if keep else ", items dropped"))
+        return {"ok": True, "closed": lst["name"], "kept": keep}
     except Exception as e:
         return {"ok": False, "why": str(e)[:80]}
 

@@ -164,9 +164,30 @@ def _language(user_id: str) -> str:
         return get_declared(user_id).language.instruction
     except Exception as e:
         print(f"[Context] language read failed: {e}")
-        return ("They speak hinglish. Write in hinglish — this is not "
-                "optional, and applies to a short greeting as much as to a "
-                "long reply.")
+
+    # The declared layer could not be read. The fallback used to say "they
+    # speak hinglish" to everybody — which is right for one user and wrong
+    # for a woman in Kolkata who asked for English and got "nashta kaisa
+    # raha" in reply.
+    #
+    # The profile holds what she chose. Read it directly rather than
+    # assuming.
+    try:
+        from memory.profile_store import get_user_profile
+        pref = str((get_user_profile(user_id) or {}).get("language_pref")
+                   or "").strip().lower()
+    except Exception:
+        pref = ""
+
+    if not pref:
+        # And when even that is unknown, mirror her rather than guess:
+        # whatever she writes in is what she wants back.
+        return ("Write back in whatever language and script they wrote in. "
+                "If they have written nothing yet, use simple English. Do "
+                "not mix in another language they have not used.")
+
+    return (f"They speak {pref}. Write in {pref} — this is not optional, "
+            f"and applies to a short greeting as much as to a long reply.")
 
 
 def _patterns(user_id: str) -> str:

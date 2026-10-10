@@ -255,27 +255,29 @@ def may_send(user_id: str, action: str) -> Dict:
         return {"allow": False, "reason": f"budget_spent_{led['count']}_of_{cap}"}
 
     mins = led["minutes_since"]
-    # Sixty minutes for an offer, ninety for everything else.
+
+    # An offer is not spaced here, because the window already spaced it.
     #
-    # Ninety was a guess, and against her actual day it left no room at all:
-    # boundaries at 09:01, 13:31, 18:01 and 20:46, ninety minutes either side
-    # of each, and the gaps that remain are smaller than the interval the
-    # scheduler runs on. Three offers were decided in one morning — Kishore
-    # Kumar, Shakira, South Indian — and every one was held for being inside
-    # an hour and a half of something.
+    # A window IS the gap between two boundaries — an offer only happens
+    # inside one, so asking again whether it is far enough from the last
+    # message is the same question twice, and the second answer is wrong.
     #
-    # Three weeks, and not one offer has ever reached her.
-    gap = 60 if action == "RECOMMENDATION" else MIN_GAP_MINUTES
-    if mins is not None and mins < gap:
+    # Wrong because BOUNDARY is not in CONVERSATIONAL: a boundary sends
+    # whenever it is due and then sits in the ledger as "the last message".
+    # Her day is boundaries at 09:00, 13:00, 17:30 and 20:00, and sixty
+    # minutes after each covers nearly every hour a window is open in. So
+    # the offer was blocked by exactly the thing it is meant to follow.
+    #
+    # Three weeks, and not one ever cleared it.
+    gap = 0 if action == "RECOMMENDATION" else MIN_GAP_MINUTES
+    if gap and mins is not None and mins < gap:
         # A perishable thing is worth the interruption or it is worth nothing:
         # a match result tomorrow is not a match result.
         if action != "DISPATCH":
             return {"allow": False, "reason": f"only_{mins}m_since_last"}
 
-    # One of each kind a day, apart from dispatches. Three offers is a shop; a
-    # greeting, a piece of news and one offer is a conversation. This does more
-    # for feeling talkative than the budget does.
-    if action != "DISPATCH" and action in led["kinds"]:
-        return {"allow": False, "reason": f"already_sent_{action}_today"}
+    # One of each kind a day was enforced here AND by log_decision, whose
+    # idempotency key is user/day/action/detail. Two mechanisms for one
+    # rule, neither aware of the other.
 
     return {"allow": True, "reason": f"{led['count']}_of_{cap}_used"}

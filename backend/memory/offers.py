@@ -399,3 +399,26 @@ def hint(offer: Offer) -> str:
                      + ". Offer that, in one line.")
 
     return line
+
+
+def offered_in_window(user_id: str, window) -> bool:
+    """Has something already gone out in this stretch?
+
+    The window is the unit. There is no spacing rule any more — the window
+    IS the spacing — so without this every tick inside an open stretch
+    could send, and two offers went out an hour apart on the first day it
+    worked.
+    """
+    if window is None:
+        return False
+    try:
+        from datetime import date
+        rows = (_db().table("suggestions").select("window_label")
+                .eq("user_id", user_id)
+                .gte("created_at", date.today().isoformat())
+                .limit(20).execute()).data or []
+        return any(str(r.get("window_label") or "") == window.clock()
+                   for r in rows)
+    except Exception as e:
+        print(f"[Offers] window check failed: {e}")
+        return False

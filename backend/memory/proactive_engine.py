@@ -169,6 +169,17 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
         print(f"[Proactive] window read failed: {_we}")
         win = None
 
+    # One per window. The window is the unit — with no spacing rule left,
+    # every tick inside an open stretch could send, and two offers went
+    # out an hour apart on the first day it worked.
+    if win:
+        try:
+            from memory.offers import offered_in_window
+            if offered_in_window(user_id, win):
+                return decision("SILENCE", "already_offered_this_window")
+        except Exception as _oe:
+            print(f"[Proactive] window check failed: {_oe}")
+
     if win:
         # Only inside an open window, because choosing costs two model
         # calls and sixty ticks a day would pay it sixty times.

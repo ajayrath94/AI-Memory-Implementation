@@ -539,46 +539,18 @@ def generate_proactive_script(
     #
     # Seeded by the day and the slot, so it is stable within a conversation:
     # the same boundary regenerated does not change its mind.
-    _may_offer = False
-    # Never on a medication reminder. Its own task says name the dose and
-    # nothing else, and "baad mein garam-garam dosa ka maza lenge" went out
-    # attached to her thyroid tablet.
-    if intent not in ("recommendation", "medication") and not _rhythm_fired:
-        import hashlib as _h
-        from datetime import date as _d
-        _seed = f"{user_id}:{_d.today().isoformat()}:{slot or ''}"
-        # roughly one boundary in three
-        _may_offer = int(_h.md5(_seed.encode()).hexdigest(), 16) % 3 == 0
+    # A boundary carries nothing of its own. It is an ice-breaker tied to
+    # something real in her day — "nashta kaisa raha" — and it does not
+    # need a song attached. This drew from the cluster path on top of
+    # everything the composer already sees, and it is where Kishore Kumar
+    # came from in three of five messages: he is her strongest interest,
+    # so he is in the memory block and the interests block and the summary
+    # too.
+    #
+    # Something NEW is the offer path's job, in a window, as its own
+    # message. Something she already loves comes up through the cluster
+    # path when it has been a while.
 
-    if _may_offer:
-        try:
-            from memory.suggestions import pick_suggestion as _ps
-            from memory.artefacts import what_to_offer as _wto
-            _p = _ps(user_id)
-            if _p:
-                _o = _wto(user_id, _p)
-                _thing = _o.get("subject") or _p["label"]
-                _because = _o.get("with_")
-                hints = (hints or "") + (
-                    f"\n\nIf you mention something she enjoys, mention "
-                    f"{_thing}"
-                    + ""
-                    + ". That one, and nothing else. Do not name any other "
-                      "artist, film or dish, whatever else you know she "
-                      "likes — and do NOT credit it to anyone else. "
-                      "'Kishore Kumar ka Chaudhvin Ka Chand' is Rafi's song "
-                      "with the wrong singer's name on it, which came from "
-                      "telling the composer WHY the song was chosen. One mention, at "
-                      "most, and only if the message has room for it.")
-                print(f"[Offer] {user_id}: boundary may mention {_thing}")
-        except Exception as _oe:
-            print(f"[Offer] boundary pick failed: {_oe}")
-
-    # An offer arrives resolved. Nothing is looked up here.
-    # A rhythm is a reason and a reason beats a frontier. If she has a
-    # Sunday and it is Sunday, that IS the offer — adding something new on
-    # top gives the composer two things and it picks whichever reads
-    # better, which is not a decision anyone made.
     if intent == "recommendation" and offer is not None and not _rhythm_fired:
         try:
             from memory.offers import hint as _offer_hint

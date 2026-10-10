@@ -104,7 +104,14 @@ SCOPE = {
                  "'Thoda television dekh lijiye' suggests nothing.\n"
                  "And say nothing about how you feel. 'Aapki bahut yaad aa "
                  "rahi hai' from an application is not warmth, it is a "
-                 "performance of it, and she can tell."),
+                 "performance of it, and she can tell.\n"
+                 "Name it and stop. Do not explain how to do it, what to "
+                 "look for, or how it is best enjoyed. A woman of seventy "
+                 "was told how to play Ludo — open all your pawns, use the "
+                 "safe zones — and how to keep a fast she has kept for "
+                 "fifty years. She has done both for longer than you have "
+                 "existed. An offer is 'yeh suniye'; a lecture about their "
+                 "own hobby is not."),
         # Used when there is nothing in their interests to draw on — better
         # than the stitched templates, which opened an explore offer with a
         # medication reminder.
