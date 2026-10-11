@@ -41,8 +41,10 @@ def get_time_slot(hour: int = None, user_id: str = "") -> str:
             print(f"[Schedule] time_context failed, falling back to server "
                   f"time (WRONG SLOT LIKELY): {e}")
             hour = datetime.now().hour
-    if   6  <= hour < 10: return "morning"
-    elif 10 <= hour < 14: return "midday"
+    # Morning runs to noon. At ten it was "midday", and the composer wrote
+    # "indha madhyanam nerathil" to Kamala at ten in the morning.
+    if   6  <= hour < 12: return "morning"
+    elif 12 <= hour < 14: return "midday"
     elif 14 <= hour < 17: return "afternoon"
     elif 17 <= hour < 20: return "evening"
     elif 20 <= hour < 23: return "night"
@@ -573,6 +575,18 @@ def generate_proactive_script(
     # The scheduler records it when the push goes.
     if composed:
         script = composed
+        # The link, attached here rather than left to the model. The app
+        # has no separate place for it: the push and the saved chat message
+        # carry only this text, and the phone turns a URL in the text into
+        # something to tap. Asking the model to include it gave the link
+        # sometimes and the video's own title other times (Bengali script in
+        # an English message); asking it not to lost the link altogether.
+        # So the model writes the words and the code adds the URL, always.
+        if (intent == "recommendation" and offer is not None
+                and getattr(offer, "artefact", None)):
+            _url = str(offer.artefact.get("url") or "").strip()
+            if _url.startswith("http") and _url not in script:
+                script = script.rstrip() + "\n" + _url
     elif action in ("BOUNDARY", "RECOMMENDATION", "GREETING"):
         # When composing fails, send nothing rather than a template.
         #

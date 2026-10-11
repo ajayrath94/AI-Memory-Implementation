@@ -309,11 +309,22 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
                 if not _fits(item.get("when") or "anytime", window, now_min):
                     continue
 
+                # Its own kind where the generator gave one, the interest's
+                # where it did not (older cached rings).
+                kind = item.get("kind") or seed["category"]
+
+                # A song names the song. "Jagjit Singh" and "Farida Khanum"
+                # came through alone, the search found an hour-long "Best
+                # Of" compilation, and that is not an offer to someone of
+                # seventy. The generator is told this; this makes sure.
+                if kind == "sangeet" and " by " not in low:
+                    continue
+
                 out.append(Offer(
                     what=what,
                     because=seed["label"],
                     when=item.get("when") or "anytime",
-                    category=seed["category"],
+                    category=kind,
                     cluster_id=seed.get("id"),
                 ))
 
@@ -516,7 +527,11 @@ def choose(user_id: str, window=None, now_min: Optional[int] = None) -> Optional
 
     try:
         from memory.artefacts import fetch_artefact
-        offer.artefact = fetch_artefact(user_id, offer.category, offer.what)
+        # A devotional piece offered is still a recording to play. bhakti has
+        # no fetcher on purpose, so that faith is never searched AROUND; a
+        # named stotram being offered is searched for as the music it is.
+        kind = "sangeet" if offer.category == "bhakti" else offer.category
+        offer.artefact = fetch_artefact(user_id, kind, offer.what)
     except Exception as e:
         print(f"[Offers] artefact failed: {e}")
 
@@ -611,9 +626,10 @@ def hint(offer: Offer) -> str:
             # it, and a YouTube title is whatever the uploader wrote —
             # "পুরানো সেই দিনের/Purano Sei..." landed in Bengali script
             # inside an English message to someone who reads English.
-            line += (f"\nThere is a link they can tap to play it; the app "
-                     f"shows it under your message. Call it {offer.what} as "
-                     f"written here, and do not repeat the link or its title.")
+            line += (f"\nA link to play it is added under your message "
+                     f"automatically. Call it {offer.what} as written here, "
+                     f"and do not write any link or the video's title "
+                     f"yourself.")
 
     return line
 

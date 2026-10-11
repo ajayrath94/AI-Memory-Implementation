@@ -246,6 +246,11 @@ One word."""
     try:
         from llm import ask
         a = (ask(prompt, max_tokens=6) or "").strip().lower()
+        if not a:
+            # ask() returns "" when the call fails or times out. Once more,
+            # because the cost of missing "now I'll read the paper" is a
+            # message arriving in the middle of it.
+            a = (ask(prompt, max_tokens=6) or "").strip().lower()
     except Exception as e:
         print(f"[Windows] status read failed: {e}")
         return ""

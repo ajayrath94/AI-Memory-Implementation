@@ -437,8 +437,13 @@ def adjacent(user_id: str, label: str, category: str = "") -> list:
             # v2 carries when each one belongs. The old key was a list
             # of strings and is left alone rather than migrated — it will
             # simply be refilled.
-            if a.get("adjacent_v2"):
-                return list(a["adjacent_v2"])
+            # v3 carries what KIND of thing each one is. v2 entries took
+            # the kind of the interest they came from, so Tagore's
+            # Gitanjali, a book, counted as music because it was reached
+            # from Rabindrasangeet, and the music search found a Telugu
+            # film song. v2 is left alone and refilled, once per interest.
+            if a.get("adjacent_v3"):
+                return list(a["adjacent_v3"])
     except Exception as e:
         print(f"[Adjacent] cache read failed: {e}")
         rows = []
@@ -452,7 +457,14 @@ Name three or four things that sit NEXT to it — things she would recognise as
 connected, not things an algorithm calls similar.
 
 JSON only:
-{{"adjacent": [{{"what": "...", "when": "anytime"}}, ...]}}
+{{"adjacent": [{{"what": "...", "when": "anytime", "kind": "sangeet"}}, ...]}}
+
+  kind   what kind of thing THIS one is, whatever it was reached from:
+           sangeet  a song or a piece of music, always "<title> by <singer>"
+           dekhna   a film or a serial
+           khana    a dish
+           shauk    something to do or read: a book, a hobby, a game
+           bhakti   a prayer, a stotram, a devotional recitation
 
   when   where it belongs in an ordinary day, so it is offered at a moment
          it suits rather than whenever a gap appears:
@@ -530,7 +542,10 @@ No prose."""
             when = str((x or {}).get("when") or "anytime").strip().lower()
             if when not in ("before_meal", "evening", "morning", "anytime"):
                 when = "anytime"
-            out.append({"what": what, "when": when})
+            kind = str((x or {}).get("kind") or "").strip().lower()
+            if kind not in ("sangeet", "dekhna", "khana", "shauk", "bhakti"):
+                kind = ""
+            out.append({"what": what, "when": when, "kind": kind})
         out = out[:4]
     except Exception as e:
         print(f"[Adjacent] failed for {label!r}: {e}")
@@ -540,7 +555,7 @@ No prose."""
         try:
             a = rows[0].get("attributes")
             a = a if isinstance(a, dict) else {}
-            a["adjacent_v2"] = out
+            a["adjacent_v3"] = out
             db.table("interest_clusters").update(
                 {"attributes": a}).eq("id", rows[0]["id"]).execute()
         except Exception as e:

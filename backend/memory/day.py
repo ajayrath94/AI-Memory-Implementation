@@ -415,6 +415,39 @@ def _soon(mins: int) -> str:
     return "later on"
 
 
+_SPOKEN: Dict[str, str] = {}
+
+
+def _speakable(label: str) -> str:
+    """How a person would refer to this part of someone's day.
+
+    Asked once per label and remembered. A label that already names a thing
+    (a meal, a prayer, a walk) comes back unchanged.
+    """
+    if not label:
+        return label
+    if label in _SPOKEN:
+        return _SPOKEN[label]
+    out = label
+    try:
+        from llm import ask
+        got = (ask(f"""A schedule entry reads: "{label}"
+
+How would a friend refer to that part of someone's day in conversation, as a
+short noun phrase, in the same language as the entry? If the entry is already
+the name of a thing (a meal, a prayer, a walk, a rest), return it unchanged.
+
+Only the phrase, nothing else.""", max_tokens=20) or "").strip().strip('"').strip(".")
+        if got and len(got) <= 60 and "\n" not in got:
+            out = got
+    except Exception as e:
+        print(f"[Day] speakable failed for {label!r}: {e}")
+    _SPOKEN[label] = out
+    if out != label:
+        print(f"[Day] {label!r} -> {out!r}")
+    return out
+
+
 def boundary_hint(user_id: str, b: Dict) -> str:
     """The line for the composer.
 
@@ -441,7 +474,11 @@ def boundary_hint(user_id: str, b: Dict) -> str:
             now_min = None
 
     def _label(ev: Dict) -> str:
-        return str(ev.get("label") or ev.get("kind") or "").strip()
+        raw = str(ev.get("label") or ev.get("kind") or "").strip()
+        # A routine's label is a schedule note, and a note in a sentence
+        # reads as one: "How was home from office?" twice, after the hint
+        # was told not to do it. So the composer is given the spoken form.
+        return _speakable(raw) if (ev.get("kind") or "") == "routine" else raw
 
     # What was offered before this event, and whether they took it up. An
     # offer at 11:30 and a boundary at 13:30 are the same conversation an
