@@ -398,6 +398,36 @@ def _kinds_in_order(user_id: str, pool: List[Offer],
     return [by_kind[k] for k in order[:_KINDS_TO_TRY]]
 
 
+def _title_matches(what: str, found: str) -> bool:
+    """Does the found title contain the thing offered?
+
+    By the song's own words, allowing for spelling: Nadaan and Nadan,
+    Chalo and Cholo, Aankhen and Ankhen are all the same word written by
+    different people.
+    """
+    import difflib
+    import re as _re
+
+    def words(t):
+        return [w for w in _re.findall(r"[a-z]+", (t or "").lower()) if len(w) >= 3]
+
+    want = words(_title(what))
+    have = words(found)
+    if not want:
+        return True
+    if not have:
+        return False
+    def found_(w):
+        return any(difflib.SequenceMatcher(None, w, h).ratio() >= 0.75
+                   for h in have)
+
+    hits = [found_(w) for w in want]
+    # Most of the title, or its opening words: video titles are often cut
+    # short, and "Dil-E-Nadan Tujhe" is that song even without the rest.
+    return (sum(hits) / len(want) >= 0.6
+            or (len(want) >= 3 and all(hits[:3])))
+
+
 def _pick_for_moment(user_id: str, pool: List[Offer], window,
                      now_min: Optional[int]) -> Optional[Offer]:
     """One of these that suits this moment, with why. Or None."""
@@ -531,7 +561,18 @@ def choose(user_id: str, window=None, now_min: Optional[int] = None) -> Optional
         # no fetcher on purpose, so that faith is never searched AROUND; a
         # named stotram being offered is searched for as the music it is.
         kind = "sangeet" if offer.category == "bhakti" else offer.category
-        offer.artefact = fetch_artefact(user_id, kind, offer.what)
+        art = fetch_artefact(user_id, kind, offer.what)
+        # The link is added to the message whatever it is, so it has to be
+        # the thing offered. Search returns its nearest guess either way:
+        # "Shauq Ka Awaara by Begum Akhtar" came back as Hariharan singing
+        # something else, "Aji Bijane Ase Keu" as "Shunya Haate Phiri".
+        # No link is better than the wrong song.
+        if art and art.get("kind") != "tip" and not _title_matches(
+                offer.what, str(art.get("title") or "")):
+            print(f"[Offers] dropped link for {offer.what!r}: found "
+                  f"{str(art.get('title'))[:60]!r}")
+            art = None
+        offer.artefact = art
     except Exception as e:
         print(f"[Offers] artefact failed: {e}")
 
