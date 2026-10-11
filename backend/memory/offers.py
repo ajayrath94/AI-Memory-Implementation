@@ -348,7 +348,14 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
                     continue
                 if _title(what) in skip_titles:
                     continue
-                if any(a in skip for a in _artists(what)):
+                # By an artist she already loves: skipped for songs, so a
+                # Kishore Kumar fan is not offered Kishore again. Not for
+                # devotional pieces, where the voice IS the devotion: every
+                # stotram Kamala could be offered was by M.S. Subbulakshmi,
+                # all were skipped, and she was offered nothing all day.
+                # The piece itself still has to be new to her.
+                if (item.get("kind") or "") != "bhakti" and \
+                        any(a in skip for a in _artists(what)):
                     continue
                 if not _fits(item.get("when") or "anytime", window, now_min):
                     continue
@@ -477,8 +484,26 @@ def _title_matches(what: str, found: str) -> bool:
     hits = [found_(w) for w in want]
     # Most of the title, or its opening words: video titles are often cut
     # short, and "Dil-E-Nadan Tujhe" is that song even without the rest.
-    return (sum(hits) / len(want) >= 0.6
-            or (len(want) >= 3 and all(hits[:3])))
+    song_ok = (sum(hits) / len(want) >= 0.6
+               or (len(want) >= 3 and all(hits[:3])))
+    if not song_ok:
+        return False
+
+    # And the singer, when one is named. "Dil-e-Nadaan by Begum Akhtar"
+    # linked to Jagjit Singh's recording: the right song, a different
+    # voice, and to someone who chose Begum Akhtar that is not the same
+    # thing. A title that names the singer passes. A title that is little
+    # more than the song name passes too, since many uploads name nobody.
+    # A longer title that names someone else does not.
+    singer = [w for w in words(" ".join(_artists(what))) if len(w) >= 4]
+    if not singer:
+        return True
+    if any(found_(w) for w in singer):
+        return True
+    extra = [h for h in have
+             if not any(difflib.SequenceMatcher(None, h, w).ratio() >= 0.75
+                        for w in want)]
+    return len(extra) <= 2
 
 
 def _pick_for_moment(user_id: str, pool: List[Offer], window,
