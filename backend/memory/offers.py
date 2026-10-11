@@ -233,6 +233,49 @@ def _fits(when: str, window, now_min: Optional[int]) -> bool:
 _FULFIL_ONLY = {"bhakti"}
 
 
+_LANGS: Dict[str, set] = {}
+
+
+def _their_languages(user_id: str, mine: Dict[str, Dict]) -> set:
+    """The languages their songs, films and prayers are in. Worked out once
+    per process from what they already love and where they live, so a
+    Carnatic listener keeps Sanskrit and Telugu kritis and loses Hindi
+    bhajans, and a Bengali reader in English keeps Bengali.
+
+    Empty when it cannot be worked out, which turns the filter off rather
+    than filtering everything."""
+    if user_id in _LANGS:
+        return _LANGS[user_id]
+    out: set = set()
+    try:
+        from memory.declared import get_declared
+        from llm import ask
+        import json as _j
+        d = get_declared(user_id)
+        loves = ", ".join(v["label"] for v in sorted(
+            mine.values(), key=lambda v: -v["strength"])[:8])
+        raw = (ask(f"""Someone lives in {d.place.home or 'India'}, speaks {d.language.pref},
+and loves: {loves}.
+
+Which languages are the songs, films and prayers they love in? Include the
+languages of the things above, and the language of where they live. Not
+languages they would not understand or would not choose.
+
+JSON only: {{"langs": ["tamil", "sanskrit"]}}  (lowercase, one word each)""",
+                   max_tokens=60) or "")
+        raw = raw.replace("```json", "").replace("```", "")
+        got = _j.loads(raw[raw.find("{"):raw.rfind("}") + 1]).get("langs") or []
+        out = {str(x).strip().lower() for x in got if str(x).strip()}
+        if out and (d.language.pref or "").lower() == "english":
+            out.add("english")
+    except Exception as e:
+        print(f"[Offers] languages read failed, not filtering: {e}")
+        out = set()
+    print(f"[Offers] {user_id}: their languages: {sorted(out) or '(unknown)'}")
+    _LANGS[user_id] = out
+    return out
+
+
 def candidates(user_id: str, window=None, now_min: Optional[int] = None,
                rings: int = RINGS) -> List[Offer]:
     """Everything she could be shown, nearest first.
@@ -276,6 +319,7 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
     # would recognise and "because of a song you were offered last week" is
     # not.
     frontier = [(s["label"], s) for s in seeds]
+    langs = _their_languages(user_id, mine)
 
     for ring_no in range(max(1, rings)):
         next_frontier = []
@@ -312,6 +356,15 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
                 # Its own kind where the generator gave one, the interest's
                 # where it did not (older cached rings).
                 kind = item.get("kind") or seed["category"]
+
+                # In a language they live in. The generator is asked for
+                # this and twice in one day returned a Hindi Hanuman Chalisa
+                # for a Tamil Carnatic listener, so it is checked here too.
+                lang = str(item.get("lang") or "").lower()
+                if lang and lang != "none" and langs and lang not in langs:
+                    print(f"[Offers] {user_id}: not offering {what!r} "
+                          f"({lang}; theirs: {', '.join(sorted(langs))})")
+                    continue
 
                 # A song names the song. "Jagjit Singh" and "Farida Khanum"
                 # came through alone, the search found an hour-long "Best

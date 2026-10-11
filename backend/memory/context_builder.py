@@ -741,6 +741,37 @@ Write only the message. No preamble, no quotation marks."""
         except Exception as e:
             print(f"[Context] medication guard failed: {e}")
 
+    # A reminder names the dose and nothing else. Ismail's Telmisartan came
+    # as "aisi subah mein jab Mirza Ghalib ya Mehdi Hassan ka koi she'r
+    # sunne ka mann ho, toh usse pehle..." Something they love wrapped
+    # round a tablet turns the tablet into a pitch and the interest into a
+    # chore. Checked against their own interests, so it cannot be argued
+    # with, and written again once before giving up.
+    if intent == "medication" and text:
+        try:
+            from memory.offers import hers
+            loves = [v["label"] for v in hers(user_id).values()
+                     if len(str(v.get("label") or "")) >= 4]
+            def _names_a_love(t):
+                low = t.lower()
+                return next((l for l in loves if l.lower() in low), None)
+            hit = _names_a_love(text)
+            if hit:
+                print(f"[Context] reminder named {hit!r}, rewriting: {text[:80]}")
+                resp = client.messages.create(
+                    model=_MODEL, max_tokens=200,
+                    messages=[{"role": "user", "content": prompt +
+                               "\n\nName the medicine and nothing else. Do "
+                               "not mention any song, singer, poet, film, "
+                               "dish or anything else they enjoy."}])
+                text = resp.content[0].text.strip().strip('"')
+                if _names_a_love(text):
+                    print(f"[Context] reminder still named an interest, "
+                          f"falling back")
+                    return spec.get("fixed") or ""
+        except Exception as e:
+            print(f"[Context] reminder interest check failed: {e}")
+
     from memory.intent_spec import check_in_character
     problem = check_in_character(text)
     if problem:

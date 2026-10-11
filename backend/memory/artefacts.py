@@ -451,13 +451,30 @@ def adjacent(user_id: str, label: str, category: str = "") -> list:
     diet = _dietary(user_id) if category == "khana" else ""
     diet_line = f"\n\nFor food only: {diet}." if diet else ""
 
-    prompt = f"""Someone elderly in India likes this: "{label}"
+    # Who, so "next to it" stays inside their own world. Without it a Tamil
+    # Carnatic listener was given Hindi bhajans twice in one day.
+    who = ""
+    try:
+        from memory.declared import get_declared
+        d = get_declared(user_id)
+        who = (f" They live in {d.place.home or 'India'} and speak "
+               f"{d.language.pref}.")
+    except Exception:
+        pass
+
+    prompt = f"""Someone elderly in India likes this: "{label}".{who}
 
 Name three or four things that sit NEXT to it — things she would recognise as
-connected, not things an algorithm calls similar.
+connected, not things an algorithm calls similar. Stay inside her own
+tradition and language: what someone from where she lives, who loves this,
+would actually know.
 
 JSON only:
-{{"adjacent": [{{"what": "...", "when": "anytime", "kind": "sangeet"}}, ...]}}
+{{"adjacent": [{{"what": "...", "when": "anytime", "kind": "sangeet", "lang": "tamil"}}, ...]}}
+
+  lang   the language it is in, one lowercase word (tamil, hindi, urdu,
+         bengali, sanskrit, telugu, english...). "none" for a dish, a hobby,
+         or music without words.
 
   kind   what kind of thing THIS one is, whatever it was reached from:
            sangeet  a song or a piece of music, always "<title> by <singer>"
@@ -545,7 +562,9 @@ No prose."""
             kind = str((x or {}).get("kind") or "").strip().lower()
             if kind not in ("sangeet", "dekhna", "khana", "shauk", "bhakti"):
                 kind = ""
-            out.append({"what": what, "when": when, "kind": kind})
+            lang = str((x or {}).get("lang") or "").strip().lower()[:20]
+            out.append({"what": what, "when": when, "kind": kind,
+                        "lang": lang})
         out = out[:4]
     except Exception as e:
         print(f"[Adjacent] failed for {label!r}: {e}")

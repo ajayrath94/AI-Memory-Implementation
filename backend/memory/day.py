@@ -356,6 +356,24 @@ def _said_since(user_id: str, ev: Dict) -> str:
         print(f"[Day] window read failed: {e}")
         return ""
 
+    # Not what was already the answer about something else. "Saaptachu" at
+    # 08:20 confirmed breakfast, and at the lunch boundary it was read again
+    # as being about lunch: "saaptachu nalla irukku" to someone who had
+    # not been asked about lunch at all. A line that settled one event is
+    # spent; this is a fact on the record, not a judgement about times.
+    try:
+        spent = [str(e.get("note") or "").strip().lower()
+                 for e in (events(user_id) or [])
+                 if e.get("id") != ev.get("id")
+                 and e.get("status") in ("confirmed", "denied")
+                 and (e.get("note") or "").strip()]
+        if spent:
+            said = [x for x in said
+                    if not any(n in x.lower() or x.lower().strip() in n
+                               for n in spent)]
+    except Exception as e:
+        print(f"[Day] spent-line filter failed: {e}")
+
     if not said:
         return ""
 
@@ -553,7 +571,17 @@ def boundary_hint(user_id: str, b: Dict) -> str:
                      "they ask.")
         parts.append(line)
 
+    # The part of the day, said plainly. At 13:00 the composer wished
+    # Kamala "the rest of the Sunday evening".
+    part = ""
+    if now_min is not None:
+        h = now_min // 60
+        part = ("morning" if h < 12 else "afternoon" if h < 17
+                else "evening" if h < 21 else "night")
+
     rules = [
+        *( [f"It is {part} now. If you mention the time of day at all, it "
+            f"is {part}."] if part else [] ),
         "One message, not two. This is a conversation continuing, so it may "
         "assume they know what you are talking about.",
         "Never state a clock time. You know when these things happen; they "
