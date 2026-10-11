@@ -110,6 +110,48 @@ def _resolve_incoming(updates: dict, existing: dict, user_id: str) -> dict:
     return out
 
 
+# Where a person belongs when they turn up in two places, first wins. A
+# spouse is never also a child; a child said once as a grandson is still
+# the child.
+_FAMILY_ORDER = ("spouse", "children", "grandchildren", "other")
+
+
+def _one_place_per_person(family: dict) -> dict:
+    """Each person once, across all the family lists.
+
+    Lists are deduplicated one at a time, so Shubham could sit in children
+    as a son and in grandchildren as a grandson: the model was unsure of
+    the generation, said each once, and the screen showed him twice. The
+    place he was recorded in first is kept; a later, conflicting mention is
+    dropped and logged rather than silently moving him, since the first
+    record is usually the one she stated plainly.
+    """
+    seen = {}
+    out = dict(family)
+    for key in _FAMILY_ORDER:
+        val = family.get(key)
+        if not val:
+            continue
+        items = val if isinstance(val, list) else [val]
+        keep = []
+        for item in items:
+            k = _canonical_key(item if isinstance(item, str) else _flatten_item(item))
+            if not k:
+                keep.append(item)
+                continue
+            if k in seen and seen[k] != key:
+                print(f"[Profile] {item!r} is already under {seen[k]}, "
+                      f"not adding under {key}")
+                continue
+            seen.setdefault(k, key)
+            keep.append(item)
+        if isinstance(val, list):
+            out[key] = keep
+        else:
+            out[key] = keep[0] if keep else ""
+    return out
+
+
 def save_user_profile(user_id: str, updates: dict, declared: bool = False):
     """
     Merge updates into existing profile.
@@ -135,6 +177,8 @@ def save_user_profile(user_id: str, updates: dict, declared: bool = False):
 
     updates = _resolve_incoming(updates, existing, user_id)
     merged  = _deep_merge(existing, updates, owner, user_id, declared)
+    if isinstance(merged.get("family"), dict):
+        merged["family"] = _one_place_per_person(merged["family"])
     merged["user_id"]    = user_id
     merged["updated_at"] = "now()"
 

@@ -651,6 +651,99 @@ def recompute_cluster_trajectory(user_id: str, cluster_id: str):
         print(f"[Trajectory] recompute failed for {cluster_id}: {e}")
 
 
+# ── what a label may be ──────────────────────────────────────────────────────
+#
+# The FAMILY screen showed Shubham six times: "Shubham", "Shubham (son)",
+# "Shubham (son, lives in Bangalore)", and Nancy three times as "Nancy
+# (appears to be a caregiver/friend)". The extractor had nowhere else to put
+# a relation or a doubt, so it put them in the name, and three different
+# strings can never be matched as one person. "in Bangalore" became an entity
+# with no name at all.
+#
+# So a label is cleaned before anything looks it up or writes it: what is in
+# brackets goes to the attributes, a hedge goes to confidence, and something
+# that is not a name is not written.
+
+_HEDGES = ("appears to", "possibly", "probably", "seems", "maybe", "might be",
+           "unclear", "unknown", "not sure", "likely")
+
+_RELATION_WORDS = {
+    "son", "daughter", "grandson", "granddaughter", "grandchild", "child",
+    "husband", "wife", "spouse", "mother", "father", "brother", "sister",
+    "son-in-law", "daughter-in-law", "nephew", "niece", "friend", "neighbour",
+    "neighbor", "caregiver", "maid", "doctor", "beta", "beti", "bahu",
+    "damad", "pota", "poti", "nati", "natin", "bhai", "behen", "padosi",
+}
+
+
+def clean_label(label: str, attributes: dict = None):
+    """(clean label, attributes) or (None, attributes) if it is not a name."""
+    import re as _re
+    attrs = dict(attributes or {})
+    raw = str(label or "").strip()
+
+    # What is in brackets is about the thing, not its name.
+    inside = _re.findall(r"\(([^)]*)\)", raw)
+    name = _re.sub(r"\([^)]*\)", " ", raw)
+    name = _re.sub(r"\s+", " ", name).strip(" ,.-:;\"'")
+
+    for bit in inside:
+        b = bit.strip().lower()
+        if not b:
+            continue
+        if any(h in b for h in _HEDGES):
+            # A guess is a guess: lower confidence, never a name.
+            attrs.setdefault("confidence", "low")
+            attrs.setdefault("note", bit.strip()[:120])
+            continue
+        parts = [x.strip() for x in _re.split(r"[,;/]", b) if x.strip()]
+        for part in parts:
+            if part in _RELATION_WORDS and not attrs.get("relation"):
+                attrs["relation"] = part
+            elif part.startswith(("lives in ", "in ", "from ")) and not attrs.get("location"):
+                attrs["location"] = part.split(" ", 2)[-1].strip().title()
+            else:
+                attrs.setdefault("note", bit.strip()[:120])
+
+    low = name.lower()
+    # A hedge in the name itself, or nothing that is a name.
+    if any(h in low for h in _HEDGES):
+        return None, attrs
+    if len(name) < 2 or not _re.search(r"[^\W\d_]", name):
+        return None, attrs
+    # "in Bangalore", "at the temple": a fragment, not a thing.
+    if _re.match(r"^(in|at|from|to|of|with|the)\s", low) and \
+            (attrs.get("kind") or "") in ("person", ""):
+        return None, attrs
+    return name[:120], attrs
+
+
+# Relations that can be the same person mistaken. Son and grandson, daughter
+# and granddaughter: a model unsure of the generation guesses, and splitting
+# on its guess is what made six Shubhams. A daughter-in-law and a neighbour
+# are not a mistake about one person; they stay two.
+_SAME_PERSON_CONFUSABLE = {
+    "son", "grandson", "child", "grandchild", "beta", "pota", "nati",
+    "daughter", "granddaughter", "beti", "poti", "natin",
+}
+
+
+def _relation_candidates(attrs: dict, rel: str) -> dict:
+    """Add one sighting of a relation to the candidates on a person."""
+    cands = attrs.get("relation_candidates")
+    if not isinstance(cands, dict):
+        cands = {}
+        if attrs.get("relation"):
+            cands[str(attrs["relation"]).lower()] = 1
+    r = str(rel).lower()
+    cands[r] = cands.get(r, 0) + 1
+    attrs["relation_candidates"] = cands
+    # Shown: the one said most. Flagged when two are both said.
+    attrs["relation"] = max(cands, key=cands.get)
+    attrs["needs_review"] = len([c for c in cands.values() if c >= 1]) > 1
+    return attrs
+
+
 def _upsert_cluster(user_id: str, label: str, pillar: str,
                     strength: float, embedding: list = None,
                     attributes: dict = None, resolve_into: bool = True) -> str:
@@ -666,6 +759,10 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
     mean of its members, so it settles between related labels rather than
     anchoring on whichever was said first.
     """
+    label, attributes = clean_label(label, attributes)
+    if not label:
+        print(f"[Cluster] not a name, not written: {attributes.get('note') or ''}")
+        return None
     try:
         from supabase_store import get_client
         from memory.cluster_resolver import find_cluster
@@ -762,9 +859,37 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
                 dupe[0].get("attributes"), dict) else {}).get("relation")
             _new_rel = (attributes or {}).get("relation")
             if _old_rel and _new_rel and str(_old_rel).lower() != str(_new_rel).lower():
-                print(f"[Cluster] {label!r} is {_new_rel}, not {_old_rel} — "
-                      f"a different person")
-                dupe = None
+                o, n = str(_old_rel).lower(), str(_new_rel).lower()
+                if o in _SAME_PERSON_CONFUSABLE and n in _SAME_PERSON_CONFUSABLE:
+                    # Same name, a generation apart: far more often one
+                    # person the model was unsure about than two people.
+                    # Held as candidates on the one row and flagged, so the
+                    # family screen shows one Shubham and a caregiver can
+                    # settle it, rather than the code deciding silently.
+                    print(f"[Cluster] {label!r}: {n} or {o}? one person, "
+                          f"flagged for review")
+                    _a = dupe[0].get("attributes") if isinstance(
+                        dupe[0].get("attributes"), dict) else {}
+                    attributes = _relation_candidates(dict(_a), n)
+                    attributes.pop("_skip", None)
+                else:
+                    # A different person with the same name. The table
+                    # allows one row per name per user, so the second one
+                    # cannot also be "Priya": inserting it failed on the
+                    # unique key and the neighbour was silently lost, every
+                    # time. She is kept under a name that tells them apart,
+                    # and a later mention of her finds that row.
+                    alt = f"{label} ({_new_rel})"
+                    print(f"[Cluster] {label!r} is {_new_rel}, not {_old_rel} — "
+                          f"a different person, kept as {alt!r}")
+                    try:
+                        dupe = (db.table("interest_clusters")
+                                .select("id,strength,event_count,attributes")
+                                .eq("user_id", user_id).eq("label", alt)
+                                .limit(1).execute()).data or None
+                    except Exception:
+                        dupe = None
+                    label = alt
 
         if dupe:
             d = dupe[0]
@@ -1038,6 +1163,9 @@ def _node_for(user_id: str, label: str, kind: str, pillar: str = "GENERAL"):
     A place or an occupation is a node so an edge can point at it, but it is
     never something to suggest — no category, so offerable_now skips it.
     """
+    label, _attrs = clean_label(label, {"kind": kind})
+    if not label:
+        return None
     from supabase_store import get_client
     db = get_client()
     try:

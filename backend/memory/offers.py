@@ -623,38 +623,59 @@ def choose(user_id: str, window=None, now_min: Optional[int] = None) -> Optional
     # unless nothing else suits the hour at all — the top six used to be
     # one category every time, because the pool is ordered by the strength
     # of the interest it came from.
-    offer = None
-    for kind_pool in _kinds_in_order(user_id, pool, now_min):
-        offer = _pick_for_moment(user_id, kind_pool[:10], window, now_min)
-        if offer is not None:
-            break
-    if offer is None:
-        # Nothing suits this stretch. Silence is the right answer; the
-        # next window may suit something.
-        return None
+    # A song is offered only if a real recording of it was found. The
+    # generator sometimes invents one: "Manjal Kaapaarikkum by M.S.
+    # Subbulakshmi", reached from curd rice, does not exist, and no search
+    # found it. That absence is the signal. An invented song offered to
+    # someone who has known this music for sixty years costs more trust
+    # than any number of silences, so an unverified song is struck from the
+    # pool and the choice is made again, up to twice.
+    struck: set = set()
+    for _attempt in range(3):
+        offer = None
+        for kind_pool in _kinds_in_order(
+                user_id, [o for o in pool if o.what not in struck], now_min):
+            offer = _pick_for_moment(user_id, kind_pool[:10], window, now_min)
+            if offer is not None:
+                break
+        if offer is None:
+            # Nothing suits this stretch. Silence is the right answer; the
+            # next window may suit something.
+            return None
 
-    try:
-        from memory.artefacts import fetch_artefact
-        # A devotional piece offered is still a recording to play. bhakti has
-        # no fetcher on purpose, so that faith is never searched AROUND; a
-        # named stotram being offered is searched for as the music it is.
-        kind = "sangeet" if offer.category == "bhakti" else offer.category
-        art = fetch_artefact(user_id, kind, offer.what)
-        # The link is added to the message whatever it is, so it has to be
-        # the thing offered. Search returns its nearest guess either way:
-        # "Shauq Ka Awaara by Begum Akhtar" came back as Hariharan singing
-        # something else, "Aji Bijane Ase Keu" as "Shunya Haate Phiri".
-        # No link is better than the wrong song.
-        if art and art.get("kind") != "tip" and not _title_matches(
-                offer.what, str(art.get("title") or "")):
-            print(f"[Offers] dropped link for {offer.what!r}: found "
-                  f"{str(art.get('title'))[:60]!r}")
-            art = None
+        art = None
+        try:
+            from memory.artefacts import fetch_artefact
+            # A devotional piece offered is still a recording to play. bhakti
+            # has no fetcher on purpose, so that faith is never searched
+            # AROUND; a named stotram being offered is searched for as the
+            # music it is.
+            kind = "sangeet" if offer.category == "bhakti" else offer.category
+            art = fetch_artefact(user_id, kind, offer.what)
+            # The link is added to the message whatever it is, so it has to
+            # be the thing offered, by the singer named. No link is better
+            # than the wrong song.
+            if art and art.get("kind") != "tip" and not _title_matches(
+                    offer.what, str(art.get("title") or "")):
+                print(f"[Offers] dropped link for {offer.what!r}: found "
+                      f"{str(art.get('title'))[:60]!r}")
+                art = None
+        except Exception as e:
+            print(f"[Offers] artefact failed: {e}")
+            # A search that failed says nothing about whether the song
+            # exists. Offer it without a link rather than strike it.
+            offer.artefact = None
+            return offer
+
+        if art is None and offer.category in ("sangeet", "bhakti"):
+            print(f"[Offers] {user_id}: no recording found for "
+                  f"{offer.what!r}, not offering it")
+            struck.add(offer.what)
+            continue
+
         offer.artefact = art
-    except Exception as e:
-        print(f"[Offers] artefact failed: {e}")
-
-    return offer
+        return offer
+    return None
 
 
 def record(user_id: str, offer: Offer, window=None,
