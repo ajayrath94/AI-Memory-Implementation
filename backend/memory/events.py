@@ -33,6 +33,29 @@ def _db():
     return get_client()
 
 
+def _their_time(user_id: str, said_on: datetime = None) -> datetime:
+    """When they said it, on THEIR clock.
+
+    The date of an event is the date in their life. Defaulting to UTC put
+    anything said in India between midnight and half past five on the
+    previous day: "Nashta kar liya" at 00:30 on the 11th was filed on the
+    10th. A UTC time passed in is converted; a naive one is left alone,
+    since there is no way to know what clock it was read from.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        from memory.time_context import get_user_timezone
+        tz = ZoneInfo(get_user_timezone(user_id))
+    except Exception as e:
+        print(f"[Events] timezone read failed, using UTC: {e}")
+        tz = timezone.utc
+    if said_on is None:
+        return datetime.now(tz)
+    if said_on.tzinfo is not None:
+        return said_on.astimezone(tz)
+    return said_on
+
+
 # Relative days, in the languages she might use. The model resolves the rest;
 # these are the ones common enough to be worth catching without a call.
 _RELATIVE = {
@@ -148,7 +171,7 @@ def record_event(user_id: str, what: str, said_on: datetime = None,
     happened_on is resolved from the phrasing when not given — "kal beta aaya
     tha" on the 12th records the 11th.
     """
-    said_on = said_on or datetime.now(timezone.utc)
+    said_on = _their_time(user_id, said_on)
 
     # Here, not in the caller — the caller is not the only caller, and the
     # next one will not know to check.
@@ -251,7 +274,7 @@ def extract_events(user_id: str, messages: List[dict],
     The same three conditions the day-chain confirmation needed, for the same
     reason: mentioning something is not the same as it having happened.
     """
-    said_on = said_on or datetime.now(timezone.utc)
+    said_on = _their_time(user_id, said_on)
     hers = "\n".join(m.get("content", "")[:300] for m in messages
                      if m.get("role") == "user")
     if len(hers.strip()) < 15:

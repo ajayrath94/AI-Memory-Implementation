@@ -142,7 +142,14 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
         names = sorted({m.get("label", "dawai") for m in meds})
         pending = [n for n in names if not _dose_covered(user_id, n, now_min)]
         if pending:
-            return decision("MEDICATION_REMINDER", "dose_due", pending[0], "high")
+            d = decision("MEDICATION_REMINDER", "dose_due", pending[0], "high")
+            # Which dose, not only which drug. log_decision keys on it, so
+            # the evening Metformin is no longer a "duplicate" of the
+            # morning one.
+            d["dose_at"] = next((str(m.get("time_of_day") or "")[:5]
+                                 for m in meds
+                                 if m.get("label", "dawai") == pending[0]), "")
+            return d
         # Every due dose has had its reminder. Fall through: something else
         # may still be worth saying this hour.
 

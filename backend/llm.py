@@ -196,7 +196,17 @@ def genai_client():
         key = os.getenv("GEMINI_API_KEY")
         if not key:
             raise RuntimeError("GEMINI_API_KEY not set")
-        _genai = genai.Client(api_key=key)
+        # A timeout on every request. Without one, a dropped connection
+        # waited forever: the three-person run froze twice at different
+        # points, and the scheduler, which walks every user in one pass,
+        # would freeze the same way, so one stuck call meant nobody heard
+        # anything until the process restarted. ask() already turns a
+        # failure into "", and every caller already handles "".
+        from google.genai import types as _t
+        secs = float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
+        _genai = genai.Client(
+            api_key=key,
+            http_options=_t.HttpOptions(timeout=int(secs * 1000)))
     return _genai
 
 

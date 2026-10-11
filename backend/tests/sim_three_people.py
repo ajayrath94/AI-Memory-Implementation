@@ -267,10 +267,26 @@ def a_day(uid, spec):
     from memory.windows import hear_status, windows_today
     from supabase_store import save_message
 
+    import memory.cadence as C
     db = get_client()
-    real_m, real_s = D._mins_now, S._moment
+    real_m, real_s, real_l = D._mins_now, S._moment, C.todays_ledger
     sent, offers, empties = [], [], []
     sess = None
+
+    # The cadence ledger measures "minutes since the last message" on the
+    # real clock, and a simulated day takes two real minutes. So every offer
+    # looked like it came 0 minutes after the last thing sent, the 40-minute
+    # offer floor held all of them, and the harness's bare `continue` hid it:
+    # the window machinery was choosing offers and none ever reached a
+    # composer. The same clock as everything else in here, the one the
+    # day is being walked on.
+    last_sent = {"min": None}
+
+    def _ledger_on_sim_clock(u):
+        out = dict(real_l(u))
+        out["minutes_since"] = (D._mins_now(u) - last_sent["min"]
+                                if last_sent["min"] is not None else None)
+        return out
 
     D._mins_now = lambda u: 8 * 60
     print("  their windows:")
@@ -286,6 +302,7 @@ def a_day(uid, spec):
         timeline.append((int(t[:2]) * 60 + int(t[3:5]), 1, "SAID", txt))
     timeline.sort(key=lambda e: (e[0], e[1]))
 
+    C.todays_ledger = _ledger_on_sim_clock
     for now, _tie, what, payload in timeline:
         D._mins_now = lambda u, _n=now: _n
         S._moment = lambda u, _n=now: {**real_s(u), "now_min": _n}
@@ -319,7 +336,12 @@ def a_day(uid, spec):
         action = dec.get("action")
         if not action or action == "SILENCE":
             continue
-        if not may_send(uid, action).get("allow"):
+        gate = may_send(uid, action)
+        if not gate.get("allow"):
+            # Printed, as the scheduler prints it. A silent continue here is
+            # how a whole day of held offers went unnoticed.
+            print(f"  {_hhmm(now)} HELD {action[:12]:9} {gate.get('reason')}"
+                  + (f"  ({dec['offer'].what})" if dec.get("offer") else ""))
             continue
         try:
             out = generate_proactive_script(
@@ -342,6 +364,7 @@ def a_day(uid, spec):
             empties.append((now, action, "empty"))
             continue
         print(f"  {_hhmm(now)} {action[:12]:14} {msg[:110]}")
+        last_sent["min"] = now
 
         offer = dec.get("offer")
         sent.append({
@@ -378,7 +401,7 @@ def a_day(uid, spec):
             except Exception as e:
                 print(f"         [boundary mark failed: {str(e)[:60]}]")
 
-    D._mins_now, S._moment = real_m, real_s
+    D._mins_now, S._moment, C.todays_ledger = real_m, real_s, real_l
     return sent, offers, empties
 
 
@@ -445,7 +468,12 @@ def judge(spec, sent, offers, empties):
 
     # 6. offers all of one kind
     cats = {o["category"] for o in offers if o["category"]}
-    if len(offers) >= 2:
+    # Three or more. Two offers of one kind can be right: Rupa is free at
+    # seven in the morning and ten at night, and music both times, with
+    # films and gardening considered and rejected for those hours, is the
+    # system working. The bug this guards against was six offers, six
+    # songs, which no choosing could defend.
+    if len(offers) >= 3:
         check(len(cats) >= 2, f"{name}: offers not all one kind",
               f"{len(offers)} offers, categories={sorted(cats) or '(none set)'}")
 

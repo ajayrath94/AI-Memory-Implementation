@@ -62,6 +62,7 @@ class Offer:
     category: str = ""
     cluster_id: Optional[str] = None
     artefact: Optional[Dict] = None
+    why_now: str = ""            # why this one suits this moment
 
     def __str__(self) -> str:
         s = self.what
@@ -217,10 +218,19 @@ def _fits(when: str, window, now_min: Optional[int]) -> bool:
         # And the window must actually end at a meal. The last stretch of
         # her day ends at bedtime, so idli sambar was offered at nine at
         # night, an hour after dinner.
-        if "meal" not in (window.before or "").lower() and (window.before or "").lower() not in ("breakfast", "lunch", "dinner"):
+        # By the kind of what ends the window, not by its name: "dopahar ka
+        # khana" contains neither "lunch" nor "meal", so for anyone whose
+        # meals are not named in English no food offer ever fitted.
+        if getattr(window, "before_kind", "") != "meal" and \
+                "meal" not in (window.before or "").lower() and \
+                (window.before or "").lower() not in ("breakfast", "lunch", "dinner"):
             return False
         return (window.ends - now_min) <= 90
     return True
+
+
+# Categories whose interests are served as named and never expanded.
+_FULFIL_ONLY = {"bhakti"}
 
 
 def candidates(user_id: str, window=None, now_min: Optional[int] = None,
@@ -241,9 +251,14 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
     # Strongest first, and a thing she adopted this week is a poor reason:
     # "because of Kishore Kumar" is a connection she would recognise, and
     # "because of a song you heard on Tuesday" is not.
+    # Faith is fulfil-only: serve what she named, never expand around it.
+    # artefacts.py says so and has no fetcher for it on purpose, but this
+    # path expanded it anyway, and a Tamil woman whose devotion is the
+    # Suprabhatam was offered a Hindustani thumri "because of Suprabhatam".
     seeds = sorted(
         [v for k, v in mine.items()
-         if k not in routine and v["strength"] >= 0.5],
+         if k not in routine and v["strength"] >= 0.5
+         and (v.get("category") or "") not in _FULFIL_ONLY],
         key=lambda v: -v["strength"])[:8]
 
     from memory.artefacts import adjacent
@@ -312,6 +327,163 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
     return out
 
 
+def _offered_kinds_today(user_id: str) -> Dict[str, int]:
+    """How many offers of each category have reached her today.
+
+    Read from suggestions by cluster, then mapped to the cluster's category,
+    since the category is not stored on the suggestion itself.
+    """
+    out: Dict[str, int] = {}
+    try:
+        rows = (_db().table("suggestions").select("cluster_id")
+                .eq("user_id", user_id).eq("intent", "recommendation")
+                .gte("created_at", date.today().isoformat())
+                .limit(50).execute()).data or []
+        if not rows:
+            return out
+        by_id = {v.get("id"): v.get("category") or ""
+                 for v in hers(user_id).values()}
+        for r in rows:
+            cat = by_id.get(r.get("cluster_id"), "")
+            if cat:
+                out[cat] = out.get(cat, 0) + 1
+    except Exception as e:
+        print(f"[Offers] today's kinds read failed: {e}")
+    return out
+
+
+# Each offer of a kind already made today multiplies its weight by this.
+_REPEAT_PENALTY = 0.3
+
+# How many kinds to try before deciding nothing suits. Each try is one
+# model call, and only inside an open window.
+_KINDS_TO_TRY = 3
+
+
+def _kinds_in_order(user_id: str, pool: List[Offer],
+                    now_min: Optional[int]) -> List[List[Offer]]:
+    """The pool split by category, best-suited to this hour first."""
+    by_kind: Dict[str, List[Offer]] = {}
+    for o in pool:                        # strength order kept inside a kind
+        by_kind.setdefault(o.category or "", []).append(o)
+    if len(by_kind) == 1 or now_min is None:
+        return list(by_kind.values())[:_KINDS_TO_TRY]
+
+    try:
+        from memory.affinity import weights, describe
+        w = weights(user_id, now_min)
+        print(f"[Affinity] {user_id}: {describe(user_id, now_min)}")
+    except Exception as e:
+        print(f"[Affinity] read failed, strength order only: {e}")
+        w = {}
+    done = _offered_kinds_today(user_id)
+
+    def score(kind):
+        return w.get(kind, 0.3) * (_REPEAT_PENALTY ** done.get(kind, 0))
+
+    order = sorted(by_kind, key=lambda k: -score(k))
+    print(f"[Offers] {user_id}: kinds for this hour: "
+          + ", ".join(f"{k or '?'} {score(k):.2f}" for k in order))
+    return [by_kind[k] for k in order[:_KINDS_TO_TRY]]
+
+
+def _pick_for_moment(user_id: str, pool: List[Offer], window,
+                     now_min: Optional[int]) -> Optional[Offer]:
+    """One of these that suits this moment, with why. Or None."""
+    if not pool:
+        return None
+    if window is None or now_min is None:
+        return pool[0]
+
+    said = []
+    try:
+        from memory.windows import _said_today
+        said = [x for x in (_said_today(user_id) or []) if x][-3:]
+    except Exception:
+        pass
+
+    def hm(m):
+        return f"{m // 60:02d}:{m % 60:02d}"
+
+    # Who they are, so "the same tradition" means theirs. Without it a Tamil
+    # Carnatic listener was given a Hindi Hanuman Chalisa, and the reason
+    # offered was that she had said "Saaptachu", in Tamil.
+    who = ""
+    try:
+        from memory.declared import get_declared
+        d = get_declared(user_id)
+        loves = ", ".join(v["label"] for v in sorted(
+            hers(user_id).values(), key=lambda v: -v["strength"])[:5])
+        who = (f"\nThey live in {d.place.home or 'India'} and speak "
+               f"{d.language.pref}. What they love: {loves}.")
+    except Exception as e:
+        print(f"[Offers] who-they-are read failed: {e}")
+
+    # And what today is. Navratri morning, pooja being prepared, and a
+    # romantic film duet went out.
+    day = ""
+    try:
+        from memory.festivals import today as _festival_today
+        f = _festival_today()
+        if f and f.get("name"):
+            day = (f"\nToday is {f['name']}"
+                   + (", a fasting day" if f.get("fasting") else "") + ".")
+    except Exception:
+        pass
+
+    left = max(0, window.ends - now_min)
+    listing = "\n".join(
+        f"{i}. {o.what}  (they love {o.because}; suggested as {o.when})"
+        for i, o in enumerate(pool, 1))
+    heard = ("\nWhat they have said today:\n" +
+             "\n".join(f"  - {x[:120]}" for x in said)) if said else ""
+
+    prompt = f"""It is {hm(now_min)}. An older person is free now for about {left} minutes.{who}{day}
+They have just finished: {window.after or 'nothing in particular'}.
+Next in their day: {window.before or 'bed'}.{heard}
+
+Things they might enjoy, each connected to something they love:
+{listing}
+
+Which ONE suits this exact moment best? Think about the hour, how long they
+have, what they have just finished and what comes next. A romantic or
+late-night song belongs to the evening; something that needs other people
+needs company they have; a full film needs two free hours; a dish belongs
+before a meal, not after; after a rest, something gentle. If something they
+said today points to one, that one.
+
+Their own tradition: a song, dish or film from a different region, language
+or style of music than the ones they love does not fit, however famous.
+On a festival or fasting day, respect it.
+Only something they can actually listen to, watch, cook or do. A past
+event, a famous innings or a memory is not something to offer.
+
+If none of them truly suits this moment, answer 0. An offer that does not
+fit is worse than none.
+
+JSON only: {{"pick": <number or 0>, "why": "<one short reason, in English>"}}"""
+
+    try:
+        from llm import ask
+        import json as _j
+        raw = (ask(prompt, max_tokens=120) or "").replace("```json", "").replace("```", "")
+        got = _j.loads(raw[raw.find("{"):raw.rfind("}") + 1])
+        n = int(got.get("pick") or 0)
+        if 1 <= n <= len(pool):
+            o = pool[n - 1]
+            o.why_now = str(got.get("why") or "").strip()[:200]
+            print(f"[Offers] {user_id}: for {window.clock()} at {hm(now_min)} "
+                  f"-> {o.what} ({o.why_now})")
+            return o
+        print(f"[Offers] {user_id}: nothing of {len(pool)} suits "
+              f"{window.clock()} at {hm(now_min)}")
+        return None
+    except Exception as e:
+        # The model is down: fall back to the strongest, as before.
+        print(f"[Offers] moment pick failed, taking the strongest: {e}")
+        return pool[0]
+
+
 def choose(user_id: str, window=None, now_min: Optional[int] = None) -> Optional[Offer]:
     """One thing to show her, with something she can act on. Or None.
 
@@ -322,11 +494,25 @@ def choose(user_id: str, window=None, now_min: Optional[int] = None) -> Optional
     if not pool:
         return None
 
-    # Weighted towards the first few — they come from her strongest
-    # interests — without always being the same one.
-    top = pool[:6]
-    weights = [max(1, len(top) - i) for i in range(len(top))]
-    offer = random.choices(top, weights=weights, k=1)[0]
+    # Which KIND of thing first: what suits this hour for this person, and
+    # less of what she has already been offered today.
+    #
+    # The hour comes from affinity.py: a default map (films and ghazals in
+    # the evening, a dish before a meal, gardening in the morning) that her
+    # own "not now"s and yeses reshape over the weeks. Already-offered
+    # kinds are pushed down hard, so a second offer is a different kind
+    # unless nothing else suits the hour at all — the top six used to be
+    # one category every time, because the pool is ordered by the strength
+    # of the interest it came from.
+    offer = None
+    for kind_pool in _kinds_in_order(user_id, pool, now_min):
+        offer = _pick_for_moment(user_id, kind_pool[:10], window, now_min)
+        if offer is not None:
+            break
+    if offer is None:
+        # Nothing suits this stretch. Silence is the right answer; the
+        # next window may suit something.
+        return None
 
     try:
         from memory.artefacts import fetch_artefact
@@ -380,9 +566,18 @@ def hint(offer: Offer) -> str:
     if not offer:
         return ""
 
-    line = (f"\n\nOffer {offer.what}. That one and nothing else — do not "
-            f"name any other artist, film or dish, whatever else you know "
-            f"they like, and do not credit it to anyone else.")
+    # The one thing, plus the one interest it comes from and nothing else.
+    # This used to forbid naming "any other artist" and then ask for the
+    # reason, which IS another artist: told both, the composer said neither
+    # and wrote "Ismail, Ranjish Hi Sahi suniye." and nothing more.
+    allowed = f" apart from {offer.because}, which is the reason" if offer.because else ""
+    line = (f"\n\nOffer {offer.what}. That one thing only: name no other "
+            f"artist, film or dish{allowed}, whatever else you know they "
+            f"like, and do not credit it to anyone else."
+            f"\nTwo or three sentences, warm, like a friend who thought of "
+            f"them: what it is, and why now. A bare title is not an offer."
+            f"\nNever claim it is on, playing or happening right now; you "
+            f"cannot know that.")
 
     if offer.because:
         # Describe the RELATION, not the geometry. "Sits next to it" is how
@@ -394,13 +589,31 @@ def hint(offer: Offer) -> str:
                  f"'similar', 'related' or 'you might also like', and do not "
                  f"describe one as being near or next to the other.")
 
-    if offer.artefact:
+    if getattr(offer, "why_now", ""):
+        # Why now, from whoever chose it. Context for the composer, in
+        # English, never a sentence to reuse.
+        line += (f"\nWhy it suits this moment: {offer.why_now}. Let that "
+                 f"shape what you say, in your own words.")
+
+    if offer.artefact and offer.artefact.get("kind") == "tip":
+        # A tip is a paragraph of search-answer text with no link, and it
+        # was presented as "something she can tap", so the composer pasted
+        # it whole: "Arre suno na! Ludo mein jeetne ke liye...".
+        tip = str(offer.artefact.get("title") or "")[:200]
+        if tip:
+            line += (f"\nBackground you may draw on, never quote: {tip}")
+    elif offer.artefact:
         title = str(offer.artefact.get("title") or "")[:120]
         url = offer.artefact.get("url") or ""
         if title:
-            line += (f"\nThere is something they can tap: \"{title}\""
-                     + (f" — {url}" if url else "")
-                     + ". Offer that, in one line.")
+            # The app shows the link with its own title. The composer gets
+            # only the fact that there is one: given the title, it copied
+            # it, and a YouTube title is whatever the uploader wrote —
+            # "পুরানো সেই দিনের/Purano Sei..." landed in Bengali script
+            # inside an English message to someone who reads English.
+            line += (f"\nThere is a link they can tap to play it; the app "
+                     f"shows it under your message. Call it {offer.what} as "
+                     f"written here, and do not repeat the link or its title.")
 
     return line
 

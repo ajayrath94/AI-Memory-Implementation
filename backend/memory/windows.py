@@ -39,6 +39,16 @@ from typing import Dict, List, Optional
 # her two morning tablets are twenty minutes apart and that is not a window.
 NARROWEST = 75
 
+# Free time shorter than this is not worth offering anything into.
+SHORTEST_FREE = 60
+
+# How far ahead "I'm busy" reaches when they are not inside a window yet.
+SHUT_AHEAD_MIN = 90
+
+# How long an event keeps someone occupied when nothing better is known.
+# Used only when the model cannot be asked.
+_DEFAULT_SPAN = {"meal": 45, "medication": 10, "routine": 30}
+
 # A window she is inside right now, with this much left in it, is still
 # usable. Less than that and the next thing is nearly here.
 LEAVE_ALONE_AT_THE_END = 20
@@ -53,6 +63,8 @@ class Window:
     open: bool = True
     why_shut: str = ""
     said: str = ""               # what she said that bears on it
+    after_kind: str = ""         # meal, routine, medication, wake
+    before_kind: str = ""        # what the window ends at, by kind
 
     @property
     def minutes(self) -> int:
@@ -250,7 +262,12 @@ One word."""
             from memory.day import _mins_now
             now = _mins_now(user_id)
             for w in windows_today(user_id, read_her_words=False):
-                if w.holds(now) or w.starts >= now:
+                # The stretch they are in, or one about to start. Not the
+                # next one whenever it is: "Had breakfast, running late" at
+                # 07:45 shut Rupa's 18:35 evening, because her working day
+                # leaves nothing between the two. Running late this morning
+                # says nothing about tonight.
+                if w.holds(now) or now <= w.starts <= now + SHUT_AHEAD_MIN:
                     shut_window(user_id, w.starts, said[:120], now)
                     break
         except Exception as e:
@@ -258,6 +275,92 @@ One word."""
         return "busy"
     print(f"[Windows] neither ({a[:12]!r}): {said[:50]!r}")
     return ""
+
+
+# ── how long each thing takes ────────────────────────────────────────────────
+#
+# A window used to open thirty minutes after every event, whatever it was.
+# So a nap at 14:00 was over by 14:30 and Kamala was offered a raga in the
+# middle of it; and "Leave for office" at 08:30 was over by 09:00, which
+# turned Rupa's whole working day into two free windows. Nothing in a
+# schedule says how long anything lasts, so it is asked once per day's
+# shape and remembered: a nap is an hour or two, a namaz twenty minutes,
+# and leaving for work lasts until coming home.
+
+_SPANS: Dict[tuple, Dict[str, object]] = {}
+
+
+def _spans(points: List[Dict]) -> Dict[str, object]:
+    """label -> minutes, or the label of the event that ends it."""
+    labels = [p for p in points if p.get("kind") not in ("wake", "sleep")]
+    key = tuple((p["at"], str(p.get("label") or "")) for p in labels)
+    if key in _SPANS:
+        return _SPANS[key]
+
+    listing = "\n".join(f"  {p['at'] // 60:02d}:{p['at'] % 60:02d}  {p.get('label')}"
+                        f"  ({p.get('kind') or 'routine'})" for p in labels)
+    prompt = f"""This is one person's day, in order:
+
+{listing}
+
+For each item, how long does it keep them busy, so that they are not free
+for anything else? Answer in minutes. If an item lasts until another item
+in the list (leaving for work lasts until coming home from work), name that
+item instead.
+
+Be realistic for an older person: a meal is about 45 minutes, a tablet is a
+few minutes, a prayer is about 20, an afternoon rest is one to two hours.
+
+JSON only, every item, using the label exactly as written:
+{{"<label>": 45, "<label>": "until <other label>"}}"""
+
+    out: Dict[str, object] = {}
+    try:
+        from llm import ask
+        import json as _j
+        raw = (ask(prompt, max_tokens=400) or "")
+        raw = raw.replace("```json", "").replace("```", "").strip()
+        got = _j.loads(raw[raw.find("{"):raw.rfind("}") + 1])
+        names = {str(p.get("label") or "") for p in labels}
+        for k, v in (got or {}).items():
+            if k not in names:
+                continue
+            if isinstance(v, (int, float)) and 0 < v <= 12 * 60:
+                out[k] = int(v)
+            elif isinstance(v, str) and v.lower().startswith("until"):
+                other = v[5:].strip(" :")
+                if other in names and other != k:
+                    out[k] = other
+    except Exception as e:
+        print(f"[Windows] span read failed, using defaults: {e}")
+
+    for p in labels:
+        lab = str(p.get("label") or "")
+        out.setdefault(lab, _DEFAULT_SPAN.get(p.get("kind") or "", 30))
+    shown = ", ".join(f"{k}={v}" for k, v in out.items())
+    print(f"[Windows] spans: {shown}")
+    _SPANS[key] = out
+    return out
+
+
+def _busy(points: List[Dict]) -> List[tuple]:
+    """(start, end, label) for each event, with its real length."""
+    spans = _spans(points)
+    at_of = {str(p.get("label") or ""): p["at"] for p in points}
+    out = []
+    for p in points:
+        if p.get("kind") in ("wake", "sleep"):
+            continue
+        lab = str(p.get("label") or "")
+        v = spans.get(lab, 30)
+        if isinstance(v, str):
+            end = at_of.get(v, p["at"] + 30)
+            if end <= p["at"]:
+                end = p["at"] + 30
+        else:
+            end = p["at"] + int(v)
+        out.append((p["at"], end, lab, p.get("kind") or ""))
+    return sorted(out)
 
 
 def _her_day(user_id: str) -> List[Dict]:
@@ -412,20 +515,19 @@ def windows_today(user_id: str, read_her_words: bool = True) -> List[Window]:
     points.append({"at": sleep, "label": "bed", "kind": "sleep"})
     points.sort(key=lambda x: x["at"])
 
+    # The free stretches are what is left of her waking day once each
+    # event has taken the time it really takes. An event inside another's
+    # span (lunch at her desk during the working day) changes nothing.
+    busy = _busy(points)
     out: List[Window] = []
-    for a, b in zip(points, points[1:]):
-        gap = b["at"] - a["at"]
-        if gap < NARROWEST:
-            # Her two morning tablets are twenty minutes apart. That is not
-            # a window, it is the space between two tablets.
-            continue
-        out.append(Window(
-            # Not the instant the last thing finished — she is still eating.
-            starts=a["at"] + 30,
-            ends=b["at"],
-            after=str(a.get("label") or a.get("kind") or ""),
-            before=str(b.get("label") or b.get("kind") or ""),
-        ))
+    cursor, after, after_kind = wake, "waking", "wake"
+    for start, end, label, kind in busy + [(sleep, sleep, "bed", "sleep")]:
+        if start - cursor >= SHORTEST_FREE:
+            out.append(Window(starts=cursor, ends=start,
+                              after=after, before=label,
+                              after_kind=after_kind, before_kind=kind))
+        if end > cursor:
+            cursor, after, after_kind = end, label, kind
 
     # What she has said she is doing, as written down — not re-derived
     # from a flat list of her messages every call. A shut window lasts

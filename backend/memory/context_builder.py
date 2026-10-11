@@ -560,8 +560,17 @@ def compose(user_id: str, intent: str = "check_in",
     # And brevity. Gemini writes considerably longer than Haiku did — "bahut
     # pyaari good morning aapko, aaj subah ki puja ke baad..." where the
     # earlier version managed a line. She is reading this on a phone.
-    task = task + ("\nTwo short sentences at most. Shorter is better; she "
-                   "reads this on a phone, not on a page.")
+    if intent == "recommendation":
+        # An offer is the one message that has to carry something: what the
+        # thing is and why it suits now. Under "shorter is better" on the
+        # lite model it came out as a bare title, "Ismail, Ranjish Hi Sahi
+        # suniye.", which is a command, not an offer.
+        task = task + ("\nTwo or three short sentences: what it is, and why "
+                       "it suits them right now. Warm, like a friend who "
+                       "thought of them. A bare title is not an offer.")
+    else:
+        task = task + ("\nTwo short sentences at most. Shorter is better; "
+                       "she reads this on a phone, not on a page.")
 
     # WHAT DAY IT IS. The composer had her whole life in front of it and no
     # anchor for now — so "temple visits for festivals like Janmashtami", a
@@ -640,7 +649,7 @@ def compose(user_id: str, intent: str = "check_in",
 {blocks}
 
 RULES:
-- One or two sentences. Not a speech.
+- Short. Not a speech.
 - Say something only THIS person would hear — their routine, what they told
   you, what they like. Everything you mention must appear above.
 - NEVER name a person who is not in the context above. A thin profile is
@@ -674,8 +683,13 @@ Write only the message. No preamble, no quotation marks."""
     try:
         import anthropic
         client = __import__("llm").client()
+        # The full model for an offer, the lite one for everything else.
+        # Offers are two or three a day; a bare title costs more than the
+        # tokens.
+        _use = (__import__("llm").model(__import__("llm").SONNET)
+                if intent == "recommendation" else _MODEL)
         resp = client.messages.create(
-            model=_MODEL, max_tokens=200,
+            model=_use, max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip().strip('"')

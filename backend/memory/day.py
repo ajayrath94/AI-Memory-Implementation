@@ -364,23 +364,28 @@ def _said_since(user_id: str, ev: Dict) -> str:
 
 {chr(10).join('- ' + s for s in said[-12:])}
 
-Is any of it about the {label} that is COMING UP — something she has
-already decided or already done about it?
+Is any of it about their {label} TODAY: something they did, skipped,
+or decided about it?
+
+This is the {label} itself, not anything else that happened near it. The
+question is asked once that {label} is due or past, so it must actually be
+about it.
 
 Reply with that line exactly as written, or NONE.
 
 Yes:
-  "aaj lunch mein khichdi banaungi"     she has decided lunch
-  "shaam ko sair nahi jaungi"           she has decided the walk
-  "mandir ho aayi"                      she has done the puja
+  "aaj lunch mein khichdi banaungi"     they decided this lunch
+  "shaam ko sair nahi jaungi"           they decided the walk
+  "mandir ho aayi"                      they did the puja
 
 No:
-  "aloo ke parathe khaye"               a meal she ate, not this one
+  "aloo ke parathe khaye"               a different meal, not this one
   "aj lunch k liye toh pucha nai"       asking to be asked
-  "thak gayi hoon"                      about her, not about this
+  "thak gayi hoon"                      about how they feel
+  "thodi neend aa rahi hai"             about resting, not about this
 
-Her own words count — sair is the walk, vrat is the fast. But food is not
-lunch and a walk she took yesterday is not tonight's.
+Their own words count: sair is the walk, vrat is the fast. But any food is
+not this meal, and a nap in the afternoon says nothing about dinner.
 
 One line, nothing else."""
     try:
@@ -481,8 +486,10 @@ def boundary_hint(user_id: str, b: Dict) -> str:
             # boundary and this one is what happened.
             parts.append(
                 f"About their {label}, they already said: \"{window_said}\"\n"
-                f"So do NOT ask how it went. Respond to what they actually "
-                f"said, and do not go silent either: saying nothing after "
+                f"So do NOT ask how it went. Respond to what they said, in "
+                f"your own words, and do not repeat their words back to them: "
+                f"quoting someone hours later reads as a machine, not a "
+                f"friend. Do not go silent either; saying nothing after "
                 f"someone tells you something is its own answer."
             )
         else:

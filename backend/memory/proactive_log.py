@@ -41,8 +41,13 @@ def log_decision(decision: dict, sources: dict = None) -> dict:
 
     action = decision.get("action", "UNKNOWN")
     outcome = "suppressed" if action == "SILENCE" else "decided"
-    idem = _idem_key(decision.get("user_id", ""), action,
-                     str(decision.get("detail") or ""))
+    # A medication reminder is one per DOSE. Keyed on the drug alone, a drug
+    # taken twice a day collided with itself: Metformin at 08:00 logged, and
+    # Metformin at 20:00 was suppressed as its duplicate, every day.
+    key_detail = str(decision.get("detail") or "")
+    if decision.get("dose_at"):
+        key_detail = f"{key_detail}@{decision['dose_at']}"
+    idem = _idem_key(decision.get("user_id", ""), action, key_detail)
 
     row = {
         "user_id":        decision.get("user_id"),
@@ -78,7 +83,12 @@ def record_outcome(event_id: str, outcome: str) -> bool:
     """
     from supabase_store import get_client
     valid = {"delivered", "engaged", "dismissed", "ignored"}
-    if outcome not in valid:
+    # The scheduler stamps "held:<reason>" when cadence stops a message, and
+    # this used to refuse it. So a held offer stayed "decided", identical to
+    # one that was never attempted, and 44 decided against 3 delivered on
+    # one day said nothing about why.
+    held = outcome.startswith("held:")
+    if outcome not in valid and not held:
         return False
     stamp = {"outcome": outcome}
     if outcome == "delivered":
