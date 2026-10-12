@@ -41,6 +41,7 @@ kind of day it had been, what it was expanded from. In a month that says
 whether new things land in the afternoon and not at breakfast, or whether
 she takes up music and never films.
 """
+import os
 import random
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -506,6 +507,114 @@ def _title_matches(what: str, found: str) -> bool:
     return len(extra) <= 2
 
 
+def _hm(m: int) -> str:
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def user_context(user_id: str, window=None, now_min: Optional[int] = None) -> Dict:
+    """Everything the choice should know, in one structure.
+
+    Who they are, what they love, and where they are in their day. Built
+    in one place so the picker sees all of it every time, and so it can be
+    printed and read: the sentences this replaced had grown one fact at a
+    time and left out the ones that mattered most for food, her conditions
+    and her diet, so a fried sweet went to a woman on BP tablets.
+
+    Every part is best effort. A part that cannot be read is left out, not
+    guessed.
+    """
+    ctx: Dict = {"person": {}, "loves": [], "today": {}}
+
+    # ── who ──
+    try:
+        from memory.declared import get_declared
+        d = get_declared(user_id)
+        ctx["person"].update({
+            "name": d.name,
+            "lives_in": d.place.home,
+            "currently_in": d.place.current if d.place.away else None,
+            "speaks": d.language.pref,
+        })
+        meals = getattr(d.rhythm, "meals", None) or {}
+        if meals:
+            ctx["person"]["meals"] = meals
+    except Exception as e:
+        print(f"[Offers] declared read failed: {e}")
+    try:
+        from memory.profile_store import get_user_profile
+        p = get_user_profile(user_id) or {}
+        demo = p.get("demographics") or {}
+        health = p.get("health") or {}
+        culture = p.get("cultural_context") or {}
+        for k, v in (("age", demo.get("age")), ("gender", demo.get("gender")),
+                     ("diet", demo.get("diet")),
+                     ("religion", culture.get("religion")),
+                     ("region", culture.get("region")),
+                     ("health_conditions", health.get("conditions")),
+                     ("medications", health.get("medications"))):
+            if v:
+                ctx["person"][k] = v
+    except Exception as e:
+        print(f"[Offers] profile read failed: {e}")
+    ctx["person"] = {k: v for k, v in ctx["person"].items() if v}
+
+    # ── what they love ──
+    try:
+        ctx["loves"] = [
+            {"what": v["label"], "kind": v.get("category") or "",
+             "strength": round(float(v.get("strength") or 0), 2)}
+            for v in sorted(hers(user_id).values(),
+                            key=lambda v: -float(v.get("strength") or 0))[:10]]
+    except Exception as e:
+        print(f"[Offers] interests read failed: {e}")
+
+    # ── where they are in their day ──
+    t = ctx["today"]
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from memory.declared import get_declared
+        tz = ZoneInfo(get_declared(user_id).place.timezone or "Asia/Kolkata")
+        t["day"] = datetime.now(tz).strftime("%A")
+    except Exception:
+        pass
+    if now_min is not None:
+        t["time"] = _hm(now_min)
+        try:
+            from memory.affinity import slot_of
+            t["part_of_day"] = slot_of(now_min)
+        except Exception:
+            pass
+    if window is not None:
+        t["free_for_minutes"] = max(0, window.ends - (now_min or window.starts))
+        t["just_finished"] = window.after or None
+        t["next"] = window.before or "bed"
+    try:
+        from memory.festivals import today as _festival_today
+        f = _festival_today()
+        if f and f.get("name"):
+            t["festival"] = f["name"]
+            if f.get("fasting"):
+                t["fasting_day"] = True
+    except Exception:
+        pass
+    try:
+        from memory.windows import _said_today
+        said = [x[:120] for x in (_said_today(user_id) or []) if x][-3:]
+        if said:
+            t["they_said_today"] = said
+    except Exception:
+        pass
+    try:
+        done = _offered_kinds_today(user_id)
+        if done:
+            t["already_offered_today"] = done
+    except Exception:
+        pass
+    ctx["today"] = {k: v for k, v in t.items() if v not in (None, "", [], {})}
+    return ctx
+
+
 def _pick_for_moment(user_id: str, pool: List[Offer], window,
                      now_min: Optional[int]) -> Optional[Offer]:
     """One of these that suits this moment, with why. Or None."""
@@ -514,88 +623,54 @@ def _pick_for_moment(user_id: str, pool: List[Offer], window,
     if window is None or now_min is None:
         return pool[0]
 
-    said = []
-    try:
-        from memory.windows import _said_today
-        said = [x for x in (_said_today(user_id) or []) if x][-3:]
-    except Exception:
-        pass
+    import json as _j
+    ctx = user_context(user_id, window, now_min)
+    ctx["options"] = [
+        {"n": i, "what": o.what, "kind": o.category or "",
+         "connected_to": o.because or "", "suits": o.when}
+        for i, o in enumerate(pool, 1)]
+    if os.getenv("OFFERS_DEBUG"):
+        print("[Offers] context:\n" + _j.dumps(ctx, ensure_ascii=False, indent=2))
 
-    def hm(m):
-        return f"{m // 60:02d}:{m % 60:02d}"
+    prompt = f"""You choose ONE thing to suggest to an older person right now, or nothing.
+Everything known about them and their day, as JSON:
 
-    # Who they are, so "the same tradition" means theirs. Without it a Tamil
-    # Carnatic listener was given a Hindi Hanuman Chalisa, and the reason
-    # offered was that she had said "Saaptachu", in Tamil.
-    who = ""
-    try:
-        from memory.declared import get_declared
-        d = get_declared(user_id)
-        loves = ", ".join(v["label"] for v in sorted(
-            hers(user_id).values(), key=lambda v: -v["strength"])[:5])
-        who = (f"\nThey live in {d.place.home or 'India'} and speak "
-               f"{d.language.pref}. What they love: {loves}.")
-    except Exception as e:
-        print(f"[Offers] who-they-are read failed: {e}")
+{_j.dumps(ctx, ensure_ascii=False)}
 
-    # And what today is. Navratri morning, pooja being prepared, and a
-    # romantic film duet went out.
-    day = ""
-    try:
-        from memory.festivals import today as _festival_today
-        f = _festival_today()
-        if f and f.get("name"):
-            day = (f"\nToday is {f['name']}"
-                   + (", a fasting day" if f.get("fasting") else "") + ".")
-    except Exception:
-        pass
+Choose the option that best suits THIS person at THIS moment:
 
-    left = max(0, window.ends - now_min)
-    listing = "\n".join(
-        f"{i}. {o.what}  (they love {o.because}; suggested as {o.when})"
-        for i, o in enumerate(pool, 1))
-    heard = ("\nWhat they have said today:\n" +
-             "\n".join(f"  - {x[:120]}" for x in said)) if said else ""
+- The moment: the time and part of day, how long they are free, what they
+  just finished and what is next. A romantic or late-night song belongs to
+  the evening; a full film needs two free hours; a dish belongs before a
+  meal, not after; after a rest, something gentle. If something they said
+  today points to one, that one.
+- Their health: a dish must suit their conditions, medicines and diet. With
+  blood pressure, diabetes or heart trouble, nothing fried, very sweet, very
+  salty or rich. Vegetarian means vegetarian. When unsure, the lighter one.
+- Their world: songs, films, prayers and dishes from their own region,
+  language and tradition, whatever else is famous.
+- The day: respect a festival or a fasting day.
+- Variety: prefer a kind not already offered today.
+- Real: only something they can actually listen to, watch, cook or do now.
+  A past event, a famous innings or a memory is not something to offer.
 
-    prompt = f"""It is {hm(now_min)}. An older person is free now for about {left} minutes.{who}{day}
-They have just finished: {window.after or 'nothing in particular'}.
-Next in their day: {window.before or 'bed'}.{heard}
+If none truly suits, answer 0. An offer that does not fit is worse than none.
 
-Things they might enjoy, each connected to something they love:
-{listing}
-
-Which ONE suits this exact moment best? Think about the hour, how long they
-have, what they have just finished and what comes next. A romantic or
-late-night song belongs to the evening; something that needs other people
-needs company they have; a full film needs two free hours; a dish belongs
-before a meal, not after; after a rest, something gentle. If something they
-said today points to one, that one.
-
-Their own tradition: a song, dish or film from a different region, language
-or style of music than the ones they love does not fit, however famous.
-On a festival or fasting day, respect it.
-Only something they can actually listen to, watch, cook or do. A past
-event, a famous innings or a memory is not something to offer.
-
-If none of them truly suits this moment, answer 0. An offer that does not
-fit is worse than none.
-
-JSON only: {{"pick": <number or 0>, "why": "<one short reason, in English>"}}"""
+JSON only: {{"pick": <n or 0>, "why": "<one short reason, in English>"}}"""
 
     try:
         from llm import ask
-        import json as _j
         raw = (ask(prompt, max_tokens=120) or "").replace("```json", "").replace("```", "")
         got = _j.loads(raw[raw.find("{"):raw.rfind("}") + 1])
         n = int(got.get("pick") or 0)
         if 1 <= n <= len(pool):
             o = pool[n - 1]
             o.why_now = str(got.get("why") or "").strip()[:200]
-            print(f"[Offers] {user_id}: for {window.clock()} at {hm(now_min)} "
+            print(f"[Offers] {user_id}: for {window.clock()} at {_hm(now_min)} "
                   f"-> {o.what} ({o.why_now})")
             return o
         print(f"[Offers] {user_id}: nothing of {len(pool)} suits "
-              f"{window.clock()} at {hm(now_min)}")
+              f"{window.clock()} at {_hm(now_min)}")
         return None
     except Exception as e:
         # The model is down: fall back to the strongest, as before.
