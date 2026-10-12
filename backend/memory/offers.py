@@ -290,6 +290,22 @@ JSON only: {{"langs": ["tamil", "sanskrit"]}}  (lowercase, one word each)""",
     return out
 
 
+_FAST_TODAY: Dict[tuple, bool] = {}
+
+
+def _keeping_fast(user_id: str) -> bool:
+    """A fasting festival she keeps is running today. Cached for the day."""
+    key = (user_id, date.today().isoformat())
+    if key not in _FAST_TODAY:
+        try:
+            from memory.festival_brief import for_user
+            f = for_user(user_id)
+            _FAST_TODAY[key] = bool(f and f.get("fasting") and f.get("she_keeps_it"))
+        except Exception:
+            _FAST_TODAY[key] = False
+    return _FAST_TODAY[key]
+
+
 def candidates(user_id: str, window=None, now_min: Optional[int] = None,
                rings: int = RINGS) -> List[Offer]:
     """Everything she could be shown, nearest first.
@@ -383,6 +399,15 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
                 # Its own kind where the generator gave one, the interest's
                 # where it did not (older cached rings).
                 kind = item.get("kind") or seed["category"]
+
+                # During a fast she keeps, food comes only from the fasting
+                # question, which is asked of her food interests. Two rings
+                # out from Kishore Kumar the generator offered Rava Idli and
+                # Masala Dosa, reached through a film, and they never passed
+                # the fast.
+                if kind == "khana" and _keeping_fast(user_id) and \
+                        (seed.get("category") or "") != "khana":
+                    continue
 
                 # A dish, not a shop. "Idli Sambar by Murugan Idli Shop" went
                 # out with a shop the generator had borrowed from the song

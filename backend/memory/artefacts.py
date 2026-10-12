@@ -423,6 +423,88 @@ def _dietary(user_id: str) -> str:
     return "; ".join(bits)
 
 
+def _fast_dishes(user_id, label, fast, who, rows, db, cache_key) -> list:
+    """Dishes for a fast she keeps, near what she loves where the fast allows.
+
+    Asked as its own question, then checked: anything that breaks the fast is
+    struck by a second, narrow question, because one grain dish offered during
+    a grain fast costs more trust than nine days of nothing.
+    """
+    import json as _j
+    from llm import ask
+    avoids = fast.get("fast_avoids") or "certain foods"
+    allowed = fast.get("eaten_instead") or ""
+    prompt = f"""Someone elderly in India loves "{label}".{who}
+Today they are keeping the {fast['name']} fast (day {fast.get('day_of')} of {fast.get('days')}).
+The fast avoids: {avoids}.
+People eat instead: {allowed}.
+
+Name three or four dishes they could have TODAY that keep this fast. As close
+to "{label}" as the fast allows — a fasting dish from their own region's
+kitchen if there is one — and otherwise fasting dishes they would know.
+Every dish must be made only from what the fast allows. A dish that
+normally contains anything the fast avoids is not allowed, however it is
+usually served.
+
+Nothing very rich, fried or salty: they are elderly.
+
+JSON only:
+{{"adjacent": [{{"what": "<dish name>", "when": "before_meal", "kind": "khana", "lang": "none"}}]}}"""
+    out = []
+    try:
+        raw = (ask(prompt, max_tokens=300) or "").replace("```json", "").replace("```", "")
+        for x in (_j.loads(raw[raw.find("{"):raw.rfind("}") + 1]).get("adjacent") or []):
+            what = str((x or {}).get("what") or "").strip()[:60]
+            if what:
+                out.append({"what": what, "when": "before_meal",
+                            "kind": "khana", "lang": "none"})
+    except Exception as e:
+        print(f"[Adjacent] fast dishes failed for {label!r}: {e}")
+        return []
+
+    # The check. Narrow on purpose: one question, yes or no per dish.
+    if out:
+        listed = "\n".join(f"{i + 1}. {o['what']}" for i, o in enumerate(out))
+        try:
+            raw = ask(f"""During {fast['name']} a fast avoids: {avoids}.
+What people eat instead: {allowed}.
+
+{listed}
+
+Which of these dishes keep that fast, as they are normally made for it?
+Made from what people eat instead, it keeps it — including the flours and
+millets kept for fasting (kuttu, singhara, rajgira, samak or sama rice,
+sabudana, makhana), even where the word "rice" or "atta" is in the name.
+A dish whose usual recipe contains anything the fast avoids does NOT keep
+it: rice, wheat, semolina, lentil batter, onion, garlic.
+
+Reply with the numbers that keep it, separated by commas, or NONE.""",
+                      max_tokens=20) or ""
+            import re as _re
+            ok = {int(n) - 1 for n in _re.findall(r"\d+", raw)}
+            struck = [o["what"] for i, o in enumerate(out) if i not in ok]
+            if struck:
+                print(f"[Adjacent] struck during {fast['name']}: {struck}")
+            out = [o for i, o in enumerate(out) if i in ok]
+        except Exception as e:
+            print(f"[Adjacent] fast check failed, offering none: {e}")
+            out = []
+
+    out = out[:4]
+    if out and rows:
+        try:
+            a = rows[0].get("attributes")
+            a = a if isinstance(a, dict) else {}
+            a[cache_key] = out
+            db.table("interest_clusters").update(
+                {"attributes": a}).eq("id", rows[0]["id"]).execute()
+        except Exception as e:
+            print(f"[Adjacent] cache write failed: {e}")
+    print(f"[Adjacent] {label} during {fast['name']} -> "
+          + ", ".join(o["what"] for o in out))
+    return out
+
+
 def adjacent(user_id: str, label: str, category: str = "") -> list:
     """Three or four things one step from this. Cached forever.
 
@@ -439,10 +521,13 @@ def adjacent(user_id: str, label: str, category: str = "") -> list:
     # picker, and she would be offered no food at all until Dussehra. Kept
     # under the festival's name, so next year's Navratri starts from it.
     cache_key = "adjacent_v3"
+    fast = None
     if category == "khana":
         try:
             from memory.festival_brief import for_user as _festival_for
             _f = _festival_for(user_id)
+            if _f and _f.get("fasting") and _f.get("she_keeps_it"):
+                fast = _f
             if _f and _f.get("fasting"):
                 cache_key = "adjacent_fast_" + "".join(
                     c for c in _f["name"].lower() if c.isalnum())[:40]
@@ -486,6 +571,14 @@ def adjacent(user_id: str, label: str, category: str = "") -> list:
                f"{d.language.pref}.")
     except Exception:
         pass
+
+    if fast:
+        # Its own question. Asked "what sits next to South Indian food" with
+        # the fast as a footnote, the model answered the question it was
+        # asked — Rava Idli, Maddur Vada, Bisi Bele Bath, every one of them
+        # grain — and the picker rightly refused all three, so a woman keeping
+        # Navratri would have been offered no food for nine days.
+        return _fast_dishes(user_id, label, fast, who, rows, db, cache_key)
 
     prompt = f"""Someone elderly in India likes this: "{label}".{who}
 

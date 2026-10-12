@@ -950,6 +950,15 @@ _TYPE_TO_PILLAR = {
     "place": "GENERAL", "belief": "GENERAL", "other": "GENERAL",
 }
 
+import re as _re_when
+_HAS_WHEN = _re_when.compile(
+    r"\b(raat|rat|subah|subha|savere|shaam|sham|dopahar|kal|aaj|roz|rozana|"
+    r"har\s+\w+|baje|night|morning|evening|afternoon|daily|every|weekend|"
+    r"sunday|monday|tuesday|wednesday|thursday|friday|saturday|"
+    r"ravivar|somvar|mangalvar|budhvar|guruvar|shukravar|shanivar|itvar)\b",
+    _re_when.IGNORECASE)
+
+
 def _extract_propositions(text: str, user_id: str = "") -> list:
     """Extract subject-relation-object propositions. Feeds known entities back in
     so pronouns/roles ('beta','he') resolve to the named person (coreference)."""
@@ -1075,7 +1084,7 @@ RULES:
 Return ONLY a JSON array. Message:
 "{text}"'''
 
-    try:
+    def _once():
         from google import genai
         client = __import__("llm").genai_client()
         resp = client.models.generate_content(
@@ -1083,6 +1092,20 @@ Return ONLY a JSON array. Message:
         raw = (resp.text or "").strip().replace("```json", "").replace("```", "").strip()
         props = json.loads(raw) if raw else []
         return props if isinstance(props, list) else []
+
+    try:
+        props = _once()
+        # Asked the same sentence fifteen times, the lite model said nothing
+        # once — "Kal raat bhi Netflix pe ek film dekhi" came back [] — and in
+        # one test run twice in a row, so a habit she stated plainly was never
+        # learned. An empty answer is often right ("theek hoon"), so this is
+        # not a retry for everything: only when she named a time, which is
+        # exactly the sentence a habit is made of.
+        if not props and _HAS_WHEN.search(text or ""):
+            props = _once()
+            if props:
+                print(f"[Propositions] empty first time, retried: {text[:50]!r}")
+        return props
     except Exception as e:
         print(f"!!! [Propositions] EXTRACTION FAILED: {e}")
         return []
