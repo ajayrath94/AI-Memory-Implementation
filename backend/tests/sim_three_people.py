@@ -282,8 +282,8 @@ def a_day(uid, spec):
     # day is being walked on.
     last_sent = {"min": None}
 
-    def _ledger_on_sim_clock(u):
-        out = dict(real_l(u))
+    def _ledger_on_sim_clock(u, exclude_id=None):
+        out = dict(real_l(u, exclude_id))
         out["minutes_since"] = (D._mins_now(u) - last_sent["min"]
                                 if last_sent["min"] is not None else None)
         return out

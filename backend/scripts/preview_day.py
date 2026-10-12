@@ -39,8 +39,8 @@ def main():
     last = {"min": None}
     offered_windows = set()
 
-    def ledger(u):
-        out = dict(real_l(u))
+    def ledger(u, exclude_id=None):
+        out = dict(real_l(u, exclude_id))
         out["minutes_since"] = (D._mins_now(u) - last["min"]
                                 if last["min"] is not None else None)
         return out

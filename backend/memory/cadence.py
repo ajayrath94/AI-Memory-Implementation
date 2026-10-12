@@ -195,8 +195,17 @@ def budget(user_id: str) -> int:
 
 # ── what has already happened today ───────────────────────────────────────────
 
-def todays_ledger(user_id: str) -> Dict:
-    """What has been sent today, of what kind, and when the last one went."""
+def todays_ledger(user_id: str, exclude_id: Optional[str] = None) -> Dict:
+    """What has been sent today, of what kind, and when the last one went.
+
+    Not the decision being judged, and not anything that was held. The
+    scheduler logs a decision BEFORE asking may_send, so the newest row was
+    always the very message being checked: "only_0m_since_last" on every
+    offer and every check-in, all of them held, while boundaries and
+    reminders (which skip this gate) went out. That was most of the 44
+    decided against 3 delivered. A held message was never sent, so it is
+    not "the last message" either.
+    """
     out = {"count": 0, "kinds": [], "last_at": None, "minutes_since": None}
     try:
         from zoneinfo import ZoneInfo
@@ -204,7 +213,7 @@ def todays_ledger(user_id: str) -> Dict:
         tz = ZoneInfo(get_declared(user_id).place.timezone)
         start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
         rows = (_db().table("proactive_events")
-                .select("action,created_at,delivered_at")
+                .select("id,action,created_at,delivered_at,outcome")
                 .eq("user_id", user_id)
                 # Not filtered on delivered_at. A user with no push token —
                 # Kamala — never had anything marked delivered, so her ledger
@@ -216,6 +225,10 @@ def todays_ledger(user_id: str) -> Dict:
     except Exception as e:
         print(f"[Cadence] ledger failed: {e}")
         return out
+
+    rows = [r for r in rows
+            if r.get("id") != exclude_id
+            and not str(r.get("outcome") or "").startswith("held")]
 
     # Spacing counts EVERYTHING; the budget counts conversation. Two
     # different questions, and conflating them let a recommendation go
@@ -243,7 +256,7 @@ def todays_ledger(user_id: str) -> Dict:
 
 # ── the gate ──────────────────────────────────────────────────────────────────
 
-def may_send(user_id: str, action: str) -> Dict:
+def may_send(user_id: str, action: str, exclude_id: Optional[str] = None) -> Dict:
     """Should this go out? Returns {"allow": bool, "reason": str}.
 
     Care and safety pass unconditionally. Everything else answers to the
@@ -252,7 +265,7 @@ def may_send(user_id: str, action: str) -> Dict:
     if action not in CONVERSATIONAL:
         return {"allow": True, "reason": "not_conversational"}
 
-    led = todays_ledger(user_id)
+    led = todays_ledger(user_id, exclude_id)
     cap = budget(user_id)
 
     if cap == 0:

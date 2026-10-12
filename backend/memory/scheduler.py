@@ -203,7 +203,10 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
                     # composing so a held message costs no model call.
                     try:
                         from memory.cadence import may_send
-                        gate = may_send(uid, action)
+                        # Without its own row: the decision was logged a
+                        # moment ago and must not count as the last message.
+                        gate = may_send(uid, action,
+                                        exclude_id=(logged or {}).get("id"))
                     except Exception as _ge:
                         print(f"[Cadence] gate failed: {_ge}")
                         gate = {"allow": True, "reason": "gate_error"}
