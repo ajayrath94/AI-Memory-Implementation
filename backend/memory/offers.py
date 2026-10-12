@@ -49,7 +49,13 @@ from typing import Dict, List, Optional
 
 # A clear no is permanent. Silence is not a no — she answers two messages a
 # day, and treating that as rejection would empty the world.
-REFUSED = ("declined",)
+#
+# suggestions.py writes "declined_preference" for "not this" and
+# "declined_timing" for "not now". Only "declined" was listed here, a value
+# nothing writes any more, so a "pasand nahi" was never remembered and the
+# same thing could be offered again. "Not now" is not a refusal: the hour
+# was wrong, not the thing, and affinity.py learns from that instead.
+REFUSED = ("declined", "declined_preference")
 
 # How far out to look before the connection is too thin to say "because of".
 RINGS = 2

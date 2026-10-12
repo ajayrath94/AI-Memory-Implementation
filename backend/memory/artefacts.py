@@ -674,8 +674,10 @@ def what_to_offer(user_id: str, picked: dict) -> dict:
             r = str(p.get("reaction") or "")
             if r == "no_response":
                 score -= 0.4           # she let it pass
-            elif r == "declined":
-                score -= 1.0           # she said no
+            elif r in ("declined", "declined_preference"):
+                score -= 1.0           # she said no to the thing
+            # declined_timing: no to the hour, not the thing. No penalty;
+            # affinity.py moves it to a better time instead.
             elif r == "accepted":
                 score += 0.5           # she took it up
         # Whole subjects, not substrings. "dosa" is in her mentions and

@@ -303,7 +303,165 @@ def boundary(user_id: str, now_min: Optional[int] = None) -> Optional[Dict]:
     # would otherwise burn the boundary silently — you trigger something,
     # nothing arrives, and the retry does nothing because it is already spent.
 
+    # Already asked in the chat. The chat asked "nashta ho gaya?" at 09:03
+    # and this asked "nashta kaisa raha?" at 09:08; "lunch ka time ho gaya
+    # kya?" at 13:05 and "lunch kaisa gaya?" at 14:08. The chat and the
+    # boundary did not know about each other. Whatever Nancy has already
+    # said about this part of the day, in any message, counts as asked —
+    # answered or not. One question per meal.
+    asked = _already_raised(user_id, just_done, coming)
+    if just_done.get("id") in asked:
+        print(f"[Day] {user_id}: {just_done.get('label')!r} already raised "
+              f"in chat, no boundary")
+        return None
+    if coming and coming.get("id") in asked:
+        coming = None
+
     return {"done": just_done, "next": coming, "now_min": now_min}
+
+
+# ── what has already been said today ─────────────────────────────────────────
+
+# Event ids found already raised. Only positives are kept: a "not yet" can
+# change by the next tick, an "already asked" cannot.
+_RAISED: set = set()
+
+
+def _at_iso(user_id: str, mins: int) -> str:
+    """A minute of their local day as a UTC timestamp, for querying."""
+    now, _, _ = _today(user_id)
+    t = now.replace(hour=0, minute=0, second=0, microsecond=0) \
+        + timedelta(minutes=max(0, mins))
+    return t.astimezone(timezone.utc).isoformat()
+
+
+def _conversation(user_id: str, since_iso: str) -> List[Dict]:
+    """Both sides since a moment, in order: [{"who", "text", "at"}].
+
+    who is "nancy" for anything Nancy sent (chat replies and proactive
+    messages alike) and "them" for the person.
+    """
+    out: List[Dict] = []
+    try:
+        db = _db()
+        sess = (db.table("sessions").select("id")
+                .eq("user_id", user_id).gte("updated_at", since_iso)
+                .order("updated_at", desc=True).limit(5).execute()).data or []
+        for s in sess:
+            for m in (db.table("messages").select("content,timestamp,role")
+                      .eq("session_id", s["id"]).gte("timestamp", since_iso)
+                      .order("timestamp").execute()).data or []:
+                text = str(m.get("content") or "").strip()
+                if text:
+                    out.append({"who": "nancy" if m.get("role") == "assistant"
+                                else "them",
+                                "text": text, "at": m.get("timestamp") or ""})
+    except Exception as e:
+        print(f"[Day] conversation read failed: {e}")
+    out.sort(key=lambda m: m["at"])
+    _tag_reminders(user_id, since_iso, out)
+    return out
+
+
+def _ts(s) -> Optional[datetime]:
+    try:
+        t = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+        return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _tag_reminders(user_id: str, since_iso: str, convo: List[Dict]) -> None:
+    """Mark Nancy's medication reminders as such, from the decision log.
+
+    "Nashte ke baad goli le lijiye" names breakfast, and the model counted
+    it as having asked about breakfast, which would have cancelled the
+    breakfast check-in on every day with a morning tablet. Which message
+    was a reminder is a fact on record, so it is looked up, not judged.
+    """
+    try:
+        rows = (_db().table("proactive_events").select("created_at,delivered_at")
+                .eq("user_id", user_id).eq("action", "MEDICATION_REMINDER")
+                .gte("created_at", since_iso).execute()).data or []
+    except Exception as e:
+        print(f"[Day] reminder read failed: {e}")
+        return
+    sent = [t for r in rows for t in (_ts(r.get("created_at")), _ts(r.get("delivered_at"))) if t]
+    if not sent:
+        return
+    for m in convo:
+        if m["who"] != "nancy":
+            continue
+        at = _ts(m.get("at"))
+        if at and any(timedelta(minutes=-1) <= at - t <= timedelta(minutes=10)
+                      for t in sent):
+            m["kind"] = "medication"
+
+
+def _transcript(convo: List[Dict], limit: int = 16) -> str:
+    return "\n".join(f"{'COMPANION' if m['who'] == 'nancy' else 'THEM'}: "
+                     f"{m['text'][:300]}" for m in convo[-limit:])
+
+
+def _raised(convo: List[Dict], labels: List[str]) -> set:
+    """Which of these parts of their day the companion has already asked
+    about or brought up in this stretch of conversation. Indices into labels.
+
+    No database: the harness calls this directly with real transcripts.
+    """
+    labels = [l for l in labels if l]
+    # A medication reminder is not a question about the meal it is timed to.
+    convo = [m for m in convo if m.get("kind") != "medication"]
+    if not labels or not any(m["who"] == "nancy" for m in convo):
+        return set()
+    listed = "\n".join(f"{i + 1}. {l}" for i, l in enumerate(labels))
+    prompt = f"""A companion has been talking with someone today. In order:
+
+{_transcript(convo)}
+
+For each of these parts of their day, has the COMPANION already asked about
+it or brought it up: how it went, whether it happened yet, or what they plan
+for it?
+
+{listed}
+
+It counts whether or not they answered. It counts in their own words: nashta
+is breakfast, sair is the walk.
+
+It does not count when the thing is only a time reference inside a message
+about something else: "take your tablet after breakfast" has not asked about
+breakfast.
+
+Reply with the numbers that were asked about or brought up, separated by
+commas, or NONE."""
+    try:
+        from llm import ask
+        got = (ask(prompt, max_tokens=20) or "").strip()
+    except Exception as e:
+        print(f"[Day] raised check failed: {e}")
+        return set()
+    if not got or got.upper().startswith("NONE"):
+        return set()
+    import re
+    return {int(n) - 1 for n in re.findall(r"\d+", got)
+            if 0 < int(n) <= len(labels)}
+
+
+def _already_raised(user_id: str, done: Dict, nxt: Optional[Dict]) -> set:
+    """Event ids among done/nxt that Nancy already asked about in chat, from
+    an hour before the earlier one was due."""
+    evs = [e for e in (done, nxt) if e]
+    out = {e.get("id") for e in evs if e.get("id") in _RAISED}
+    todo = [e for e in evs if e.get("id") not in out]
+    if not todo:
+        return out
+    due = _mins(done.get("due_at"))
+    convo = _conversation(user_id, _at_iso(user_id, (due if due >= 0 else 0) - 60))
+    hit = _raised(convo, [str(e.get("label") or e.get("kind") or "") for e in todo])
+    for i in hit:
+        _RAISED.add(todo[i].get("id"))
+        out.add(todo[i].get("id"))
+    return out
 
 
 
@@ -342,16 +500,7 @@ def _said_since(user_id: str, ev: Dict) -> str:
                 since = prev[0]["created_at"]
         except Exception as _pe:
             print(f"[Day] previous boundary read failed: {_pe}")
-        sess = (db.table("sessions").select("id")
-                .eq("user_id", user_id).gte("updated_at", since)
-                .order("updated_at", desc=True).limit(3).execute()).data or []
-        said = []
-        for s in sess:
-            for m in (db.table("messages").select("content,timestamp")
-                      .eq("session_id", s["id"]).eq("role", "user")
-                      .gte("timestamp", since)
-                      .order("timestamp").execute()).data or []:
-                said.append(str(m.get("content") or "")[:200])
+        convo = _conversation(user_id, since)
     except Exception as e:
         print(f"[Day] window read failed: {e}")
         return ""
@@ -367,29 +516,47 @@ def _said_since(user_id: str, ev: Dict) -> str:
                  if e.get("id") != ev.get("id")
                  and e.get("status") in ("confirmed", "denied")
                  and (e.get("note") or "").strip()]
-        if spent:
-            said = [x for x in said
-                    if not any(n in x.lower() or x.lower().strip() in n
-                               for n in spent)]
     except Exception as e:
         print(f"[Day] spent-line filter failed: {e}")
+        spent = []
 
-    if not said:
+    return _their_line(convo, ev.get("label") or ev.get("kind") or "", spent)
+
+
+def _their_line(convo: List[Dict], label: str, spent: Optional[List[str]] = None) -> str:
+    """The line of theirs about this event today, exactly as written, or "".
+
+    Read WITH what the companion said before each line. "Mila hai" on its
+    own was taken as news about lunch, and the lunch boundary asked her
+    "yeh kya naya mila hai aapko?". It was the answer to "did you get some
+    rest after the puja?", which only the question shows.
+
+    No database: the harness calls this directly with real transcripts.
+    """
+    spent = spent or []
+
+    def _is_spent(x: str) -> bool:
+        x = x.lower().strip()
+        return any(n in x or x in n for n in spent)
+
+    convo = [m for m in convo if m["who"] == "nancy" or not _is_spent(m["text"])]
+    theirs = [m["text"] for m in convo if m["who"] == "them"]
+    if not theirs or not label:
         return ""
 
-    label = ev.get("label") or ev.get("kind") or ""
-    prompt = f"""Someone said these things over the last few hours:
+    prompt = f"""A companion and someone have been talking. In order:
 
-{chr(10).join('- ' + s for s in said[-12:])}
+{_transcript(convo)}
 
-Is any of it about their {label} TODAY: something they did, skipped,
-or decided about it?
+Did THEY (not the companion) say anything about their {label} TODAY:
+something they did, skipped, or decided about it?
 
-This is the {label} itself, not anything else that happened near it. The
-question is asked once that {label} is due or past, so it must actually be
-about it.
+Read each of their lines as the reply to what the companion said just
+before it. A short reply means whatever it answers: "mila hai" after
+"did you get some rest?" is about rest, not about the {label}, and "haan"
+after a question about the walk is about the walk.
 
-Reply with that line exactly as written, or NONE.
+It must be the {label} itself, not anything else that happened near it.
 
 Yes:
   "aaj lunch mein khichdi banaungi"     they decided this lunch
@@ -405,14 +572,22 @@ No:
 Their own words count: sair is the walk, vrat is the fast. But any food is
 not this meal, and a nap in the afternoon says nothing about dinner.
 
-One line, nothing else."""
+Reply with their line exactly as written, or NONE. One line, nothing else."""
     try:
         from llm import ask
         got = (ask(prompt, max_tokens=80) or "").strip().strip('"')
     except Exception as e:
         print(f"[Day] window read failed: {e}")
         return ""
-    return "" if (not got or got.upper().startswith("NONE")) else got[:200]
+    if not got or got.upper().startswith("NONE"):
+        return ""
+    # It must be one of THEIR lines. A line of the companion's coming back
+    # here is answered as if they had said it.
+    g = got.lower().strip()
+    if not any(g in t.lower() or t.lower().strip() in g for t in theirs):
+        print(f"[Day] window line not theirs, ignored: {got[:60]!r}")
+        return ""
+    return got[:200]
 
 def _ago(mins: int) -> str:
     """How long ago, in words. A clock time in the hint becomes a clock time
