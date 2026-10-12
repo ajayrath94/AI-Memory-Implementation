@@ -1058,6 +1058,14 @@ For EACH fact return an object:
 - is_correction: true if the message CHANGES/RETRACTS a prior fact. Triggers: switched, gave up, "no wait", actually, "I meant", "prefer X now", "not X anymore"
 - replaces: the prior thing overridden ("coffee") or null
 - attributes: for people only {{"relationship":"son/daughter/etc","location":"city","occupation":"job"}}
+- when: WHEN they do or did the thing, if the message says so, else null.
+    {{"part": "early_morning|morning|afternoon|evening|night", "day": "monday|...|sunday|weekend|weekdays"}}
+    Either may be null. It is when the thing HAPPENS, not when they are
+    speaking: "kal raat Netflix dekha", said at ten in the morning, is
+    {{"part": "night"}}. "Raat ko serial dekhti hoon" is night. "Sunday ko
+    chicken banta hai" is {{"day": "sunday"}}. "Subah sair karti hoon" is
+    morning. Nothing said about when: null. Never guess from the hour of
+    the message.
 
 RULES:
 - Different relationships (son AND daughter) are DIFFERENT subjects — NEVER merge them.
@@ -1271,6 +1279,49 @@ def decide(subject: str, props: list) -> tuple:
     return "other", "other", None, "nothing more specific"
 
 
+_WHEN_PARTS = ("early_morning", "morning", "afternoon", "evening", "night")
+_WHEN_DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday",
+              "saturday", "sunday", "weekend", "weekdays")
+
+
+def _note_when(db, cluster_id: str, whens: list) -> None:
+    """Count when she does this, on the thing itself: {"night": 3, "weekend": 2}.
+
+    Nothing recorded WHEN anything happens. subject_mentions keeps the date
+    she talked about it and the events keep the minute it was logged, and
+    neither is when she does it: "kal raat Netflix dekha" said at ten in the
+    morning is about ten at night. So when she says, it is kept, and counted
+    rather than overwritten, because once is an anecdote and five times is
+    her evening.
+    """
+    seen = []
+    for w in whens or []:
+        if not isinstance(w, dict):
+            continue
+        for v in (w.get("part"), w.get("day")):
+            v = str(v or "").strip().lower().replace(" ", "_")
+            if v in _WHEN_PARTS or v in _WHEN_DAYS:
+                seen.append(v)
+    if not seen:
+        return
+    try:
+        rows = (db.table("interest_clusters").select("attributes")
+                .eq("id", cluster_id).limit(1).execute()).data or []
+        a = rows[0].get("attributes") if rows else {}
+        if isinstance(a, str):
+            a = json.loads(a)
+        a = a if isinstance(a, dict) else {}
+        usually = dict(a.get("usually") or {})
+        for v in set(seen):                 # once per message, however phrased
+            usually[v] = int(usually.get(v, 0)) + 1
+        a["usually"] = usually
+        db.table("interest_clusters").update({"attributes": a}) \
+            .eq("id", cluster_id).execute()
+        print(f"[Prop] when: {cluster_id[:8]} {usually}")
+    except Exception as e:
+        print(f"[Prop] when note failed: {e}")
+
+
 def record_propositions(props: list, classified, user_id: str, session_id: str = "") -> dict:
     """Turn propositions into cluster operations:
     - pillar from entity_type (deterministic)
@@ -1469,6 +1520,7 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                                          res.get("embedding"), attrs or None)
             if cluster_id:
                 affected_clusters.append(cluster_id)
+                _note_when(db, cluster_id, [pr.get("when") for pr in subj_props])
 
                 # Facts ABOUT this subject become their own nodes, linked.
                 #

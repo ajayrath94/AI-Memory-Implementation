@@ -105,6 +105,8 @@ def hers(user_id: str) -> Dict[str, Dict]:
                 # this (suggestions.apply_reaction), not the strength.
                 "state": (float(r["current_state"])
                           if r.get("current_state") is not None else None),
+                # When she does it, as she has said: {"night": 3, "weekend": 1}.
+                "usually": a.get("usually") or {},
             }
     except Exception as e:
         print(f"[Offers] clusters read failed: {e}")
@@ -596,6 +598,13 @@ def user_context(user_id: str, window=None, now_min: Optional[int] = None) -> Di
             item = {"what": v["label"], "kind": v.get("category") or "",
                     "strength": round(float(v.get("strength") or 0), 2)}
             # How her replies to offers have moved it, when they have.
+            us = v.get("usually") or {}
+            if us:
+                # Most-said first, and only what she has said more than once
+                # once there is more than one thing said.
+                top = sorted(us.items(), key=lambda x: -int(x[1]))
+                keep = [k for k, n in top if n >= 2] or [top[0][0]]
+                item["usually"] = keep[:3]
             st = v.get("state")
             if st is not None and st < 0.1:
                 item["lately"] = "less keen" if st >= 0 else "turned against it"
@@ -741,6 +750,17 @@ def user_context(user_id: str, window=None, now_min: Optional[int] = None) -> Di
             trends["enjoying_less"] = down[:5]
     except Exception as e:
         print(f"[Offers] declining read failed: {e}")
+    # Her weekly habits that fall on today: "chicken on Sundays", found by
+    # rhythms.py from the days she mentions things. It already added a line
+    # to the message on the day; the choice itself never saw it.
+    try:
+        from memory.rhythms import due_today
+        due = [f"{r['subject']} (on {r['on_that_day']} of her last {r['of']} "
+               f"{r['weekday']}s)" for r in (due_today(user_id) or [])]
+        if due:
+            trends["today_is_usually"] = due
+    except Exception as e:
+        print(f"[Offers] rhythms read failed: {e}")
     if trends:
         ctx["trends"] = trends
     return ctx
@@ -778,6 +798,10 @@ Choose the option that best suits THIS person at THIS moment:
   walk. In the middle of a long free stretch, something that fills it: a
   film needs two free hours. A romantic or late-night song belongs to the
   evening. If something they said today points to one, that one.
+- Their habits: a love with "usually" is done at that time ("night",
+  "weekend"); offer it, or something like it, then, not at other times.
+  "today_is_usually" is a weekly habit that falls today: a meal suggestion
+  should fit with it, not compete with it.
 - Their pattern: what this weekday leans towards ("trends"), and how they
   answered past offers ("past_offers"). Something answered "not now" at
   this hour on this kind of day should wait; something accepted at this
