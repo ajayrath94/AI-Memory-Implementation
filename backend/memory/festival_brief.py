@@ -180,6 +180,114 @@ def running_today(when=None) -> Optional[Dict]:
     return None
 
 
+def _she_keeps(user_id: str, r: Dict) -> Optional[bool]:
+    """True when she has said she keeps this fast. None when unknown."""
+    try:
+        from memory.anchors import current
+        a = current(user_id, "avoids_meat_on")
+        if a and str(r["name"]).split()[-1].lower() in str(a.get("value")).lower():
+            return True
+    except Exception:
+        pass
+    return None
+
+
+def _ate_between(user_id: str, start, days: int) -> list:
+    """What she talked about in those days. Mostly food, during a festival:
+    "sabudana khichdi banayi", "kuttu ke pakode". Subjects, as she said them."""
+    from datetime import timedelta
+    try:
+        rows = (_db().table("subject_mentions").select("subject,happened_on")
+                .eq("user_id", user_id)
+                .gte("happened_on", start.isoformat())
+                .lte("happened_on", (start + timedelta(days=max(1, days) - 1)).isoformat())
+                .limit(200).execute()).data or []
+    except Exception as e:
+        print(f"[Brief] mentions read failed: {e}")
+        return []
+    # Not what Nancy offered and she only discussed: "idli sambar" came back
+    # as something she had during Navratri because she said "try karna
+    # padega" about the offer. And not the words that carry no thing at all:
+    # a weekday, "home", "sab".
+    offered = set()
+    try:
+        for o in (_db().table("suggestions").select("label").eq("user_id", user_id)
+                  .gte("created_at", start.isoformat()).limit(50).execute()).data or []:
+            offered.add(str(o.get("label") or "").split(" by ")[0].strip().lower())
+    except Exception:
+        pass
+    seen, out = set(), []
+    for r in rows:
+        s = str(r.get("subject") or "").strip()
+        low = s.lower()
+        if len(low) < 3 or low in seen or low in _NOT_A_THING:
+            continue
+        if any(low == o or (len(low) > 4 and low in o) for o in offered if o):
+            continue
+        seen.add(low)
+        out.append(s)
+    return out[:15]
+
+
+_NOT_A_THING = {"home", "ghar", "sab", "sabh", "kuch", "aaj", "kal", "din",
+                "monday", "tuesday", "wednesday", "thursday", "friday",
+                "saturday", "sunday", "somvar", "mangalvar", "budhvar",
+                "guruvar", "shukravar", "shanivar", "ravivar", "today",
+                "day", "time", "morning", "evening", "night"}
+
+
+def for_user(user_id: str, when=None) -> Optional[Dict]:
+    """The festival running today, if it is one SHE keeps. Or None.
+
+    For whoever decides what to suggest: which day of how many, whether it
+    fasts and what the fast avoids and allows, whether she has said she
+    keeps it, and what she talked about during it — so far this time, and
+    the last time it came round. That last part is how a festival habit is
+    learned: nothing is assumed, the dates of what she says are already
+    kept, and the festival's dates say which of them belong to it.
+    """
+    from datetime import date
+    r = running_today(when)
+    if not r:
+        return None
+    try:
+        from memory.festivals import _observes, _relevant
+        if not _relevant(r["name"], _observes(user_id)):
+            return None
+    except Exception as e:
+        print(f"[Brief] relevance check failed, keeping it: {e}")
+
+    d = when or date.today()
+    days = int(r.get("days") or 1)
+    day_of = int(r.get("day_of") or 1)
+    nm = str(r["name"])
+    for prefix in ("First Day of ", "Last Day of ", "Start of "):
+        if nm.startswith(prefix):
+            nm = nm[len(prefix):]
+            break
+
+    out = {"name": nm, "day_of": day_of, "days": days,
+           "fasting": bool(r.get("fasts")), "she_keeps_it": _she_keeps(user_id, r)}
+    if r.get("fasts"):
+        out["fast_avoids"] = r.get("avoids") or ""
+        out["eaten_instead"] = r.get("eaten") or ""
+
+    from datetime import timedelta
+    so_far = _ate_between(user_id, d - timedelta(days=day_of - 1), day_of)
+    if so_far:
+        out["she_talked_about_this_time"] = so_far
+    try:
+        from memory.festivals import last_time
+        prev = last_time(r["name"], d)
+        if prev:
+            before = _ate_between(user_id, prev, days)
+            if before:
+                out["she_talked_about_last_time"] = before
+    except Exception as e:
+        print(f"[Brief] last-time read failed: {e}")
+    return out
+
+
 def hint(user_id: str) -> str:
     """What a festival means for today's message, or "".
 
@@ -189,6 +297,15 @@ def hint(user_id: str) -> str:
     r = running_today()
     if not r:
         return ""
+    # Hers, not everyone's. hint_for() in festivals.py checked this and the
+    # brief, which is used first, did not: a Navratri brief would have gone
+    # to a woman who keeps Ramzan.
+    try:
+        from memory.festivals import _observes, _relevant
+        if not _relevant(r["name"], _observes(user_id)):
+            return ""
+    except Exception:
+        pass
 
     day_of, days = r.get("day_of", 1), int(r.get("days") or 1)
     # The calendar names the start — "First Day of Sharad Navratri" — which

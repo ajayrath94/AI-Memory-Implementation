@@ -398,14 +398,23 @@ def _dietary(user_id: str) -> str:
                 bits.append("nothing with meat")
 
         # A fasting day is not a day for it, whatever she usually eats.
+        # Every day it runs, and only a festival she keeps: festivals.today()
+        # knew the first day of Navratri and nothing about the other eight.
         try:
-            from memory.festivals import today as _festival_today
-            f = _festival_today()
+            from memory.festival_brief import for_user as _festival_for
+            f = _festival_for(user_id)
             if f and f.get("fasting"):
-                bits.append(f"today is {f['name']} and many people fast — "
-                            f"nothing heavy, and no meat")
-        except Exception:
-            pass
+                if f.get("eaten_instead"):
+                    bits.append(f"it is {f['name']}, day {f['day_of']} of "
+                                f"{f['days']}, and the fast avoids "
+                                f"{f.get('fast_avoids') or 'certain foods'}: "
+                                f"only dishes made from "
+                                f"{f['eaten_instead']}")
+                else:
+                    bits.append(f"it is {f['name']} and many people fast — "
+                                f"nothing heavy, and no meat")
+        except Exception as _fe:
+            print(f"[Adjacent] festival read failed: {_fe}")
 
         # Seventy, not thirty.
         bits.append("nothing very rich or very spicy")
@@ -423,6 +432,22 @@ def adjacent(user_id: str, label: str, category: str = "") -> list:
     """
     if not label:
         return []
+
+    # Food during a fast she keeps is its own list. The cache is forever, so
+    # without this the nine days of Navratri would be served the dishes
+    # worked out on an ordinary Tuesday, every one of them refused by the
+    # picker, and she would be offered no food at all until Dussehra. Kept
+    # under the festival's name, so next year's Navratri starts from it.
+    cache_key = "adjacent_v3"
+    if category == "khana":
+        try:
+            from memory.festival_brief import for_user as _festival_for
+            _f = _festival_for(user_id)
+            if _f and _f.get("fasting"):
+                cache_key = "adjacent_fast_" + "".join(
+                    c for c in _f["name"].lower() if c.isalnum())[:40]
+        except Exception as _fe:
+            print(f"[Adjacent] festival read failed: {_fe}")
 
     try:
         from supabase_store import get_client
@@ -442,8 +467,8 @@ def adjacent(user_id: str, label: str, category: str = "") -> list:
             # Gitanjali, a book, counted as music because it was reached
             # from Rabindrasangeet, and the music search found a Telugu
             # film song. v2 is left alone and refilled, once per interest.
-            if a.get("adjacent_v3"):
-                return list(a["adjacent_v3"])
+            if a.get(cache_key):
+                return list(a[cache_key])
     except Exception as e:
         print(f"[Adjacent] cache read failed: {e}")
         rows = []
@@ -576,7 +601,7 @@ No prose."""
         try:
             a = rows[0].get("attributes")
             a = a if isinstance(a, dict) else {}
-            a["adjacent_v3"] = out
+            a[cache_key] = out
             db.table("interest_clusters").update(
                 {"attributes": a}).eq("id", rows[0]["id"]).execute()
         except Exception as e:

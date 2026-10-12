@@ -64,7 +64,7 @@ def _fetch() -> List[Dict]:
         if os.path.exists(CACHE):
             with open(CACHE) as f:
                 d = json.load(f)
-            if d.get("year") == date.today().year:
+            if d.get("year") == date.today().year and d.get("span") == 3:
                 return d.get("items") or []
     except Exception:
         pass
@@ -79,8 +79,11 @@ def _fetch() -> List[Dict]:
 
     year = date.today().year
     items = []
+    # Last year's dates too: "what did she eat during Navratri last year" needs
+    # when last year's Navratri was. The feed carries the year either side.
+    years = "|".join(str(y) for y in (year - 1, year, year + 1))
     for ev in raw.split("BEGIN:VEVENT")[1:]:
-        d = re.search(rf"DTSTART;VALUE=DATE:({year}\d{{4}})", ev)
+        d = re.search(rf"DTSTART;VALUE=DATE:((?:{years})\d{{4}})", ev)
         s = re.search(r"SUMMARY:(.+)", ev)
         if not (d and s):
             continue
@@ -96,7 +99,7 @@ def _fetch() -> List[Dict]:
     items.sort(key=lambda x: x["date"])
     try:
         with open(CACHE, "w") as f:
-            json.dump({"year": year, "items": items}, f)
+            json.dump({"year": year, "span": 3, "items": items}, f)
     except Exception:
         pass
     print(f"[Festivals] {len(items)} for {year}")
@@ -303,3 +306,28 @@ def hint_for(user_id: str, when=None) -> str:
                      "calendar.")
         return line
     return ""
+
+
+def _base(name: str) -> str:
+    """The festival itself, without the calendar's framing."""
+    n = (name or "").strip()
+    for prefix in ("First Day of ", "Last Day of ", "Start of ", "Day of "):
+        if n.startswith(prefix):
+            n = n[len(prefix):]
+    return n.strip().lower()
+
+
+def last_time(name: str, before: date = None) -> Optional[date]:
+    """When this festival last began, before this occurrence. None if the
+    calendar does not reach back that far."""
+    before = before or date.today()
+    want = _base(name)
+    best = None
+    for f in _fetch():
+        try:
+            d = date.fromisoformat(f["date"])
+        except Exception:
+            continue
+        if _base(f["name"]) == want and d < before - timedelta(days=60):
+            best = d if (best is None or d > best) else best
+    return best

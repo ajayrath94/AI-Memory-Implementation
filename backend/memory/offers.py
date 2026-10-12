@@ -590,11 +590,16 @@ def user_context(user_id: str, window=None, now_min: Optional[int] = None) -> Di
 
     # ── what they love ──
     try:
-        ctx["loves"] = [
-            {"what": v["label"], "kind": v.get("category") or "",
-             "strength": round(float(v.get("strength") or 0), 2)}
-            for v in sorted(hers(user_id).values(),
-                            key=lambda v: -float(v.get("strength") or 0))[:10]]
+        ctx["loves"] = []
+        for v in sorted(hers(user_id).values(),
+                        key=lambda v: -float(v.get("strength") or 0))[:10]:
+            item = {"what": v["label"], "kind": v.get("category") or "",
+                    "strength": round(float(v.get("strength") or 0), 2)}
+            # How her replies to offers have moved it, when they have.
+            st = v.get("state")
+            if st is not None and st < 0.1:
+                item["lately"] = "less keen" if st >= 0 else "turned against it"
+            ctx["loves"].append(item)
     except Exception as e:
         print(f"[Offers] interests read failed: {e}")
 
@@ -619,13 +624,60 @@ def user_context(user_id: str, window=None, now_min: Optional[int] = None) -> Di
         t["free_for_minutes"] = max(0, window.ends - (now_min or window.starts))
         t["just_finished"] = window.after or None
         t["next"] = window.before or "bed"
+        # Which end of the gap this moment is nearer. Ten minutes before
+        # the walk is a moment for music to walk with; ten minutes after
+        # the puja is a moment for something devotional; the middle of a
+        # long empty afternoon is a moment for a film. The gap alone said
+        # only how long, not where in it they are.
+        if now_min is not None:
+            ago = max(0, now_min - window.starts)
+            ahead = max(0, window.ends - now_min)
+            t["finished_minutes_ago"] = ago if window.after else None
+            t["next_in_minutes"] = ahead
+            if window.after and ago <= 45 and ago <= ahead:
+                t["nearest"] = f"just after {window.after}"
+            elif ahead <= 60 and ahead < ago:
+                t["nearest"] = f"shortly before {window.before or 'bed'}"
+            else:
+                t["nearest"] = "the middle of a free stretch"
+
+    # The whole day, so the choice can see what comes after "next" too: a
+    # dish offered at 11 is for lunch at 1, and a film at 4 runs into the
+    # walk at 5:30.
     try:
-        from memory.festivals import today as _festival_today
-        f = _festival_today()
-        if f and f.get("name"):
-            t["festival"] = f["name"]
-            if f.get("fasting"):
-                t["fasting_day"] = True
+        from memory.day import events as _day_events
+        sched = []
+        for e in _day_events(user_id) or []:
+            at = str(e.get("due_at") or "")[:5]
+            what = e.get("label") or e.get("kind") or ""
+            if not (at and what):
+                continue
+            row = {"at": at, "what": what, "kind": e.get("kind") or ""}
+            if e.get("status") in ("confirmed", "denied"):
+                row["status"] = "done" if e["status"] == "confirmed" else "skipped"
+            sched.append(row)
+        if sched:
+            t["schedule"] = sched
+    except Exception as e:
+        print(f"[Offers] schedule read failed: {e}")
+    # The festival as SHE keeps it, on every day it runs. festivals.today()
+    # matched only the first day and anyone's festival, so on day two of
+    # Navratri this said nothing, and a woman who does puja every morning
+    # was offered idli at a restaurant.
+    try:
+        from memory.festival_brief import for_user as _festival_for
+        f = _festival_for(user_id)
+        if f:
+            t["festival"] = f
+    except Exception as e:
+        print(f"[Offers] festival read failed: {e}")
+    # Meat today, which is a date, not a flag: Tuesdays, Shravan, her own
+    # days. memory.diet already knows; this path never asked.
+    try:
+        from memory.diet import can_eat_meat_today
+        v = can_eat_meat_today(user_id)
+        if v and not v.get("ok"):
+            t["no_meat_today"] = True
     except Exception:
         pass
     try:
@@ -642,6 +694,55 @@ def user_context(user_id: str, window=None, now_min: Optional[int] = None) -> Di
     except Exception:
         pass
     ctx["today"] = {k: v for k, v in t.items() if v not in (None, "", [], {})}
+
+    # ── how they answered before ──
+    # The last offers and what came of them, so a "weekday mei kaha,
+    # weekend pe" about carrom on a Monday afternoon is seen the next
+    # Monday afternoon, not only as a number inside affinity.py.
+    try:
+        from datetime import datetime, timezone, timedelta
+        since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        rows = (_db().table("suggestions")
+                .select("label,reaction,offered_hour,created_at")
+                .eq("user_id", user_id).eq("intent", "recommendation")
+                .gte("created_at", since)
+                .order("created_at", desc=True).limit(12).execute()).data or []
+        hist = []
+        for r in rows:
+            h = {"what": r.get("label"), "answer": r.get("reaction") or "open"}
+            if r.get("offered_hour") is not None:
+                h["at_hour"] = r["offered_hour"]
+            try:
+                h["day"] = datetime.fromisoformat(
+                    str(r["created_at"]).replace("Z", "+00:00")).strftime("%a")
+            except Exception:
+                pass
+            hist.append(h)
+        if hist:
+            ctx["past_offers"] = hist
+    except Exception as e:
+        print(f"[Offers] history read failed: {e}")
+
+    # ── trends ──
+    # What this weekday leans towards, from what they actually do and say
+    # (chicken on Sundays), and what they are enjoying less each time.
+    trends = {}
+    try:
+        from memory.leanings import leanings as _leanings
+        lean = {k: round(float(v), 2) for k, v in (_leanings(user_id) or {}).items() if v}
+        if lean:
+            trends["today_leans_to"] = dict(sorted(lean.items(), key=lambda x: -x[1])[:5])
+    except Exception as e:
+        print(f"[Offers] leanings read failed: {e}")
+    try:
+        from memory.topics import declining as _declining
+        down = [str(d.get("subject")) for d in (_declining(user_id) or []) if d.get("subject")]
+        if down:
+            trends["enjoying_less"] = down[:5]
+    except Exception as e:
+        print(f"[Offers] declining read failed: {e}")
+    if trends:
+        ctx["trends"] = trends
     return ctx
 
 
@@ -669,17 +770,28 @@ Everything known about them and their day, as JSON:
 
 Choose the option that best suits THIS person at THIS moment:
 
-- The moment: the time and part of day, how long they are free, what they
-  just finished and what is next. A romantic or late-night song belongs to
-  the evening; a full film needs two free hours; a dish belongs before a
-  meal, not after; after a rest, something gentle. If something they said
-  today points to one, that one.
+- The moment: the time and part of day, how long they are free, and which
+  part of their schedule it is nearest ("nearest"). Shortly before
+  something, choose what leads into it: a dish before a meal, music to walk
+  with before the walk. Just after something, what follows from it:
+  something devotional after prayer, something gentle after a rest or a
+  walk. In the middle of a long free stretch, something that fills it: a
+  film needs two free hours. A romantic or late-night song belongs to the
+  evening. If something they said today points to one, that one.
+- Their pattern: what this weekday leans towards ("trends"), and how they
+  answered past offers ("past_offers"). Something answered "not now" at
+  this hour on this kind of day should wait; something accepted at this
+  hour is a good sign. Skip anything they are enjoying less.
 - Their health: a dish must suit their conditions, medicines and diet. With
   blood pressure, diabetes or heart trouble, nothing fried, very sweet, very
   salty or rich. Vegetarian means vegetarian. When unsure, the lighter one.
 - Their world: songs, films, prayers and dishes from their own region,
   language and tradition, whatever else is famous.
-- The day: respect a festival or a fasting day.
+- The day: during a festival ("festival"), food follows it. If it fasts and
+  they keep it, only what the fast allows ("eaten_instead"); food among what
+  they talked about during it, this time or last time, is the best guide. If it
+  fasts and you do not know whether they keep it, suggest no dish at all.
+  "no_meat_today" means nothing with meat.
 - Variety: prefer a kind not already offered today.
 - Real: only something they can actually listen to, watch, cook or do now.
   A past event, a famous innings or a memory is not something to offer.
@@ -867,6 +979,21 @@ def record(user_id: str, offer: Offer, window=None,
     And the circumstances, not just the label: in a month this says whether
     new things land in the afternoon and not at breakfast.
     """
+    # Her hour, worked out here when the caller did not pass it. The
+    # scheduler calls record(uid, offer, window) without a time, so every
+    # offer was stored with offered_hour empty, and affinity.py, which
+    # learns which kinds suit which hour from exactly this column, has had
+    # nothing to learn from: every slot still reads "(default)".
+    if now_min is None:
+        try:
+            from zoneinfo import ZoneInfo
+            from memory.declared import get_declared
+            _now = datetime.now(ZoneInfo(get_declared(user_id).place.timezone
+                                         or "Asia/Kolkata"))
+            now_min = _now.hour * 60 + _now.minute
+        except Exception as e:
+            print(f"[Offers] hour for record failed: {e}")
+
     shape = ""
     try:
         from memory.carry import yesterdays
