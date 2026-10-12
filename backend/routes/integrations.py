@@ -348,6 +348,58 @@ def get_nearby_places(user_id: str, place_type: str = "hospital",
 
 # ── YouTube Music ──────────────────────────────────────────────────────────────
 
+# ── YouTube search cache ─────────────────────────────────────────────────────
+# A search costs 100 of the 10,000 units YouTube allows a day: about a
+# hundred searches, for every user and every test run together. The same
+# songs come up again and again — "Lag Ja Gale" is offered to half of
+# everyone — and on 12 Oct a few test runs used the day up by eleven at night:
+# every search after that returned 429 and every song offer was struck.
+#
+# So a search is made once and kept. A recording does not change; a video
+# can be taken down, so a cached answer is trusted for a month and then
+# looked up again. Failures are never cached — a 429 is about today, not
+# about the song.
+YT_CACHE_DAYS = 30
+_YT_MEMO: dict = {}
+
+
+def _yt_key(query: str) -> str:
+    return " ".join(str(query or "").lower().split())[:300]
+
+
+def _yt_cached(query: str):
+    k = _yt_key(query)
+    if k in _YT_MEMO:
+        return _YT_MEMO[k]
+    try:
+        from datetime import datetime, timedelta, timezone
+        from supabase_store import get_client
+        since = (datetime.now(timezone.utc) - timedelta(days=YT_CACHE_DAYS)).isoformat()
+        rows = (get_client().table("youtube_cache").select("videos")
+                .eq("query", k).gte("fetched_at", since)
+                .limit(1).execute()).data or []
+        if rows and isinstance(rows[0].get("videos"), list):
+            _YT_MEMO[k] = rows[0]["videos"]
+            return _YT_MEMO[k]
+    except Exception as e:
+        print(f"[YouTube] cache read failed: {str(e)[:100]}")
+    return None
+
+
+def _yt_remember(query: str, videos: list) -> None:
+    k = _yt_key(query)
+    _YT_MEMO[k] = videos
+    try:
+        from datetime import datetime, timezone
+        from supabase_store import get_client
+        get_client().table("youtube_cache").upsert({
+            "query": k, "videos": videos,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="query").execute()
+    except Exception as e:
+        print(f"[YouTube] cache write failed: {str(e)[:100]}")
+
+
 @router.get("/music/{user_id}")
 def get_music_recommendations(user_id: str, query: str = None):
     """
@@ -373,6 +425,11 @@ def get_music_recommendations(user_id: str, query: str = None):
             query = "Bollywood old Hindi songs"
         else:
             query = "Indian classical music"
+
+    cached = _yt_cached(query)
+    if cached is not None:
+        return {"query": query, "videos": cached, "count": len(cached),
+                "cached": True}
 
     try:
         encoded = urllib.parse.quote(query)
@@ -415,13 +472,20 @@ def get_music_recommendations(user_id: str, query: str = None):
                 "embeddable":  (video_id in embeddable) if embeddable is not None else True,
             })
 
+        if videos:
+            _yt_remember(query, videos)
         return {
             "query":  query,
             "videos": videos,
             "count":  len(videos),
         }
     except Exception as e:
-        return {"error": str(e), "videos": []}
+        # Said plainly in the log: a 429 or 403 here is the day's allowance,
+        # not a missing song, and it reads very differently from "not found".
+        msg = str(e)
+        if "429" in msg or "403" in msg:
+            print(f"[YouTube] daily limit reached — {msg[:80]}")
+        return {"error": msg, "videos": [], "limited": ("429" in msg or "403" in msg)}
 
 
 # ── All context in one call ────────────────────────────────────────────────────
