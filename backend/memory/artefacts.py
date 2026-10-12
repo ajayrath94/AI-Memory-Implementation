@@ -479,7 +479,9 @@ JSON only:
   kind   what kind of thing THIS one is, whatever it was reached from:
            sangeet  a song or a piece of music, always "<title> by <singer>"
            dekhna   a film or a serial
-           khana    a dish
+           khana    a dish, by its name alone: never "<dish> by <shop>"
+                    and never a restaurant. Nobody has checked a shop
+                    exists near her.
            shauk    something to do or read: a book, a hobby, a game
            bhakti   a prayer, a stotram, a devotional recitation
 

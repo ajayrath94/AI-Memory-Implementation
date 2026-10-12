@@ -203,21 +203,59 @@ def place_details(place_id: str) -> dict:
         print(f"[Places] details failed: {e}")
         return {}
 
+# Google place types that can be passed as `type`. Anything else is a name or
+# a description ("Murugan Idli Shop", "South Indian breakfast") and is searched
+# as a keyword only: an unknown type makes Google refuse the whole request.
+_PLACE_TYPES = {
+    "hospital", "pharmacy", "doctor", "dentist", "physiotherapist", "restaurant",
+    "cafe", "bakery", "park", "hindu_temple", "church", "mosque",
+    "supermarket", "grocery_or_supermarket", "store", "bank", "atm",
+    "post_office", "library", "shopping_mall", "movie_theater", "tourist_attraction",
+}
+_PLACE_ALIASES = {"clinic": "doctor", "temple": "hindu_temple", "mandir": "hindu_temple",
+                  "chemist": "pharmacy", "medical store": "pharmacy",
+                  "grocery": "grocery_or_supermarket", "cinema": "movie_theater"}
+
+
+def _km(lat1, lng1, lat2, lng2):
+    """Straight-line distance in km. Roads are longer; it is said as "about"."""
+    from math import radians, sin, cos, asin, sqrt
+    try:
+        la1, lo1, la2, lo2 = map(radians, (float(lat1), float(lng1), float(lat2), float(lng2)))
+    except (TypeError, ValueError):
+        return None
+    a = sin((la2 - la1) / 2) ** 2 + cos(la1) * cos(la2) * sin((lo2 - lo1) / 2) ** 2
+    return 6371.0 * 2 * asin(sqrt(a))
+
+
 def get_nearby_places(user_id: str, place_type: str = "hospital",
                       location: str = None, radius: int = 5000):
     """
-    Find nearby hospitals, pharmacies, clinics.
-    Used when health alerts fire.
-    place_type: hospital | pharmacy | doctor | clinic
+    Real places near her, nearest first, each with how far it is.
+
+    place_type is a Google type (hospital, pharmacy, restaurant, park...) or a
+    name or description ("Murugan Idli Shop", "South Indian breakfast").
+
+    Distance is always from HER: where she is now, or home. She asked "kitna
+    door hai" about an idli place and was given three names and three ratings
+    and no distance, because nothing here worked one out. Google returns each
+    place's coordinates, so it costs nothing extra.
     """
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         return {"error": "GOOGLE_API_KEY not set"}
 
+    # Where she is, whatever area is being searched: "how far" means from her.
+    her_place, her_lat, her_lng = get_user_location(user_id)
+
     if location:
         lat, lng = None, None          # explicit place given, geocode it below
     else:
-        location, lat, lng = get_user_location(user_id)
+        location, lat, lng = her_place, her_lat, her_lng
+
+    asked = str(place_type or "hospital").strip()
+    gtype = _PLACE_ALIASES.get(asked.lower(), asked.lower())
+    gtype = gtype if gtype in _PLACE_TYPES else None
 
     try:
         # Use stored lat/lng if available, otherwise geocode
@@ -238,24 +276,40 @@ def get_nearby_places(user_id: str, place_type: str = "hospital",
             loc_data = geo_data["results"][0]["geometry"]["location"]
             lat, lng = loc_data["lat"], loc_data["lng"]
 
-        # Search nearby places
-        places_url = (
-            f"https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-            # keyword AND type. With type alone, a 2km search for a hospital
-            # returned a chemist, an eye clinic, a diagnostics lab and
-            # Herbalife — Google pads the results when exact matches are thin,
-            # and the padding does not care what you asked for.
+        if not (her_lat and her_lng):
+            her_lat, her_lng = lat, lng
+
+        def _search(r):
+            # keyword AND type for a kind of place. With type alone, a 2km
+            # search for a hospital returned a chemist, an eye clinic, a
+            # diagnostics lab and Herbalife — Google pads the results when
+            # exact matches are thin, and the padding does not care what you
+            # asked for.
             #
             # 5km, not 2km. In an emergency she would travel further than two
             # kilometres anyway, and a real hospital five minutes away beats a
             # chemist next door.
-            f"?location={lat},{lng}&radius={radius}&type={place_type}"
-            f"&keyword={urllib.parse.quote(place_type)}&key={api_key}"
-        )
-        places_data = http_get(places_url)
+            url = (f"https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+                   f"?location={lat},{lng}&radius={r}"
+                   f"&keyword={urllib.parse.quote(asked)}&key={api_key}")
+            if gtype:
+                url += f"&type={gtype}"
+            return http_get(url).get("results", [])
+
+        results = _search(radius)
+        widened = False
+        # A named place may simply not be within 5 km. Look further once, and
+        # say so, rather than answering "nothing found" about a shop that
+        # exists across town.
+        if not results and not gtype and radius < 15000:
+            results = _search(15000)
+            widened = bool(results)
 
         places = []
-        for p in places_data.get("results", [])[:5]:
+        for p in results[:10]:
+            plat = p.get("geometry", {}).get("location", {}).get("lat")
+            plng = p.get("geometry", {}).get("location", {}).get("lng")
+            d = _km(her_lat, her_lng, plat, plng)
             places.append({
                 "name":    p.get("name"),
                 # Kept so Details can be called for a real address and a
@@ -266,15 +320,27 @@ def get_nearby_places(user_id: str, place_type: str = "hospital",
                 "address": p.get("vicinity"),
                 "rating":  p.get("rating"),
                 "open":    p.get("opening_hours", {}).get("open_now"),
-                "lat":     p.get("geometry", {}).get("location", {}).get("lat"),
-                "lng":     p.get("geometry", {}).get("location", {}).get("lng"),
+                "lat":     plat,
+                "lng":     plng,
+                # Straight line, so "about". Walking at an older person's
+                # pace, about 4 km an hour: 15 minutes a kilometre.
+                "distance_km": round(d, 1) if d is not None else None,
+                "walk_min":    int(round(d * 15)) if d is not None else None,
             })
+
+        places.sort(key=lambda x: x["distance_km"] if x["distance_km"] is not None else 1e9)
+        places = places[:5]
 
         return {
             "location":   location,
             "place_type": place_type,
             "places":     places,
             "count":      len(places),
+            "distance_from": her_place,
+            "note": ("Distances are straight-line from where she is; by road it "
+                     "is a little more. Say them as 'about'."
+                     + (" Nothing within 5 km, so this looked up to 15 km."
+                        if widened else "")),
         }
     except Exception as e:
         return {"error": str(e), "location": location}

@@ -113,8 +113,12 @@ PLACES_SCHEMA = {
         "name": "get_places",
         "description": (
             "Find real nearby places — hospitals, pharmacies, clinics, "
-            "doctors, restaurants, parks. Use whenever the user asks where "
-            "something is near them or needs to find a place."
+            "doctors, restaurants, parks, temples, or one place by name. Use "
+            "whenever the user asks where something is, how far it is, or "
+            "needs to find a place. Each result has distance_km and walk_min "
+            "from where she is, nearest first: when she asks how far, answer "
+            "from these, as 'about', and never guess a distance or a place "
+            "that is not in the results."
         ),
         "parameters": {
             "type": "object",
@@ -122,8 +126,9 @@ PLACES_SCHEMA = {
                 "place_type": {
                     "type": "string",
                     "description": (
-                        "Kind of place: hospital, pharmacy, doctor, clinic, "
-                        "restaurant, park, etc."
+                        "Kind of place (hospital, pharmacy, doctor, clinic, "
+                        "restaurant, park, temple) or a specific name, e.g. "
+                        "the shop or restaurant she asked about."
                     ),
                 },
                 "location": {
@@ -387,11 +392,20 @@ LIST_TICK_SCHEMA = {
             "properties": {
                 "what": {
                     "type": "string",
-                    "description": "The thing she has got, in her words.",
+                    "description": (
+                        "The thing she has got, in her words. Omit it and "
+                        "set everything=true when she says she has got the "
+                        "lot — 'sab le liya' is how someone talks after a "
+                        "shop, not four separate confirmations."
+                    ),
+                },
+                "everything": {
+                    "type": "boolean",
+                    "description": "True when she has got all of it.",
                 },
                 "list_name": {"type": "string"},
             },
-            "required": ["what"],
+            "required": [],
         },
     },
 }
@@ -401,13 +415,24 @@ LIST_CLOSE_SCHEMA = {
     "function": {
         "name": "close_list",
         "description": (
-            "Finish with a list, when she says she is done — 'sab le "
-            "liya', 'list khatam'. Do not close it because everything is "
-            "ticked; she may add more."
+            "Finish with a list, when she says she is done — 'list "
+            "khatam', 'ab iski zaroorat nahi'. Do not close it just "
+            "because everything is ticked; she may add more.\n\n"
+            "ASK FIRST, and pass what she says as `keep`: band kar dein, "
+            "ya rakh lein agli baar ke liye? A kept list makes next "
+            "Navratri easier; a dropped one leaves nothing behind. It is "
+            "hers to decide, and if she does not say, keep it."
         ),
         "parameters": {
             "type": "object",
             "properties": {
+                "keep": {
+                    "type": "boolean",
+                    "description": (
+                        "True to keep the items for next time, false to "
+                        "drop them. What SHE said. Default true."
+                    ),
+                },
                 "list_name": {"type": "string"},
             },
             "required": [],
@@ -432,14 +457,17 @@ def _handle_list_read(args: dict, user_id: str) -> dict:
 
 
 def _handle_list_tick(args: dict, user_id: str) -> dict:
-    from memory.lists import tick
+    from memory.lists import tick, tick_all
+    if args.get("everything") or not (args.get("what") or "").strip():
+        return tick_all(user_id, args.get("list_name") or "")
     return tick(user_id, args.get("what") or "",
                 args.get("list_name") or "")
 
 
 def _handle_list_close(args: dict, user_id: str) -> dict:
     from memory.lists import close
-    return close(user_id, args.get("list_name") or "")
+    return close(user_id, args.get("list_name") or "",
+                 keep=bool(args.get("keep", True)))
 
 
 TOOL_REGISTRY = {

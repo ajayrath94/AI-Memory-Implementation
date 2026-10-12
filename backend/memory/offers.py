@@ -43,6 +43,7 @@ she takes up music and never films.
 """
 import os
 import random
+import urllib.parse
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
@@ -91,7 +92,7 @@ def hers(user_id: str) -> Dict[str, Dict]:
     out = {}
     try:
         rows = (_db().table("interest_clusters")
-                .select("id,label,attributes,strength")
+                .select("id,label,attributes,strength,current_state")
                 .eq("user_id", user_id).eq("status", "active")
                 .eq("kind", "interest").limit(100).execute()).data or []
         for r in rows:
@@ -100,6 +101,10 @@ def hers(user_id: str) -> Dict[str, Dict]:
                 "id": r.get("id"), "label": r["label"],
                 "category": a.get("category") or "",
                 "strength": float(r.get("strength") or 0),
+                # How she feels about it lately: her replies to offers move
+                # this (suggestions.apply_reaction), not the strength.
+                "state": (float(r["current_state"])
+                          if r.get("current_state") is not None else None),
             }
     except Exception as e:
         print(f"[Offers] clusters read failed: {e}")
@@ -308,13 +313,19 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
     seeds = sorted(
         [v for k, v in mine.items()
          if k not in routine and v["strength"] >= 0.5
-         and (v.get("category") or "") not in _FULFIL_ONLY],
+         and (v.get("category") or "") not in _FULFIL_ONLY
+         # Soured on. A "pasand nahi" to an offer moves the interest it came
+         # from down by 0.4; once the average turns negative, it stops being
+         # a reason to offer anything. The older picker in suggestions.py
+         # already skipped these; this path did not read it at all.
+         and not (v.get("state") is not None and v["state"] < 0)],
         key=lambda v: -v["strength"])[:8]
 
     from memory.artefacts import adjacent
 
     out: List[Offer] = []
     seen = set()
+    seen_dish = set()
 
     # Ring by ring. Five interests expanding three or four each is about
     # twenty things, and a fortnight of offers exhausts them — six of
@@ -370,6 +381,19 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
                 # Its own kind where the generator gave one, the interest's
                 # where it did not (older cached rings).
                 kind = item.get("kind") or seed["category"]
+
+                # A dish, not a shop. "Idli Sambar by Murugan Idli Shop" went
+                # out with a shop the generator had borrowed from the song
+                # format: nobody had checked it existed near her, and when
+                # she asked "kitna door hai" there was no answer to give.
+                # The dish is the offer; where to eat it is for the chat to
+                # look up, with a real place search, if she asks.
+                if kind == "khana" and " by " in low:
+                    what = what.split(" by ")[0].split(" By ")[0].strip()
+                    low = what.lower()
+                    if not what or low in skip or low in seen_dish:
+                        continue
+                    seen_dish.add(low)
 
                 # In a language they live in. The generator is asked for
                 # this and twice in one day returned a Hindi Hanuman Chalisa
@@ -684,6 +708,70 @@ JSON only: {{"pick": <n or 0>, "why": "<one short reason, in English>"}}"""
         return pool[0]
 
 
+# How far a dish is worth going for, and what is not a place to eat.
+PLACE_MAX_KM = 3.0
+PLACE_MIN_RATING = 3.8
+_NOT_FOR_HER = ("bar", "pub", "brew", "lounge", "wine", "beer", "liquor",
+                "social", "taproom", "cloud kitchen")
+
+
+def _place_for(user_id: str, dish: str) -> Optional[Dict]:
+    """A real place near her that serves this dish, or None.
+
+    "Idli Sambar by Murugan Idli Shop" named a shop nobody had looked for:
+    there is none within 10 km of Vyalikaval. So the place is found, not
+    imagined: a Google Places search for the dish around where she is now
+    (home, or wherever she is travelling), nearest first, and only one
+    she could actually go to — close, open, decently rated, not a bar.
+
+    None is common and fine: the dish is still offered, without a place.
+    """
+    try:
+        from routes.integrations import get_nearby_places
+        r = get_nearby_places(user_id, dish, radius=int(PLACE_MAX_KM * 1000))
+    except Exception as e:
+        print(f"[Offers] place search failed for {dish!r}: {e}")
+        return None
+    if not isinstance(r, dict) or r.get("error"):
+        print(f"[Offers] place search for {dish!r}: {(r or {}).get('error')}")
+        return None
+
+    for p in r.get("places") or []:          # nearest first
+        name = str(p.get("name") or "").strip()
+        d = p.get("distance_km")
+        if not name or d is None or d > PLACE_MAX_KM:
+            continue
+        if p.get("open") is False:
+            continue
+        if p.get("rating") is not None and float(p["rating"]) < PLACE_MIN_RATING:
+            continue
+        if any(w in name.lower() for w in _NOT_FOR_HER):
+            continue
+        url = ("https://www.google.com/maps/search/?api=1&query="
+               + urllib.parse.quote(name)
+               + (f"&query_place_id={p['place_id']}" if p.get("place_id") else ""))
+        area = str(p.get("address") or "").split(",")
+        # The name as it would be said. Google listings carry their own
+        # advertising: "Paakashala @ Nagavara | Restaurants Near Manyata Tech
+        # Park" is Paakashala. The map link keeps the full listing.
+        said = name
+        for cut in (" | ", " @ ", " - "):
+            said = said.split(cut)[0]
+        said = said.strip() or name
+        return {
+            "kind":        "place",
+            "title":       said,
+            "url":         url,
+            "area":        ", ".join(x.strip() for x in area[-3:-1]) if len(area) > 2 else (p.get("address") or ""),
+            "distance_km": d,
+            "walk_min":    p.get("walk_min"),
+            "rating":      p.get("rating"),
+            "open":        p.get("open"),
+        }
+    print(f"[Offers] {user_id}: no place within {PLACE_MAX_KM:g} km for {dish!r}")
+    return None
+
+
 def choose(user_id: str, window=None, now_min: Optional[int] = None) -> Optional[Offer]:
     """One thing to show her, with something she can act on. Or None.
 
@@ -753,6 +841,15 @@ def choose(user_id: str, window=None, now_min: Optional[int] = None) -> Optional
                   f"{offer.what!r}, not offering it")
             struck.add(offer.what)
             continue
+
+        # A dish: where she can actually get it, near where she is. The map
+        # link goes under the message in place of a recipe, which is what
+        # someone who loves eating out would act on. No place nearby, and
+        # the recipe (or nothing) stays.
+        if offer.category == "khana":
+            place = _place_for(user_id, offer.what)
+            if place:
+                art = place
 
         offer.artefact = art
         return offer
@@ -838,6 +935,22 @@ def hint(offer: Offer) -> str:
         tip = str(offer.artefact.get("title") or "")[:200]
         if tip:
             line += (f"\nBackground you may draw on, never quote: {tip}")
+    elif offer.artefact and offer.artefact.get("kind") == "place":
+        a = offer.artefact
+        far = a.get("distance_km")
+        walk = a.get("walk_min")
+        line += (f"\nThere is a real place near them that serves it: "
+                 f"{a.get('title')}"
+                 + (f", {a.get('area')}" if a.get("area") else "")
+                 + (f", about {far} km away" if far is not None else "")
+                 + (f" (about {walk} minutes on foot)" if walk else "")
+                 + ". Name the place and say roughly how far it is, in their "
+                 "own language. It is straight-line distance: say 'about', "
+                 "never an exact figure. Say they can get it there, not that "
+                 "it is the best. Do not say it is open now unless told so"
+                 + (" — it is open now." if a.get("open") is True else ".")
+                 + " A map link is added under your message automatically; "
+                 "do not write a link or an address yourself.")
     elif offer.artefact:
         title = str(offer.artefact.get("title") or "")[:120]
         url = offer.artefact.get("url") or ""
