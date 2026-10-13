@@ -504,20 +504,26 @@ the subject, and the offer is still open. Only call it a decline if they are
 actually saying no to what was offered.
 
 One word, nothing else."""
-    try:
-        import anthropic
-        client = __import__("llm").client()
-        resp = client.messages.create(
-            model=__import__("llm").model("claude-haiku-4-5-20251001"), max_tokens=10,
-            messages=[{"role": "user", "content": prompt}])
-        answer = resp.content[0].text.strip().lower().strip(".")
-        if answer in REACTION_WEIGHT or answer == "unrelated":
-            return answer
-        print(f"[Suggest] unrecognised reaction {answer!r}")
-        return None
-    except Exception as e:
-        print(f"[Suggest] classify failed: {e}")
-        return None
+    # Twice if the first try fails. One failed call at 14:53 lost "Haan acha
+    # gana hai yei" — asked again later, the same words came back "accepted"
+    # — and a lost yes means nothing is learned from the one thing she
+    # clearly liked that day.
+    for attempt in (1, 2):
+        try:
+            import anthropic
+            client = __import__("llm").client()
+            resp = client.messages.create(
+                model=__import__("llm").model("claude-haiku-4-5-20251001"), max_tokens=10,
+                messages=[{"role": "user", "content": prompt}])
+            answer = (resp.content[0].text or "").strip().lower().strip(".").split()[0:1]
+            answer = answer[0] if answer else ""
+            if answer in REACTION_WEIGHT or answer == "unrelated":
+                print(f"[Suggest] {offer_label[:40]!r} + {user_text[:40]!r} -> {answer}")
+                return answer
+            print(f"[Suggest] unrecognised reaction {answer!r} (try {attempt})")
+        except Exception as e:
+            print(f"[Suggest] classify failed (try {attempt}): {e}")
+    return None
 
 
 def apply_reaction(user_id: str, suggestion: dict, reaction: str,
