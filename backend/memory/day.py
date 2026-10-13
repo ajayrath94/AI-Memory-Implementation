@@ -797,7 +797,7 @@ def open_events(user_id: str) -> List[Dict]:
             and 0 <= _mins(e.get("due_at")) <= now_min]
 
 
-def _which(user_text: str, open_evs: List[Dict]) -> Optional[str]:
+def _which(user_text: str, open_evs: List[Dict], replying_to: str = "") -> Optional[str]:
     """Which of today's things is this message about? Nothing else.
 
     Deliberately loose — it may say yes to a neighbour's walk or tomorrow's.
@@ -806,8 +806,11 @@ def _which(user_text: str, open_evs: List[Dict]) -> Optional[str]:
     breaking others.
     """
     listing = "\n".join(f"- {e['label'] or e['kind']}" for e in open_evs)
+    before = (f'\nThey were replying to this, from their companion: "{replying_to[:300]}"\n'
+              f'Read the message as that reply. A short answer is about whatever it '
+              f'answers.\n') if replying_to else ""
     prompt = f"""Someone wrote: "{user_text}"
-
+{before}
 These are things from their daily routine:
 {listing}
 
@@ -820,7 +823,8 @@ set up their schedule; they speak their own language. "Sair" is the Evening
 walk, "nashta" is breakfast, "ਦਵਾਈ" is a medication. Match on what the thing
 IS.
 
-If several could equally fit, answer NONE.
+If several could equally fit, answer NONE. If it is about something that is
+not on this list, answer NONE: a remark about a film is not about breakfast.
 One line, nothing else."""
     try:
         import anthropic
@@ -837,15 +841,16 @@ One line, nothing else."""
     return got.split(" (a ")[0].strip()
 
 
-def _happened(user_text: str, label: str) -> Optional[Dict]:
+def _happened(user_text: str, label: str, replying_to: str = "") -> Optional[Dict]:
     """Did THIS person do it TODAY, and is it already done?
 
     One narrow question. All three conditions failed when they were conditions
     inside a larger prompt — the neighbour's walk, tomorrow's walk and
     yesterday's walk each got confirmed on different attempts.
     """
+    before = (f'They were replying to: "{replying_to[:300]}"\n') if replying_to else ""
     prompt = f"""Someone wrote: "{user_text}"
-This is about: {label}
+{before}This is about: {label}
 
 Answer with ONE word.
 
@@ -863,6 +868,10 @@ But saying they are NOT doing it is not a plan, it is a decision, and it is
 not_done. "Aaj sair pe nahi jaungi" said half an hour after the walk was due
 came back as other, so nothing was recorded and the evening message asked how
 the walk had gone.
+
+not_done needs them to SAY so about this thing. "Subh subh kaun movie
+dekhega" said about a film is not a skipped breakfast; nothing said about
+it at all is "other", never not_done.
 
 One word, nothing else."""
     try:
@@ -883,16 +892,37 @@ One word, nothing else."""
     return None
 
 
-def _read(user_text: str, open_evs: List[Dict]) -> Optional[Dict]:
+def _read(user_text: str, open_evs: List[Dict], replying_to: str = "") -> Optional[Dict]:
     """Two narrow questions rather than one loaded with conditions.
 
     The second call only runs when the first found something, which is rare —
     so this is usually no more expensive than the single call it replaces.
     """
-    label = _which(user_text, open_evs)
+    label = _which(user_text, open_evs, replying_to)
     if not label:
         return None
-    return _happened(user_text, label)
+    return _happened(user_text, label, replying_to)
+
+
+def _last_said_to_her(user_id: str) -> str:
+    """What Nancy said last, within the last three hours, before this message.
+
+    Her lines answer questions. "Sab acha raha, subh subh kaun movie dekhega"
+    was a reply to "kaise raha aapka puja?" and to a film suggested at six in
+    the morning; read alone it was taken as a skipped breakfast, breakfast was
+    marked denied, and nobody asked her about it.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        convo = _conversation(user_id, (now - timedelta(hours=3)).isoformat())
+        # The last message is usually hers (just saved); the line before it
+        # from Nancy is what she is answering.
+        for m in reversed(convo):
+            if m["who"] == "nancy":
+                return m["text"]
+    except Exception as e:
+        print(f"[Day] last-said read failed: {e}")
+    return ""
 
 
 def note_from_message(user_id: str, user_text: str) -> Optional[str]:
@@ -904,7 +934,7 @@ def note_from_message(user_id: str, user_text: str) -> Optional[str]:
     if not open_evs:
         return None
 
-    got = _read(user_text, open_evs)
+    got = _read(user_text, open_evs, _last_said_to_her(user_id))
     if not got:
         return None
 

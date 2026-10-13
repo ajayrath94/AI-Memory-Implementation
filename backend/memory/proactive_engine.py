@@ -63,6 +63,50 @@ def _dose_covered(user_id: str, label: str, now_min) -> bool:
         return False
 
 
+def _hm(v):
+    try:
+        h, m = str(v)[:5].split(":")
+        return int(h) * 60 + int(m)
+    except Exception:
+        return None
+
+
+def _awake_minutes(user_id: str, gap: int, hour) -> "int | None":
+    """Of the last `gap` minutes, how many she was awake for. None if her
+    sleep and wake times are not known, and the caller keeps the raw gap.
+
+    Walks back minute-blocks from now and leaves out whatever falls between
+    her declared sleep and wake. A whole night is about eight hours, so this
+    is the difference between a silence and a night's sleep.
+    """
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from memory.declared import get_declared
+        d = get_declared(user_id)
+        sleep, wake = _hm(d.rhythm.sleep), _hm(d.rhythm.wake)
+        if sleep is None or wake is None:
+            sleep, wake = 22 * 60, 6 * 60
+        now = datetime.now(ZoneInfo(d.place.timezone or "Asia/Kolkata"))
+        now_min = (int(hour) * 60) if hour is not None else now.hour * 60 + now.minute
+    except Exception as e:
+        print(f"[Proactive] awake-gap read failed: {e}")
+        return None
+
+    def asleep(m):
+        m %= 1440
+        if sleep > wake:                     # 22:00 -> 06:00, across midnight
+            return m >= sleep or m < wake
+        return sleep <= m < wake
+
+    # Fifteen-minute steps: plenty for a six-hour threshold, and a day at most.
+    awake, step = 0, 15
+    for back in range(0, min(int(gap), 48 * 60), step):
+        if not asleep(now_min - back):
+            awake += step
+    return awake
+
+
 def proactive_check(user_id: str, override_hour: int = None) -> dict:
     from memory.time_context import time_context, _slot, _mode
     from memory.care_reader import get_due_schedule_items
@@ -92,6 +136,17 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
     hour   = tc.get("hour")
     quiet  = tc.get("unusual_silence")
     gap    = tc.get("minutes_since_last")
+
+    # Quiet while AWAKE, not quiet since she last spoke. The night counted:
+    # her last word at 18:32, and at 06:13 the next morning "quiet ~11h
+    # during waking hours" sent "subah subah kya dekhne ka irada hai, koi
+    # purani movie?" before her puja, before the greeting — the first check
+    # of every morning looked like a silence, because she had been asleep.
+    if quiet and gap:
+        awake_gap = _awake_minutes(user_id, gap, hour)
+        if awake_gap is not None:
+            gap = awake_gap
+            quiet = awake_gap > 6 * 60
 
     # location context
     away = False

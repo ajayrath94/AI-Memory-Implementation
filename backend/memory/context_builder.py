@@ -481,9 +481,19 @@ def build_context(user_id: str, include: Optional[list] = None) -> dict:
 # differs.
 
 _INTENTS = {
+    # Sent because they have been quiet for a long stretch of the day. It
+    # asks after THEM. Told only "write your opening line" next to a list of
+    # everything they like, it opened with one of those things: "subah subah
+    # kya dekhne ka irada hai, koi purani movie?" at 06:13, before her puja,
+    # and she answered "subh subh kaun movie dekhega".
     "check_in": (
-        "You are starting the conversation — they have not said anything yet. "
-        "Write your opening line."
+        "They have been quiet for a while, and you are reaching out first. "
+        "Ask after them: how they are, how the day is going. One or two short, "
+        "warm lines, the way family would ring to say they were thinking of "
+        "them. Suggest nothing: no film, song, dish, show or activity, and do "
+        "not ask what they plan to watch, eat or do. Do not say they have been "
+        "quiet, and do not sound worried. Anything you mention must fit the "
+        "time of day it is now."
     ),
     "medication": (
         "A medication is due now. Remind them warmly and specifically, by name. "
