@@ -38,6 +38,13 @@ from typing import Optional
 # by then any "nahi" belongs to a different conversation.
 PENDING_MINUTES = 30
 
+# Unless it is her FIRST word since the offer. Pranayam was offered at 10:03,
+# closed as no_response at 10:33, and at 10:53 she answered it — "abhi puja
+# karna hai, sham ko dekhenge", a plain not-now — to nothing. She reads her
+# phone when she reads it. Nothing else has been said in between, so there
+# is no other conversation for her reply to belong to.
+FIRST_REPLY_MINUTES = 180
+
 REACTION_WEIGHT = {
     "accepted":            0.2,
     "declined_timing":     0.0,
@@ -418,17 +425,51 @@ def record_suggestion(user_id: str, cluster_id: Optional[str], label: str,
 
 # ── reading the reply ─────────────────────────────────────────────────────────
 
-def pending_suggestion(user_id: str) -> Optional[dict]:
-    """The open suggestion, if there is one and it is still fresh."""
+def _her_words_since(user_id: str, since_iso: str) -> int:
+    """How many messages she has written since then, not counting the one
+    being handled now (it is saved before this runs, so one is allowed)."""
     try:
         from supabase_store import get_client
-        since = (datetime.now(timezone.utc) - timedelta(minutes=PENDING_MINUTES)).isoformat()
+        db = get_client()
+        sess = [r["id"] for r in (db.table("sessions").select("id")
+                .eq("user_id", user_id).gte("updated_at", since_iso)
+                .limit(5).execute()).data or []]
+        if not sess:
+            return 0
+        rows = (db.table("messages").select("timestamp")
+                .in_("session_id", sess).eq("role", "user")
+                .gt("timestamp", since_iso).limit(10).execute()).data or []
+        return len(rows)
+    except Exception as e:
+        print(f"[Suggest] her-words read failed: {e}")
+        return 99                    # unknown: fall back to the short rule
+
+
+def pending_suggestion(user_id: str) -> Optional[dict]:
+    """The open suggestion, if there is one and it is still hers to answer.
+
+    Fresh (30 minutes), or older but her first word since (3 hours).
+    """
+    try:
+        from supabase_store import get_client
+        since = (datetime.now(timezone.utc)
+                 - timedelta(minutes=FIRST_REPLY_MINUTES)).isoformat()
         rows = (get_client().table("suggestions")
                 .select("id,cluster_id,label,intent,created_at")
                 .eq("user_id", user_id).is_("reaction", "null")
                 .gte("created_at", since)
                 .order("created_at", desc=True).limit(1).execute()).data or []
-        return rows[0] if rows else None
+        if not rows:
+            return None
+        r = rows[0]
+        made = datetime.fromisoformat(str(r["created_at"]).replace("Z", "+00:00"))
+        if made.tzinfo is None:
+            made = made.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - made).total_seconds() / 60
+        if age <= PENDING_MINUTES:
+            return r
+        # Older: only if this is the first thing she has said since.
+        return r if _her_words_since(user_id, made.isoformat()) <= 1 else None
     except Exception as e:
         print(f"[Suggest] pending read failed: {e}")
         return None
@@ -548,7 +589,11 @@ def expire_stale(user_id: Optional[str] = None) -> int:
     try:
         from supabase_store import get_client
         db = get_client()
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=PENDING_MINUTES)).isoformat()
+        # Closed as no_response only once even a first reply would be too
+        # late. Closing at 30 minutes is what lost "sham ko dekhenge": the
+        # offer was already marked ignored when she answered it.
+        cutoff = (datetime.now(timezone.utc)
+                  - timedelta(minutes=FIRST_REPLY_MINUTES)).isoformat()
         q = (db.table("suggestions")
              .select("id,user_id,cluster_id,label")
              .is_("reaction", "null").lt("created_at", cutoff))
