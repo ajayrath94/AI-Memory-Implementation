@@ -17,6 +17,7 @@ import { useT } from '../hooks/useT'
 import { MessageBubble } from '../components/chat/MessageBubble'
 import { speak, stop as stopVoice, getPreference, onPlayingChange, type Playback } from '../services/voiceService'
 import { ChatInput } from '../components/chat/ChatInput'
+import { ToolStrip } from '../components/chat/ToolStrip'
 
 // Takes the companion's name rather than assuming it. Someone whose companion
 // is Shubham was seeing "Nancy" in the header and an N in the avatar, which
@@ -291,6 +292,8 @@ export default function ChatScreen() {
         </View>
       )}
 
+      {/* What Nancy can do, one tap each — see ToolStrip */}
+      <ToolStrip onSend={(text: string) => (send as any)(text)} disabled={loading} />
       <ChatInput onSubmit={send} loading={loading} />
     </SafeAreaView>
   )
