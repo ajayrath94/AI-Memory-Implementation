@@ -281,6 +281,110 @@ def _compress_cache_to_stm(session_id: str, query_embedding: List[float]):
             print(f"[STM] Save failed: {e}")
 
 
+# ── Food, in the background ───────────────────────────────────────────────────
+
+# What a condition or a medicine means at the table. Read from both, because
+# her conditions list says "knee pain" and nothing about blood pressure while
+# her medicines say Amlodipine — the medicine is the reliable signal.
+_FOOD_CARE = (
+    (("blood pressure", "hypertension", " bp", "amlodipine", "telmisartan",
+      "losartan", "olmesartan"),
+     "blood pressure: low salt — no pickle, papad, namkeen or extra salt; nothing fried"),
+    (("diabet", "sugar", "metformin", "glimepiride", "insulin"),
+     "blood sugar: no sweets or sugary drinks, little rice or maida, small portions"),
+    (("cholesterol", "heart", "cardiac", "atorvastatin", "rosuvastatin"),
+     "heart: nothing fried or rich, little ghee or butter"),
+    (("thyroid", "thyronorm", "eltroxin", "levothyroxine"),
+     "thyroid: go easy on raw cabbage, cauliflower and soya"),
+    (("kidney", "renal", "dialysis"),
+     "kidneys: do not suggest anything specific; their doctor decides their diet"),
+)
+
+
+def _food_notes(user_id: str) -> str:
+    """Everything that bears on what she eats, in one place, for when food
+    comes up — and only then.
+
+    The chat had pieces: interests sometimes, diet only if a form had it,
+    health deliberately left out, and what she had said she dislikes never at
+    all — it was saved by the food tool and read by nobody but the recipe
+    search. So "aaj sham ko kya banaya jaye" was answered without knowing she
+    takes a blood-pressure tablet, and "namak kam rakhna" was luck.
+    """
+    lines = []
+    try:
+        from memory.profile_store import get_user_profile
+        p = get_user_profile(user_id) or {}
+    except Exception as e:
+        print(f"[Food] profile read failed: {e}")
+        p = {}
+
+    demo = p.get("demographics") or {}
+    food = p.get("food") or {}
+    health = p.get("health") or {}
+
+    diet = food.get("diet") or demo.get("diet")
+    if diet:
+        lines.append(f"- Diet: {diet}")
+
+    def _list(v):
+        return [str(x) for x in (v if isinstance(v, list) else [v]) if x]
+
+    likes = _list(food.get("likes"))
+    dislikes = _list(food.get("dislikes"))
+    avoid = _list(food.get("avoid")) + _list(food.get("avoids"))
+    if likes:
+        lines.append(f"- Likes: {', '.join(likes[:10])}")
+    if dislikes:
+        lines.append(f"- Does not like: {', '.join(dislikes[:10])}")
+    if avoid:
+        lines.append(f"- Does not eat: {', '.join(avoid[:10])}")
+
+    # Dishes she enjoys, from what she has talked about.
+    try:
+        from memory.offers import hers
+        dishes = [v["label"] for v in sorted(hers(user_id).values(),
+                                             key=lambda v: -float(v.get("strength") or 0))
+                  if (v.get("category") or "") == "khana"
+                  and not (v.get("state") is not None and v["state"] < 0)][:6]
+        if dishes:
+            lines.append(f"- Enjoys: {', '.join(dishes)}")
+    except Exception as e:
+        print(f"[Food] interests read failed: {e}")
+
+    # Food she turned down when it was offered.
+    try:
+        from memory.offers import _refused
+        no = sorted(_refused(user_id))[:8]
+        if no:
+            lines.append(f"- Turned down when offered: {', '.join(no)}")
+    except Exception:
+        pass
+
+    # What her health means at the table, from conditions and medicines both.
+    blob = " " + " ".join(_list(health.get("conditions")) + _list(health.get("medications"))
+                          + _list(health.get("concerns"))).lower()
+    care = [rule for words, rule in _FOOD_CARE if any(w in blob for w in words)]
+    if care:
+        lines.append("- For their health: " + "; ".join(care))
+
+    # Meat today is a date, not a flag: Tuesdays, Shravan, her own days.
+    try:
+        from memory.diet import can_eat_meat_today
+        v = can_eat_meat_today(user_id)
+        if v and not v.get("ok"):
+            lines.append("- Today: nothing with meat, fish or egg")
+    except Exception:
+        pass
+
+    if not lines:
+        return ""
+    return ("\nFOOD — background, for when food comes up. Use it to make any food "
+            "you suggest or discuss right for them. Never bring food up because of "
+            "it, never read it back to them, and never explain why something is "
+            "or is not suitable unless they ask.\n" + "\n".join(lines) + "\n")
+
+
 # ── Nancy system prompt ────────────────────────────────────────────────────────
 
 def _build_system_prompt(classified, user_memory: Optional[str],
@@ -306,8 +410,10 @@ YOUR PERSONALITY:
 - You celebrate small things enthusiastically
 - You're patient, never rush, never dismiss
 - You have opinions and share them when asked
-- You follow THEIR lead. You may bring up something you know they enjoy
-  when the conversation has naturally come to a pause, not to fill every reply
+- You follow THEIR lead. Reply to what they raised; do not bring in a new
+  subject of your own — a match, a film, a song, a show — and do not offer to
+  look something up they did not ask about. When they say they are resting,
+  let them rest: a warm line is the whole reply.
 
 CRITICAL RULES:
 - NEVER say "I don't have any record of previous conversations"
@@ -392,6 +498,33 @@ current local time into a concrete date and time.
 """
     except Exception:
         pass
+    # ── Food, in the background ──────────────────────────────────────────────
+    try:
+        nancy_persona += _food_notes(user_id)
+    except Exception as _fn:
+        print(f"[Router] food notes failed: {_fn}")
+
+    # ── Her festival, if she keeps one and it is running ─────────────────────
+    # The chat did not know. On day three of a Navratri she keeps, she asked
+    # what to cook tonight and was offered red lentil soup and garlicky kale.
+    # The proactive messages and the offers knew; the conversation, where she
+    # actually asks, did not.
+    try:
+        from memory.festival_brief import for_user as _festival_for
+        _f = _festival_for(user_id)
+        if _f:
+            line = f"\nTODAY: {_f['name']}, day {_f.get('day_of')} of {_f.get('days')}."
+            if _f.get("fasting") and _f.get("she_keeps_it"):
+                line += (f" She keeps this fast. It avoids {_f.get('fast_avoids')}."
+                         f" What is eaten instead: {_f.get('eaten_instead')}."
+                         " Any food you suggest or discuss must keep this fast.")
+            elif _f.get("fasting"):
+                line += (" Many people fast during it and you do not know whether"
+                         " she does: ask before suggesting food.")
+            nancy_persona += line + "\n"
+    except Exception as _fe:
+        print(f"[Router] festival read failed: {_fe}")
+
     # ── Current context with priority ────────────────────────────────────────
     nancy_persona += f"""
 CURRENT CONTEXT:

@@ -617,9 +617,14 @@ def _user_health_filters(user_id: str) -> dict:
         notes.append("low-sugar")
 
     # ── REGION → cuisine ────────────────────────────────────────────────────
-    india_hints = ["jaipur","delhi","mumbai","kolkata","chennai","bangalore",
-                   "hyderabad","pune","india","rajasthan","up","bihar","gujarat"]
-    if any(h in location for h in india_hints):
+    # Indian unless they are somewhere else. The list of cities matched
+    # "bangalore" and not "bengaluru", so a woman in Vyalikaval, Bengaluru was
+    # sent asparagus soup and garlicky kale. Every user is in India or of it;
+    # a list of cities is the wrong test.
+    abroad = any(w in location for w in ("usa", "america", "london", "uk",
+                                         "canada", "australia", "dubai",
+                                         "singapore", "germany"))
+    if not abroad:
         filters["cuisine"] = "Indian"
         notes.append("Indian")
 
@@ -652,6 +657,29 @@ def _user_health_filters(user_id: str) -> dict:
 def get_recipes(user_id: str, query: str = None, number: int = 5):
     """Health-aware recipe suggestions. Reads the user's conditions and filters
     (BP -> low sodium, diabetes -> low sugar). Returns recipes + a why-fits note."""
+    # A fast she keeps decides the food, and Spoonacular knows nothing about
+    # Navratri: on day three it returned red lentil soup and garlicky kale to
+    # a woman whose fast avoids grain, lentils, onion and garlic. So during
+    # one, no search — the model is given what the fast allows and suggests
+    # from that, in her own kitchen's terms.
+    try:
+        from memory.festival_brief import for_user as _festival_for
+        _f = _festival_for(user_id)
+        if _f and _f.get("fasting") and _f.get("she_keeps_it"):
+            return {
+                "recipes": [],
+                "fasting": True,
+                "festival": f"{_f['name']}, day {_f.get('day_of')} of {_f.get('days')}",
+                "fast_avoids": _f.get("fast_avoids"),
+                "eaten_instead": _f.get("eaten_instead"),
+                "note": ("She is keeping this fast. Suggest only dishes made from "
+                         "what is eaten instead — the usual vrat dishes of her own "
+                         "region — nothing with anything the fast avoids. Light, "
+                         "low in salt, not fried."),
+            }
+    except Exception as _fe:
+        print(f"[Recipes] festival read failed: {_fe}")
+
     key = os.getenv("SPOONACULAR_API_KEY")
     if not key:
         return {"error": "SPOONACULAR_API_KEY not set", "recipes": []}
