@@ -22,6 +22,9 @@ const NAV_ITEMS = [
   { path: '/sessions',  icon: 'time-outline',          label: 'nav.sessions'  },
   { path: '/memory',    icon: 'hardware-chip-outline', label: 'nav.memory'    },
   { path: '/reminders', icon: 'alarm-outline',         label: 'nav.reminders' },
+  // Her lists — market, packing, questions for the doctor. Next to reminders
+  // because both are things she asked to be kept for her.
+  { path: '/lists',     icon: 'list-outline',          label: 'nav.lists', fallback: 'Listein' },
   { path: '/calendar',  icon: 'calendar-outline',      label: 'nav.calendar'  },
   // Between the calendar and her profile, not at the top. She needs to
   // find it without thinking; she does not need it to be the first
@@ -144,7 +147,11 @@ export default function RootLayout() {
                     style={[styles.navLabel, isActive && styles.navLabelActive, { opacity: fadeAnim }]}
                     numberOfLines={1}
                   >
-                    {t(item.label)}
+                    {(() => {
+                      // A key with no translation yet comes back as itself.
+                      const s = t(item.label)
+                      return (!s || s === item.label) && (item as any).fallback ? (item as any).fallback : s
+                    })()}
                   </Animated.Text>
                 </TouchableOpacity>
               )

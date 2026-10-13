@@ -84,6 +84,8 @@ app.include_router(location_router, prefix="/location", tags=["location"], depen
 app.include_router(debug_router, prefix="/debug", tags=["debug"], dependencies=[Depends(require_api_key)])
 app.include_router(push_router, prefix="/push", tags=["push"], dependencies=[Depends(require_api_key)])
 app.include_router(memory_view_router, prefix="/view", tags=["view"])
+from routes.lists import router as lists_router
+app.include_router(lists_router, prefix="/lists", tags=["lists"], dependencies=[Depends(require_api_key)])
 
 @app.get("/")
 def root():

@@ -498,6 +498,15 @@ current local time into a concrete date and time.
 """
     except Exception:
         pass
+    # ── Her lists, and whether she is going through one in a shop ─────────────
+    # Without this the chat cannot know "mil gaya" means the sabudana it just
+    # read out, or that "bazar" already has six things on it.
+    try:
+        from memory.lists import hint as _list_hint
+        nancy_persona += _list_hint(user_id)
+    except Exception as _lh:
+        print(f"[Router] list hint failed: {_lh}")
+
     # ── Food, in the background ──────────────────────────────────────────────
     try:
         nancy_persona += _food_notes(user_id)

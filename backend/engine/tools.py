@@ -310,12 +310,15 @@ LIST_ADD_SCHEMA = {
         "name": "add_to_list",
         "description": (
             "Put something on one of her lists. Use this the moment she "
-            "names a thing she needs to get, do, remember or ask about — "
-            "'sabudana lena hai', 'doctor se yeh poochna hai', 'beta ko "
-            "batana hai'. She is seventy and writing on paper; the whole "
-            "point is that she can say it in passing and it is kept.\n\n"
+            "names a thing she needs to get, pack, do, remember or ask about "
+            "— 'sabudana lena hai', 'doctor se yeh poochna hai', 'shawl "
+            "rakhna hai'. She is seventy and writing on paper; the whole "
+            "point is that she can say it in passing and it is kept. Several "
+            "things in one breath → call this once per thing.\n\n"
             "Add it even if she has not asked for a list. A list starts "
-            "itself the first time she names something.\n\n"
+            "itself the first time she names something; the result says "
+            "started_new_list, and then tell her in a few words which list "
+            "you started ('bazar ki list bana di').\n\n"
             "Do NOT use this for things with a time — 'teen baje dawai "
             "leni hai' is a reminder, not a list item."
         ),
@@ -334,17 +337,31 @@ LIST_ADD_SCHEMA = {
                     "description": (
                         "Anything else she said about it, as key-value "
                         "pairs in HER words: {'kitna': 'do kilo'}, "
-                        "{'kahan se': 'Big Bazaar'}. Leave it out when she "
-                        "said nothing else. Do not invent fields and do "
-                        "not translate her words into English."
+                        "{'kahan se': 'Big Bazaar'}, {'kis liye': 'Navratri'}. "
+                        "Leave it out when she said nothing else. Do not "
+                        "invent fields and do not translate her words."
                     ),
                 },
                 "list_name": {
                     "type": "string",
                     "description": (
-                        "Which list, if she named one — 'bazar ki list', "
-                        "'doctor ke sawaal'. Omit it and the most recent "
-                        "list is used, which is almost always right."
+                        "Which list. Short, one or two words, by what it is "
+                        "for: 'bazar', 'packing', 'doctor ke sawaal', "
+                        "'Navratri'. Name it when she named one or when the "
+                        "thing plainly belongs to a different kind of list "
+                        "than the one open (a shawl to pack is not market "
+                        "shopping). Otherwise omit it and the most recent "
+                        "open list is used."
+                    ),
+                },
+                "expires_on": {
+                    "type": "string",
+                    "description": (
+                        "YYYY-MM-DD, only when she said how long it is for — "
+                        "'kal ke bazar ke liye', 'Surat jaane tak', 'Navratri "
+                        "tak'. Resolve it against her local date. Omit "
+                        "otherwise; an untouched list closes itself after "
+                        "two weeks."
                     ),
                 },
             },
@@ -358,11 +375,17 @@ LIST_READ_SCHEMA = {
     "function": {
         "name": "read_list",
         "description": (
-            "Read back what is on a list. Use this when she asks — 'list "
-            "mein kya hai', 'kya kya lena tha' — and when she is about to "
-            "go out and the list is plainly relevant.\n\n"
-            "Do not read it back unprompted at other times. A companion "
-            "that recites a shopping list every morning is a nuisance."
+            "Read a list back. Use this when she asks — 'list mein kya hai', "
+            "'kya kya lena tha', 'meri saari lists' — and when she is about "
+            "to go out and the list is plainly relevant. Do not read it back "
+            "unprompted at other times.\n\n"
+            "In a shop she wants ONE thing at a time: 'ek ek karke batao', "
+            "'padh ke sunao, main dhoondti hoon' → one_at_a_time=true. Say "
+            "only that one item and wait. The next comes from "
+            "tick_off_list (current=true when she has it, skip=true when "
+            "she did not find it).\n\n"
+            "'Bas', 'baad mein dekhenge' while going through one → "
+            "stop_reading=true."
         ),
         "parameters": {
             "type": "object",
@@ -370,6 +393,22 @@ LIST_READ_SCHEMA = {
                 "list_name": {
                     "type": "string",
                     "description": "Which one, if she named it. Usually omit.",
+                },
+                "one_at_a_time": {
+                    "type": "boolean",
+                    "description": "Read out just the next item not yet got.",
+                },
+                "all_lists": {
+                    "type": "boolean",
+                    "description": "Which lists she has open and how much is left on each.",
+                },
+                "kept": {
+                    "type": "boolean",
+                    "description": "Her finished lists she chose to keep ('purani lists').",
+                },
+                "stop_reading": {
+                    "type": "boolean",
+                    "description": "She has stopped going through it one at a time.",
                 },
             },
             "required": [],
@@ -382,30 +421,57 @@ LIST_TICK_SCHEMA = {
     "function": {
         "name": "tick_off_list",
         "description": (
-            "Cross something off, when she says she has got it or done it "
-            "— 'sabudana le liya', 'woh ho gaya'. It stays on the list, "
-            "crossed off, because a market list is worth seeing again next "
-            "month and she will want the same things."
+            "Cross something off, or put it back.\n"
+            "- She names it: 'sabudana le liya' → what='sabudana'.\n"
+            "- She is going through the list one at a time and says 'mil "
+            "gaya' / 'le liya' with no name → current=true. The result "
+            "carries the next item: say it.\n"
+            "- 'Nahi mila', 'aage batao' → skip=true. It stays on.\n"
+            "- 'Sab le liya' → everything=true.\n"
+            "- 'Nahi, woh abhi nahi liya', 'galti se kaat diya' → undo=true "
+            "with what.\n"
+            "Ticked things stay on the list, crossed off. If the result says "
+            "not_found, tell her it is not on the list — do not pretend."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "what": {
-                    "type": "string",
-                    "description": (
-                        "The thing she has got, in her words. Omit it and "
-                        "set everything=true when she says she has got the "
-                        "lot — 'sab le liya' is how someone talks after a "
-                        "shop, not four separate confirmations."
-                    ),
-                },
-                "everything": {
-                    "type": "boolean",
-                    "description": "True when she has got all of it.",
-                },
+                "what": {"type": "string", "description": "The thing, in her words."},
+                "current": {"type": "boolean", "description": "The item just read out to her."},
+                "skip": {"type": "boolean", "description": "She did not find the item just read out."},
+                "everything": {"type": "boolean", "description": "She has got all of it."},
+                "undo": {"type": "boolean", "description": "Put it back — not got after all."},
                 "list_name": {"type": "string"},
             },
             "required": [],
+        },
+    },
+}
+
+LIST_CHANGE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "change_list_item",
+        "description": (
+            "Change or remove something already on a list. 'Do kilo nahi, "
+            "ek kilo' → fields={'kitna': 'ek kilo'}. 'Sabudana nahi, "
+            "makhana' → new_what='makhana'. 'Woh hata do, galti se bola' → "
+            "remove=true. Removing is for mistakes; something she has got is "
+            "crossed off with tick_off_list, not removed."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "what": {"type": "string", "description": "The item as it is on the list now."},
+                "new_what": {"type": "string", "description": "What it should say instead."},
+                "fields": {
+                    "type": "object",
+                    "description": "Details to set, in her words. An empty value drops that detail.",
+                },
+                "remove": {"type": "boolean", "description": "Take it off entirely."},
+                "list_name": {"type": "string"},
+            },
+            "required": ["what"],
         },
     },
 }
@@ -418,10 +484,10 @@ LIST_CLOSE_SCHEMA = {
             "Finish with a list, when she says she is done — 'list "
             "khatam', 'ab iski zaroorat nahi'. Do not close it just "
             "because everything is ticked; she may add more.\n\n"
-            "ASK FIRST, and pass what she says as `keep`: band kar dein, "
-            "ya rakh lein agli baar ke liye? A kept list makes next "
-            "Navratri easier; a dropped one leaves nothing behind. It is "
-            "hers to decide, and if she does not say, keep it."
+            "ASK FIRST, and pass what she says as `keep`: rakh lein agli "
+            "baar ke liye, ya hata dein? A kept list can be started again "
+            "next time; a dropped one is gone. It is hers to decide, and if "
+            "she does not say, keep it."
         ),
         "parameters": {
             "type": "object",
@@ -429,11 +495,31 @@ LIST_CLOSE_SCHEMA = {
                 "keep": {
                     "type": "boolean",
                     "description": (
-                        "True to keep the items for next time, false to "
-                        "drop them. What SHE said. Default true."
+                        "True to keep it for next time, false to delete it. "
+                        "What SHE said. Default true."
                     ),
                 },
                 "list_name": {"type": "string"},
+            },
+            "required": [],
+        },
+    },
+}
+
+LIST_REUSE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "reuse_list",
+        "description": (
+            "Start a kept list again — 'pichli baar wali Navratri list', "
+            "'wahi packing list phir se'. Makes a new open list with the "
+            "same things, nothing crossed off. If it is not found, the "
+            "result names her kept lists; offer those."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "list_name": {"type": "string", "description": "The kept list's name, in her words."},
             },
             "required": [],
         },
@@ -448,20 +534,48 @@ def _handle_list_add(args: dict, user_id: str) -> dict:
     return add(user_id,
                args.get("what") or "",
                args.get("fields") or {},
-               args.get("list_name") or "")
+               args.get("list_name") or "",
+               expires_on=args.get("expires_on") or "")
 
 
 def _handle_list_read(args: dict, user_id: str) -> dict:
-    from memory.lists import read
-    return read(user_id, args.get("list_name") or "")
+    from memory import lists as L
+    name = args.get("list_name") or ""
+    if args.get("stop_reading"):
+        return L.stop_walk(user_id, name)
+    if args.get("kept"):
+        return L.kept(user_id)
+    if args.get("all_lists"):
+        return L.read_all(user_id)
+    if args.get("one_at_a_time"):
+        return L.next_item(user_id, name)
+    return L.read(user_id, name)
 
 
 def _handle_list_tick(args: dict, user_id: str) -> dict:
-    from memory.lists import tick, tick_all
-    if args.get("everything") or not (args.get("what") or "").strip():
-        return tick_all(user_id, args.get("list_name") or "")
-    return tick(user_id, args.get("what") or "",
-                args.get("list_name") or "")
+    from memory import lists as L
+    name = args.get("list_name") or ""
+    what = (args.get("what") or "").strip()
+    if args.get("undo"):
+        return L.untick(user_id, what, name)
+    if args.get("everything"):
+        return L.tick_all(user_id, name)
+    if args.get("skip"):
+        return L.skip_current(user_id, name)
+    if args.get("current") or not what:
+        # No name: only the thing just read out. Never everything by
+        # default — that empties her list on a misheard "ho gaya".
+        return L.tick_current(user_id, name)
+    return L.tick(user_id, what, name)
+
+
+def _handle_list_change(args: dict, user_id: str) -> dict:
+    from memory import lists as L
+    name = args.get("list_name") or ""
+    if args.get("remove"):
+        return L.remove(user_id, args.get("what") or "", name)
+    return L.change(user_id, args.get("what") or "",
+                    args.get("new_what") or "", args.get("fields") or {}, name)
 
 
 def _handle_list_close(args: dict, user_id: str) -> dict:
@@ -470,13 +584,20 @@ def _handle_list_close(args: dict, user_id: str) -> dict:
                  keep=bool(args.get("keep", True)))
 
 
+def _handle_list_reuse(args: dict, user_id: str) -> dict:
+    from memory.lists import reuse
+    return reuse(user_id, args.get("list_name") or "")
+
+
 TOOL_REGISTRY = {
     # Her lists. She said she was going to the market and the companion
     # offered to keep things for her, with nowhere to put them.
     "add_to_list":   {"schema": LIST_ADD_SCHEMA,   "handler": _handle_list_add},
     "read_list":     {"schema": LIST_READ_SCHEMA,  "handler": _handle_list_read},
     "tick_off_list": {"schema": LIST_TICK_SCHEMA,  "handler": _handle_list_tick},
+    "change_list_item": {"schema": LIST_CHANGE_SCHEMA, "handler": _handle_list_change},
     "close_list":    {"schema": LIST_CLOSE_SCHEMA, "handler": _handle_list_close},
+    "reuse_list":    {"schema": LIST_REUSE_SCHEMA, "handler": _handle_list_reuse},
 
     "get_recipes": {
         "schema":  RECIPES_SCHEMA,

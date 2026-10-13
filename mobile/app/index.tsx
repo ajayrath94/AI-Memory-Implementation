@@ -5,6 +5,7 @@ import {
   Animated,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
+import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../hooks/useTheme'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY, DEFAULT_MODEL } from '../constants'
@@ -36,6 +37,7 @@ export default function ChatScreen() {
   const { messages, loading, sessionId, endSession, clearChat, userId } = useAppStore()
   const { send, resend } = useChat()
   const t = useT()
+  const router = useRouter()
 
   // The companion's own name, not the product's.
   const [botName, setBotName] = useState('Nancy')
@@ -237,9 +239,15 @@ export default function ChatScreen() {
             </View>
           </View>
         </View>
-        <TouchableOpacity onPress={clearChat} style={styles.headerBtn}>
-          <Ionicons name="create-outline" size={22} color={theme.textMuted} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {/* Her lists, one tap from the chat — she adds by talking, looks here. */}
+          <TouchableOpacity onPress={() => router.push('/lists' as any)} style={styles.headerBtn}>
+            <Ionicons name="list-outline" size={24} color={theme.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={clearChat} style={styles.headerBtn}>
+            <Ionicons name="create-outline" size={22} color={theme.textMuted} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Messages */}
