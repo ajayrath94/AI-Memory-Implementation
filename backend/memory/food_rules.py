@@ -76,8 +76,11 @@ Work out what it means for the food a companion may suggest. Return JSON only:
  "chat_notes": [short English lines, what their health means at the table,
                e.g. "blood pressure: low salt, nothing fried" — one per
                condition or medicine that matters for food; [] if none],
- "offer_rules": [short English rules for choosing a dish to suggest,
-                 e.g. "nothing heavily salted or deep fried"],
+ "offer_rules": [short English LIMITS for choosing a dish to suggest,
+                 e.g. "nothing heavily salted or deep fried". Limits only —
+                 never what they like or what to feature; their likes are
+                 handled elsewhere, and whether they may eat meat today is
+                 decided by the calendar, not here],
  "doctor_decides": true if any condition means a doctor must set their diet
                    (e.g. kidney disease, dialysis) — then suggest nothing
                    specific about it,
@@ -94,8 +97,11 @@ Work out what it means for the food a companion may suggest. Return JSON only:
               if unclear
  }}
 }}
-Medicines count: a blood-pressure tablet means low salt even when no
-condition is listed.""", max_tokens=600) or ""
+Go through EVERY condition and EVERY medicine, one by one, and ask what it
+means at the table. Medicines count even when no condition is listed: a
+blood-pressure tablet means low salt; a thyroid tablet means going easy on
+soy and raw cabbage-family vegetables; a diabetes medicine means little
+sugar. Leave out only what truly has nothing to do with food (a knee).""", max_tokens=600) or ""
     s, e = raw.find("{"), raw.rfind("}")
     d = json.loads(raw[s:e + 1])
 
