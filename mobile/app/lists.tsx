@@ -6,6 +6,7 @@ import {
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../hooks/useTheme'
+import { useT } from '../hooks/useT'
 import { Colors, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
 
@@ -46,6 +47,7 @@ function niceDate(d: string | null) {
 
 export default function ListsScreen() {
   const theme = useTheme()
+  const t = useT()
   const { userId } = useAppStore()
   const [openLists, setOpenLists] = useState<ListCard[]>([])
   const [keptLists, setKeptLists] = useState<ListCard[]>([])
@@ -139,12 +141,12 @@ export default function ListsScreen() {
   const removeItem = (it: Item) => {
     if (!current) return
     Alert.alert(
-      'Hata dein?',
-      `"${it.fields.what}" list se hata dein?`,
+      t('lists.removeTitle'),
+      t('lists.removeBody', { what: it.fields.what }),
       [
-        { text: 'Rehne dein', style: 'cancel' },
+        { text: t('lists.leaveIt'), style: 'cancel' },
         {
-          text: 'Hata dein', style: 'destructive',
+          text: t('lists.remove'), style: 'destructive',
           onPress: async () => {
             try {
               await fetch(`${API_BASE}/lists/${userId}/${current.id}/items/${it.id}`, {
@@ -162,23 +164,23 @@ export default function ListsScreen() {
 
   const closeList = (l: ListCard) => {
     Alert.alert(
-      'List band karein?',
-      `"${l.name}" — agli baar ke liye rakh lein, ya hata dein?`,
+      t('lists.closeTitle'),
+      t('lists.closeBody', { name: l.name }),
       [
-        { text: 'Abhi nahi', style: 'cancel' },
-        { text: 'Rakh lein', onPress: () => doClose(l, true) },
-        { text: 'Hata dein', style: 'destructive', onPress: () => doClose(l, false) },
+        { text: t('lists.notNow'), style: 'cancel' },
+        { text: t('lists.keep'), onPress: () => doClose(l, true) },
+        { text: t('lists.delete'), style: 'destructive', onPress: () => doClose(l, false) },
       ],
     )
   }
 
   const deleteKept = (l: ListCard) => {
     Alert.alert(
-      'Hamesha ke liye hata dein?',
-      `"${l.name}" (${niceDate(l.created_at)}) wapas nahi aayegi.`,
+      t('lists.deleteForeverTitle'),
+      t('lists.deleteForeverBody', { name: l.name, date: niceDate(l.created_at) }),
       [
-        { text: 'Rehne dein', style: 'cancel' },
-        { text: 'Hata dein', style: 'destructive', onPress: () => doClose(l, false) },
+        { text: t('lists.leaveIt'), style: 'cancel' },
+        { text: t('lists.delete'), style: 'destructive', onPress: () => doClose(l, false) },
       ],
     )
   }
@@ -259,13 +261,13 @@ export default function ListsScreen() {
             <Text style={styles.headerTitle} numberOfLines={1}>{current.name}</Text>
             <Text style={styles.headerSub}>
               {niceDate(current.created_at)}
-              {isKept ? ' · rakhi hui' : ` · ${left.length} baaki`}
-              {current.expires_on && !isKept ? ` · ${niceDate(current.expires_on)} tak` : ''}
+              {isKept ? ` · ${t('lists.kept')}` : ` · ${t('lists.left', { n: left.length })}`}
+              {current.expires_on && !isKept ? ` · ${t('lists.until', { date: niceDate(current.expires_on) })}` : ''}
             </Text>
           </View>
           {!isKept && (
             <TouchableOpacity onPress={() => closeList(current)} style={styles.headerAction}>
-              <Text style={styles.headerActionText}>Band karein</Text>
+              <Text style={styles.headerActionText}>{t('lists.close')}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -279,14 +281,14 @@ export default function ListsScreen() {
           {isKept ? (
             <TouchableOpacity style={styles.bigButton} onPress={() => reuse(current)}>
               <Ionicons name="refresh" size={20} color="#fff" />
-              <Text style={styles.bigButtonText}>Phir se shuru karein</Text>
+              <Text style={styles.bigButtonText}>{t('lists.reuse')}</Text>
             </TouchableOpacity>
           ) : (
             <View style={[styles.addRow, { borderColor: theme.border }]}>
               <TextInput
                 value={newItem}
                 onChangeText={setNewItem}
-                placeholder="Kuch aur jodein…"
+                placeholder={t('lists.addPlaceholder')}
                 placeholderTextColor={Colors.textMuted}
                 style={styles.addInput}
                 onSubmitEditing={addItem}
@@ -300,20 +302,20 @@ export default function ListsScreen() {
           )}
 
           {current.items.length === 0 && (
-            <Text style={styles.emptyText}>Abhi kuch nahi hai. Chat mein bolein — "sabudana likh lo".</Text>
+            <Text style={styles.emptyText}>{t('lists.emptyList')}</Text>
           )}
 
           {left.map(row)}
           {done.length > 0 && (
             <>
               <Text style={[styles.sectionLabel, { marginTop: 18 }]}>
-                {isKept ? 'PICHHLI BAAR LIYA' : `LE LIYA (${done.length})`}
+                {isKept ? t('lists.lastTime') : t('lists.gotHeading', { n: done.length })}
               </Text>
               {done.map(row)}
             </>
           )}
           {!isKept && current.items.length > 0 && (
-            <Text style={styles.tip}>Tap karke kaatein ya wapas laayein. Dabaa ke rakhein to hatayein.</Text>
+            <Text style={styles.tip}>{t('lists.tip')}</Text>
           )}
         </ScrollView>
       </SafeAreaView>
@@ -335,8 +337,8 @@ export default function ListsScreen() {
         <Text style={styles.cardName} numberOfLines={1}>{l.name}</Text>
         <Text style={styles.cardMeta}>
           {niceDate(l.created_at)}
-          {kept ? ` · ${l.total} cheezein` : ` · ${l.left} baaki / ${l.total}`}
-          {!kept && l.expires_on ? ` · ${niceDate(l.expires_on)} tak` : ''}
+          {kept ? ` · ${t('lists.items', { n: l.total })}` : ` · ${t('lists.leftOf', { left: l.left, total: l.total })}`}
+          {!kept && l.expires_on ? ` · ${t('lists.until', { date: niceDate(l.expires_on) })}` : ''}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={22} color={Colors.textMuted} />
@@ -347,9 +349,9 @@ export default function ListsScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       <StatusBar style="light" />
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <Text style={styles.headerTitle}>📝 Listein</Text>
+        <Text style={styles.headerTitle}>📝 {t('lists.title')}</Text>
         <Text style={styles.headerSub}>
-          {openLists.length > 0 ? `${openLists.length} khuli` : 'Koi list khuli nahi'}
+          {openLists.length > 0 ? t('lists.openCount', { n: openLists.length }) : t('lists.noneOpen')}
         </Text>
       </View>
 
@@ -361,23 +363,21 @@ export default function ListsScreen() {
         {openLists.length === 0 && keptLists.length === 0 && (
           <View style={styles.empty}>
             <Ionicons name="list-outline" size={48} color={Colors.textMuted} />
-            <Text style={styles.emptyTitle}>Abhi koi list nahi</Text>
-            <Text style={styles.emptyText}>
-              Chat mein bas bolein — "bazar ke liye sabudana likh lo" — aur list yahan dikhegi.
-            </Text>
+            <Text style={styles.emptyTitle}>{t('lists.emptyTitle')}</Text>
+            <Text style={styles.emptyText}>{t('lists.emptyText')}</Text>
           </View>
         )}
 
         {openLists.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>KHULI LISTEIN</Text>
+            <Text style={styles.sectionLabel}>{t('lists.sectionOpen')}</Text>
             {openLists.map(l => card(l, false))}
           </View>
         )}
 
         {keptLists.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>RAKHI HUI</Text>
+            <Text style={styles.sectionLabel}>{t('lists.sectionKept')}</Text>
             {keptLists.map(l => card(l, true))}
           </View>
         )}
