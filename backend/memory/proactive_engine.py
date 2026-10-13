@@ -63,6 +63,10 @@ def _dose_covered(user_id: str, label: str, now_min) -> bool:
         return False
 
 
+# Her last message this recently, and she is mid-conversation.
+CHATTING_MINUTES = 15
+
+
 def _hm(v):
     try:
         h, m = str(v)[:5].split(":")
@@ -233,6 +237,12 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
     except Exception as e:
         print(f"[Proactive] greeting check failed: {e}")
 
+    # She is talking with Nancy right now. A push arriving in the middle of a
+    # conversation is absurd — the chat reply already folds in what is due
+    # (context_builder._due_now) — so nothing but a tablet is pushed while
+    # she is here. If she goes quiet, the next pass can still send it.
+    chatting = gap is not None and gap < CHATTING_MINUTES
+
     # ── 2.6 A boundary — something finished, something coming ──
     # Before the silence check-in and before a recommendation: a message that
     # refers to her actual day is better than either, and an offer inside a
@@ -247,7 +257,8 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
         #
         # Fifth time today something decided upstream was re-derived
         # downstream and came back different.
-        b = boundary(user_id, now_min=(hour * 60) if hour is not None else None)
+        b = None if chatting else boundary(
+            user_id, now_min=(hour * 60) if hour is not None else None)
         if b:
             label = ((b.get("done") or b.get("next") or {}).get("label") or "")
             return decision("BOUNDARY", "day_boundary", label, "low")
@@ -292,6 +303,11 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
     except Exception as _we:
         print(f"[Proactive] window read failed: {_we}")
         win = None
+
+    # Not while she is talking. An offer pushed into a conversation she is
+    # having is an interruption, whatever it offers.
+    if win and chatting:
+        return decision("SILENCE", "chatting_now")
 
     # One per window. The window is the unit — with no spacing rule left,
     # every tick inside an open stretch could send, and two offers went

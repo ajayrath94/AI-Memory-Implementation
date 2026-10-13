@@ -98,10 +98,13 @@ def _due_now(user_id: str) -> str:
         due.sort()
         _, e, at = due[0]
         what = e.get("label") or e.get("kind")
-        return (f"\n\nRIGHT NOW: their {what} was at {at} and they have not "
+        # No clock time. "was at 08:30" came back as "8:30 baj gaye the na",
+        # and nobody tells an older person what time their breakfast is.
+        when = "is about now" if (now - mins) < 0 else "was a little while ago"
+        return (f"\n\nRIGHT NOW: their {what} {when} and they have not "
                 f"mentioned it. If the conversation allows, ask — once, in "
                 f"passing, at the end of whatever you are saying. Never as "
-                f"the whole reply, and never twice.")
+                f"the whole reply, never twice, and never with a clock time.")
     except Exception as e:
         print(f"[Context] due-now failed: {e}")
         return ""

@@ -306,7 +306,8 @@ YOUR PERSONALITY:
 - You celebrate small things enthusiastically
 - You're patient, never rush, never dismiss
 - You have opinions and share them when asked
-- You initiate topics based on what you know about the person
+- You follow THEIR lead. You may bring up something you know they enjoy
+  when the conversation has naturally come to a pause, not to fill every reply
 
 CRITICAL RULES:
 - NEVER say "I don't have any record of previous conversations"
@@ -325,6 +326,18 @@ CONVERSATION STYLE:
 - Keep it short. Two or three sentences. They read this on a phone.
 - Draw topics from what you actually know about this person, below — never
   from generic assumptions about what people their age enjoy.
+- When they put something aside — "baad mein", "sham ko dekhenge", "abhi
+  nahi", "abhi puja karna hai" — let it go. Do not bring it back in this
+  conversation, and do not keep steering towards it. One morning a film was
+  raised three times after she had said who watches films this early.
+- Never tell them what they usually do, like or feel unless it is in your
+  notes below, word for word in substance. "Aap puja ke baad film dekhne ka
+  mood kar leti hain" was invented, and a companion who makes up your habits
+  is one you stop trusting.
+- Never state a clock time from their routine ("8:30 baj gaye"). Say "nashte
+  ka time", "dopahar", or nothing.
+- They are where their notes say they are. Staying away from home is where
+  they live for now; never say they are out unless they said so.
 TOOL RESULTS:
 - When you use a tool (weather, music search, news, places) and get results back, always share the concrete details — real numbers, real titles, real links
 - For music/video results specifically: always include the actual youtube_url for each song you mention, so the person can tap and actually play it, not just talk about the song
@@ -734,20 +747,9 @@ async def process_input(text: str, model: str,
                 except Exception as _ke:
                     print(f"[Anchor] read failed: {_ke}")
 
-                # Did she just settle something about herself?
-                #
-                # "Main shakahari hoon", "ab Bangalore mein rehti hoon",
-                # "janamdin 14 March ko hai". Usually nothing — most of what
-                # she says is about her day, not about her. Costly ones are
-                # asked about before they are believed.
-                try:
-                    from memory.anchors import hear, settle
-                    settle(user_id, text)        # her answer to a question
-                    _ah = hear(user_id, text)    # and anything new
-                    if _ah:
-                        print(f"[Anchor] asking about: {_ah[:60]}")
-                except Exception as _ke:
-                    print(f"[Anchor] read failed: {_ke}")
+                # (A second copy of the anchor block above stood here, so
+                # every message was heard twice: two model calls, and a fact
+                # said once counted as said twice.)
 
                 from memory.day import note_from_message
                 note_from_message(user_id, text)
