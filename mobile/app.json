@@ -30,6 +30,14 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "RECORD_AUDIO",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "adaptiveIcon": {
@@ -60,6 +68,10 @@
         "projectId": "e935e277-232b-480a-be52-22f06f0c49f1"
       }
     },
-    "owner": "ajayrath94"
+    "owner": "ajayrath94",
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/e935e277-232b-480a-be52-22f06f0c49f1"
+    }
   }
 }
