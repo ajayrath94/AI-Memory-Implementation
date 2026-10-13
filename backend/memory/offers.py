@@ -781,30 +781,20 @@ def user_context(user_id: str, window=None, now_min: Optional[int] = None) -> Di
     ctx["today"] = {k: v for k, v in t.items() if v not in (None, "", [], {})}
 
     # ── how they answered before ──
-    # The last offers and what came of them, so a "weekday mei kaha,
-    # weekend pe" about carrom on a Monday afternoon is seen the next
-    # Monday afternoon, not only as a number inside affinity.py.
+    # From the offer log: her last answers, in her words where she gave
+    # them, and what has worked at this part of the day and on this weekday,
+    # by the kind of thing offered. "Weekday mei kaha, weekend pe" about
+    # carrom on a Monday afternoon is seen the next Monday afternoon.
     try:
-        from datetime import datetime, timezone, timedelta
-        since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        rows = (_db().table("suggestions")
-                .select("label,reaction,offered_hour,created_at")
-                .eq("user_id", user_id).eq("intent", "recommendation")
-                .gte("created_at", since)
-                .order("created_at", desc=True).limit(12).execute()).data or []
-        hist = []
-        for r in rows:
-            h = {"what": r.get("label"), "answer": r.get("reaction") or "open"}
-            if r.get("offered_hour") is not None:
-                h["at_hour"] = r["offered_hour"]
-            try:
-                h["day"] = datetime.fromisoformat(
-                    str(r["created_at"]).replace("Z", "+00:00")).strftime("%a")
-            except Exception:
-                pass
-            hist.append(h)
+        from memory.offer_log import history, patterns, slot_of_hour
+        hist = history(user_id)
         if hist:
             ctx["past_offers"] = hist
+        pat = patterns(user_id,
+                       now_slot=slot_of_hour((now_min // 60) if now_min is not None else None),
+                       weekday=ctx.get("today", {}).get("day", ""))
+        if pat:
+            ctx["what_has_worked"] = pat
     except Exception as e:
         print(f"[Offers] history read failed: {e}")
 
@@ -878,10 +868,11 @@ Choose the option that best suits THIS person at THIS moment:
   "weekend"); offer it, or something like it, then, not at other times.
   "today_is_usually" is a weekly habit that falls today: a meal suggestion
   should fit with it, not compete with it.
-- Their pattern: what this weekday leans towards ("trends"), and how they
-  answered past offers ("past_offers"). Something answered "not now" at
-  this hour on this kind of day should wait; something accepted at this
-  hour is a good sign. Skip anything they are enjoying less.
+- Their pattern: what this weekday leans towards ("trends"), how they
+  answered past offers ("past_offers", with their own words), and what has
+  worked by kind at this time of day and on this weekday ("what_has_worked").
+  A kind answered "not now" at this time should wait; a kind accepted at
+  this time is a good sign. Skip anything they are enjoying less.
 - Their health: a dish must suit their conditions, medicines and diet. With
   blood pressure, diabetes or heart trouble, nothing fried, very sweet, very
   salty or rich. Vegetarian means vegetarian. When unsure, the lighter one.
@@ -1112,21 +1103,39 @@ def record(user_id: str, offer: Offer, window=None,
     except Exception:
         pass
 
+    row = {
+        "user_id": user_id,
+        "cluster_id": offer.cluster_id,
+        "label": offer.what,
+        "intent": "recommendation",
+        "source": "offer",
+        "because": offer.because,
+        "window_label": (window.clock() if window else None),
+        "offered_hour": (now_min // 60) if now_min is not None else None,
+        "day_shape": shape[:200],
+    }
+    # The log's own columns: what kind of thing it was, her date and weekday,
+    # the link, the festival, and why it was chosen. See offer_log.py.
     try:
-        _db().table("suggestions").insert({
-            "user_id": user_id,
-            "cluster_id": offer.cluster_id,
-            "label": offer.what,
-            "intent": "recommendation",
-            "source": "offer",
-            "because": offer.because,
-            "window_label": (window.clock() if window else None),
-            "offered_hour": (now_min // 60) if now_min is not None else None,
-            "day_shape": shape[:200],
-        }).execute()
+        from memory.offer_log import stamp
+        extra = stamp(user_id, offer, window, now_min)
+    except Exception as e:
+        print(f"[Offers] log stamp failed: {e}")
+        extra = {}
+    try:
+        _db().table("suggestions").insert({**row, **extra}).execute()
         print(f"[Offers] {user_id}: offered {offer}")
         return True
     except Exception as e:
+        if extra:
+            # The columns may not exist yet: record the offer without them
+            # rather than lose it.
+            try:
+                _db().table("suggestions").insert(row).execute()
+                print(f"[Offers] {user_id}: offered {offer} (log columns missing: {str(e)[:60]})")
+                return True
+            except Exception as e2:
+                e = e2
         print(f"[Offers] record failed: {e}")
         return False
 

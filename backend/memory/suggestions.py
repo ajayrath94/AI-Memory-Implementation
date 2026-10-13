@@ -527,7 +527,8 @@ One word, nothing else."""
 
 
 def apply_reaction(user_id: str, suggestion: dict, reaction: str,
-                   session_id: Optional[str] = None) -> bool:
+                   session_id: Optional[str] = None,
+                   reply_text: str = "") -> bool:
     """Close the suggestion and let the reaction move the cluster's sentiment.
 
     The weight becomes an ordinary event, so derive_trajectory folds it into
@@ -541,10 +542,19 @@ def apply_reaction(user_id: str, suggestion: dict, reaction: str,
     try:
         from supabase_store import get_client
         db = get_client()
-        db.table("suggestions").update({
-            "reaction": reaction,
-            "reacted_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", suggestion["id"]).execute()
+        upd = {"reaction": reaction,
+               "reacted_at": datetime.now(timezone.utc).isoformat()}
+        if reply_text:
+            # Her words, not only the label: "abhi puja karna hai, sham ko
+            # dekhenge" says WHEN, which "declined_timing" does not.
+            try:
+                db.table("suggestions").update({**upd, "reply_text": reply_text[:300]}) \
+                    .eq("id", suggestion["id"]).execute()
+                upd = None
+            except Exception:
+                pass                      # column not there yet
+        if upd:
+            db.table("suggestions").update(upd).eq("id", suggestion["id"]).execute()
 
         cid = suggestion.get("cluster_id")
         if cid:
@@ -585,7 +595,7 @@ def handle_reply(user_id: str, user_text: str,
         # Leave it open — they may still answer. The expiry sweep will close it.
         return None
 
-    apply_reaction(user_id, pending, reaction, session_id)
+    apply_reaction(user_id, pending, reaction, session_id, reply_text=user_text)
     return reaction
 
 

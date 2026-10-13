@@ -92,12 +92,16 @@ def _evidence(user_id: str) -> Dict[tuple, Dict[str, float]]:
         from supabase_store import get_client
         since = (datetime.now(timezone.utc)
                  - timedelta(days=LOOKBACK_DAYS)).isoformat()
-        rows = (get_client().table("suggestions")
-                .select("cluster_id,offered_hour,reaction")
-                .eq("user_id", user_id).eq("intent", "recommendation")
-                .not_.is_("reaction", "null")
-                .not_.is_("offered_hour", "null")
-                .gte("created_at", since).limit(500).execute()).data or []
+        def _q(cols):
+            return (get_client().table("suggestions").select(cols)
+                    .eq("user_id", user_id).eq("intent", "recommendation")
+                    .not_.is_("reaction", "null")
+                    .not_.is_("offered_hour", "null")
+                    .gte("created_at", since).limit(500).execute()).data or []
+        try:
+            rows = _q("cluster_id,offered_hour,reaction,kind")
+        except Exception:
+            rows = _q("cluster_id,offered_hour,reaction")    # before the column
         if not rows:
             return out
         from memory.offers import hers
@@ -108,7 +112,11 @@ def _evidence(user_id: str) -> Dict[tuple, Dict[str, float]]:
         return out
 
     for r in rows:
-        cat = cat_of.get(r.get("cluster_id"), "")
+        # What was OFFERED, not what it came from. Lag Ja Gale came "because
+        # of movie", and her yes to a song counted as a yes to films at two
+        # in the afternoon. Rows from before the kind was stored fall back to
+        # the interest's category.
+        cat = r.get("kind") or cat_of.get(r.get("cluster_id"), "")
         if not cat:
             continue
         key = (slot_of(int(r["offered_hour"]) * 60), cat)
