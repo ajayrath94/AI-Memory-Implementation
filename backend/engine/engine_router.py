@@ -283,24 +283,6 @@ def _compress_cache_to_stm(session_id: str, query_embedding: List[float]):
 
 # ── Food, in the background ───────────────────────────────────────────────────
 
-# What a condition or a medicine means at the table. Read from both, because
-# her conditions list says "knee pain" and nothing about blood pressure while
-# her medicines say Amlodipine — the medicine is the reliable signal.
-_FOOD_CARE = (
-    (("blood pressure", "hypertension", " bp", "amlodipine", "telmisartan",
-      "losartan", "olmesartan"),
-     "blood pressure: low salt — no pickle, papad, namkeen or extra salt; nothing fried"),
-    (("diabet", "sugar", "metformin", "glimepiride", "insulin"),
-     "blood sugar: no sweets or sugary drinks, little rice or maida, small portions"),
-    (("cholesterol", "heart", "cardiac", "atorvastatin", "rosuvastatin"),
-     "heart: nothing fried or rich, little ghee or butter"),
-    (("thyroid", "thyronorm", "eltroxin", "levothyroxine"),
-     "thyroid: go easy on raw cabbage, cauliflower and soya"),
-    (("kidney", "renal", "dialysis"),
-     "kidneys: do not suggest anything specific; their doctor decides their diet"),
-)
-
-
 def _food_notes(user_id: str) -> str:
     """Everything that bears on what she eats, in one place, for when food
     comes up — and only then.
@@ -361,12 +343,24 @@ def _food_notes(user_id: str) -> str:
     except Exception:
         pass
 
-    # What her health means at the table, from conditions and medicines both.
-    blob = " " + " ".join(_list(health.get("conditions")) + _list(health.get("medications"))
-                          + _list(health.get("concerns"))).lower()
-    care = [rule for words, rule in _FOOD_CARE if any(w in blob for w in words)]
-    if care:
-        lines.append("- For their health: " + "; ".join(care))
+    # What her health means at the table — decided by the model from her
+    # conditions and medicines as written, in whatever language. This was a
+    # list of English words ("blood pressure", "kidney"), and a condition
+    # recorded as "hipertensión" got no rule at all.
+    try:
+        from memory.food_rules import rules as _food_rules, raw_line as _raw
+        fr = _food_rules(user_id)
+        if fr.get("chat_notes"):
+            lines.append("- For their health: " + "; ".join(fr["chat_notes"]))
+        if fr.get("doctor_decides"):
+            lines.append("- Their doctor sets their diet: suggest nothing specific "
+                         "for that condition")
+        if not fr.get("ok"):
+            r = _raw(fr)
+            if r:
+                lines.append("- " + r)
+    except Exception as e:
+        print(f"[Food] rules failed: {e}")
 
     # Meat today is a date, not a flag: Tuesdays, Shravan, her own days.
     try:
@@ -405,7 +399,7 @@ YOUR PERSONALITY:
 - Warm, friendly, and conversational — like a caring friend
 - You remember past conversations, and let that shape how you respond
   without ever reciting it back
-- You speak in a mix of English and Hindi (Hinglish) naturally
+- You speak THEIR language — the LANGUAGE note at the very end says which
 - You ask follow-up questions — you're genuinely curious
 - You celebrate small things enthusiastically
 - You're patient, never rush, never dismiss
@@ -432,16 +426,16 @@ CONVERSATION STYLE:
 - Keep it short. Two or three sentences. They read this on a phone.
 - Draw topics from what you actually know about this person, below — never
   from generic assumptions about what people their age enjoy.
-- When they put something aside — "baad mein", "sham ko dekhenge", "abhi
-  nahi", "abhi puja karna hai" — let it go. Do not bring it back in this
+- When they put something aside — "later", "not now", "this evening",
+  "I have puja now", in whatever words — let it go. Do not bring it back in this
   conversation, and do not keep steering towards it. One morning a film was
   raised three times after she had said who watches films this early.
 - Never tell them what they usually do, like or feel unless it is in your
   notes below, word for word in substance. "Aap puja ke baad film dekhne ka
   mood kar leti hain" was invented, and a companion who makes up your habits
   is one you stop trusting.
-- Never state a clock time from their routine ("8:30 baj gaye"). Say "nashte
-  ka time", "dopahar", or nothing.
+- Never state a clock time from their routine. Name the part of the day
+  (breakfast time, the afternoon) in their language, or say nothing.
 - They are where their notes say they are. Staying away from home is where
   they live for now; never say they are out unless they said so.
 TOOL RESULTS:
@@ -554,7 +548,7 @@ This is the person's PRIMARY concern right now. Address it directly and warmly b
         nancy_persona += f"""
 💙 EMOTIONAL SUPPORT NEEDED — {classified.emotion}:
 The person is emotionally vulnerable right now. Lead with empathy. Don't rush to solutions.
-Use soft Hinglish: "Arre, kya hua? Batao mujhe..." or "Arey, pareshan mat ho..."
+Speak softly and simply, in their language — ask what happened, tell them not to worry.
 """
     if classified.emotion_priority == "HIGH" and classified.emotion == "LOVE":
         nancy_persona += """
@@ -605,7 +599,29 @@ Use this to shape your response — ask about the right things, not generic ques
     # puts its instruction last.
     nancy_persona += _gender_instruction(user_id)
 
+    # ── Language — the very last word ────────────────────────────────────
+    # The prompt above is full of Hinglish examples, and it used to say
+    # outright "you speak Hinglish". Her chosen language — the same
+    # instruction the proactive messages use — never reached the chat, so a
+    # Tamil speaker, or a Spanish one, was pulled towards Hinglish, most of
+    # all when upset. It goes last because the last instruction is the one
+    # that holds.
+    nancy_persona += _language_instruction(user_id)
+
     return nancy_persona
+
+
+def _language_instruction(user_id: str = "") -> str:
+    try:
+        from memory.context_builder import _language
+        lang = _language(user_id)
+    except Exception as e:
+        print(f"[Router] language read failed: {e}")
+        lang = ("Write back in whatever language and script they wrote in.")
+    return ("\nLANGUAGE — THIS DECIDES THE LANGUAGE OF EVERY REPLY.\n"
+            f"{lang}\n"
+            "Quoted examples anywhere above are illustrations of tone and "
+            "meaning only — never copy their language.\n")
 
 
 def _gender_instruction(user_id: str = "") -> str:
@@ -635,9 +651,10 @@ def _gender_instruction(user_id: str = "") -> str:
 
     if gender == "male":
         return (
-            "\nGRAMMATICAL GENDER — THIS OVERRIDES EVERYTHING ABOVE.\n"
+            "\nGRAMMATICAL GENDER — THIS OVERRIDES EVERYTHING ABOVE EXCEPT LANGUAGE.\n"
             "You are male. Speaking about YOURSELF in Hindi, Hinglish or any\n"
-            "gendered language, always use MASCULINE verb forms:\n"
+            "gendered language (Spanish: cansado, Portuguese: obrigado),\n"
+            "always use MASCULINE forms:\n"
             "  main kar raha hoon / main gaya tha / de sakta hoon\n"
             "  main confuse ho gaya tha / dekh raha hoon\n"
             "Never feminine forms for yourself. Every message, however short.\n"
@@ -646,9 +663,10 @@ def _gender_instruction(user_id: str = "") -> str:
         )
 
     return (
-        "\nGRAMMATICAL GENDER — THIS OVERRIDES EVERYTHING ABOVE.\n"
+        "\nGRAMMATICAL GENDER — THIS OVERRIDES EVERYTHING ABOVE EXCEPT LANGUAGE.\n"
         "You are female. Speaking about YOURSELF in Hindi, Hinglish or any\n"
-        "gendered language, always use FEMININE verb forms:\n"
+        "gendered language (Spanish: cansada, Portuguese: obrigada),\n"
+        "always use FEMININE forms:\n"
         "  main kar rahi hoon        (NOT kar raha hoon)\n"
         "  main gayi thi             (NOT gaya tha)\n"
         "  de sakti hoon             (NOT de sakta hoon)\n"

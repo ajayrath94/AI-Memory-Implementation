@@ -358,41 +358,40 @@ def _dietary(user_id: str) -> str:
     try:
         from memory.profile_store import get_user_profile
         p = get_user_profile(user_id) or {}
-        h = p.get("health") or {}
-        blob = " ".join(str(x) for x in
-                        (h.get("conditions") or []) + (h.get("medications") or [])
-                        ).lower()
+        # What her health and her own words mean for a dish — from the
+        # model, in any language. These were English word lists ("bp",
+        # "veg", "chicken"), and read `avoids` while the food tool writes
+        # `avoid`, so what she said she does not eat never reached here.
+        from memory.food_rules import rules as _food_rules, raw_line as _raw
+        fr = _food_rules(user_id)
+        bits.extend(fr.get("offer_rules") or [])
+        if fr.get("doctor_decides"):
+            bits.append("nothing their doctor would need to approve")
+        if fr.get("never"):
+            bits.append("never: " + ", ".join(fr["never"]))
+        if not fr.get("ok") and _raw(fr):
+            bits.append(_raw(fr))
 
-        if any(w in blob for w in ("blood pressure", "bp", "hypertension",
-                                   "amlodipine")):
-            bits.append("nothing heavily salted or deep fried")
-        if any(w in blob for w in ("diabet", "sugar", "metformin")):
-            bits.append("nothing sweet")
-        if any(w in blob for w in ("thyroid", "thyronorm")):
-            bits.append("go easy on raw cabbage and soya")
-
-        food = p.get("food") or {}
-        likes = " ".join(str(x) for x in (food.get("likes") or [])).lower()
-        avoid = " ".join(str(x) for x in (food.get("avoids") or [])).lower()
         # Only when she has said so. Assuming a Hindu woman is vegetarian is
         # exactly the kind of guess that ends trust in one message — and this
         # one eats chicken.
-        if "veg" in avoid or any(m in avoid for m in
-                                 ("chicken", "mutton", "fish", "egg", "meat")):
+        if fr.get("vegetarian") is True:
             bits.append("vegetarian only")
         else:
-            # Neither, by default. 'chicken' appearing in her likes might be
-            # one meal the extractor caught, not a preference — and offering
-            # meat to a vegetarian is a serious mistake where offering
-            # vegetarian food to someone who eats meat is no mistake at all.
-            # Whether she can eat meat TODAY, which is a different question
-            # from whether she is vegetarian. Shravan, Tuesdays, her own
-            # Sunday — all of it is a date, not a flag.
+            # Whether she can eat meat TODAY is a different question from
+            # whether she is vegetarian. Shravan, Tuesdays, her own Sunday —
+            # all of it is a date, not a flag.
             try:
                 from memory.diet import can_eat_meat_today
                 v = can_eat_meat_today(user_id)
-                bits.append("she eats meat" if v["ok"]
-                            else "nothing with meat, and do not say why")
+                if v["ok"] and fr.get("vegetarian") is False:
+                    bits.append("she eats meat")
+                elif not v["ok"]:
+                    bits.append("nothing with meat, and do not say why")
+                else:
+                    # Not said either way: offering meat to a vegetarian is a
+                    # serious mistake, offering vegetarian food is none.
+                    bits.append("nothing with meat")
             except Exception as _de:
                 print(f"[Adjacent] diet read failed: {_de}")
                 bits.append("nothing with meat")

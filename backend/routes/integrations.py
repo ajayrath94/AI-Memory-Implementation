@@ -606,49 +606,33 @@ def _user_health_filters(user_id: str) -> dict:
 
     filters, notes = {}, []
 
-    # ── HEALTH ──────────────────────────────────────────────────────────────
-    hblob = " ".join(str(x).lower() for x in
-                     (health.get("conditions", []) + health.get("concerns", [])))
-    if "blood pressure" in hblob or "hypertension" in hblob:
-        filters["maxSodium"] = 800   # loosened from 500 so more dishes qualify
-        notes.append("low-salt (good for blood pressure)")
-    if "diabet" in hblob or ("sugar" in hblob and "blood sugar" in hblob):
-        filters["maxSugar"] = 15
+    # Everything below is the model's reading of her profile, in whatever
+    # language it was written. These were word lists — "hypertension",
+    # "dairy", a list of foreign countries — that missed "hipertensión",
+    # "lácteos" and Spain. The values are Spoonacular's own vocabulary.
+    try:
+        from memory.food_rules import rules as _food_rules
+        fr = _food_rules(user_id)
+    except Exception as e:
+        print(f"[Recipes] food rules failed: {e}")
+        fr = {}
+    r = fr.get("recipe") or {}
+    if r.get("max_sodium"):
+        filters["maxSodium"] = r["max_sodium"]
+        notes.append("low-salt")
+    if r.get("max_sugar"):
+        filters["maxSugar"] = r["max_sugar"]
         notes.append("low-sugar")
-
-    # ── REGION → cuisine ────────────────────────────────────────────────────
-    # Indian unless they are somewhere else. The list of cities matched
-    # "bangalore" and not "bengaluru", so a woman in Vyalikaval, Bengaluru was
-    # sent asparagus soup and garlicky kale. Every user is in India or of it;
-    # a list of cities is the wrong test.
-    abroad = any(w in location for w in ("usa", "america", "london", "uk",
-                                         "canada", "australia", "dubai",
-                                         "singapore", "germany"))
-    if not abroad:
-        filters["cuisine"] = "Indian"
-        notes.append("Indian")
-
-    # ── RELIGION / captured diet → veg lean (soft, overridable by explicit prefs) ─
-    captured_diet = (food.get("diet") or "").lower()
-    if captured_diet:
-        if "veg" in captured_diet and "non" not in captured_diet:
-            filters["diet"] = "vegetarian"
-            notes.append("vegetarian")
-    elif "hindu" in religion or "jain" in religion:
-        # elderly Hindu/Jain often vegetarian — soft default until we capture the real pref
+    if r.get("cuisine"):
+        filters["cuisine"] = r["cuisine"]
+        notes.append(r["cuisine"])
+    if fr.get("vegetarian") is True:
         filters["diet"] = "vegetarian"
         notes.append("vegetarian")
+    if r.get("intolerances"):
+        filters["intolerances"] = ",".join(r["intolerances"])
 
-    # ── captured LIKES / AVOID ──────────────────────────────────────────────
     likes = food.get("likes") or []
-    avoid = food.get("avoid") or []
-    if avoid:
-        # Spoonacular intolerances are a fixed set; pass through recognized ones
-        known = {"dairy","egg","gluten","peanut","seafood","sesame","shellfish",
-                 "soy","sulfite","tree nut","wheat"}
-        into = [a for a in (x.lower() for x in avoid) if a in known]
-        if into:
-            filters["intolerances"] = ",".join(into)
 
     return {"filters": filters, "notes": notes, "likes": likes}
 
