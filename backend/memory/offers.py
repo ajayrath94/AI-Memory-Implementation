@@ -167,6 +167,35 @@ def _on_her_schedule(user_id: str) -> set:
     return out
 
 
+_ROUTINE_FILLER = {"morning", "evening", "night", "afternoon", "daily", "my",
+                   "the", "subah", "shaam", "raat", "roz", "ki", "ka", "ke"}
+
+
+def _is_routine(label: str, routine: set) -> bool:
+    """Is this interest one of her routines under another name?
+
+    Matched by exact label it missed: the interest is "Walk", the routine is
+    "Evening walk", and at 10am she was offered pranayam "because of Walk",
+    with a remark about her walk five hours before it. Compared by the words
+    that carry meaning, so "walk" is the evening walk and "puja" the morning
+    puja.
+    """
+    low = str(label or "").strip().lower()
+    if not low:
+        return False
+    if low in routine:
+        return True
+    words = {w for w in low.replace("-", " ").split() if w not in _ROUTINE_FILLER}
+    if not words:
+        return False
+    for r in routine:
+        rw = {w for w in r.replace("-", " ").replace("(", " ").replace(")", " ").split()
+              if w not in _ROUTINE_FILLER}
+        if words and words <= rw:
+            return True
+    return False
+
+
 def _artist(what: str) -> str:
     """Whoever comes after "by". "" when there is no by.
 
@@ -330,7 +359,7 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
     # Suprabhatam was offered a Hindustani thumri "because of Suprabhatam".
     seeds = sorted(
         [v for k, v in mine.items()
-         if k not in routine and v["strength"] >= 0.5
+         if not _is_routine(k, routine) and v["strength"] >= 0.5
          and (v.get("category") or "") not in _FULFIL_ONLY
          # Soured on. A "pasand nahi" to an offer moves the interest it came
          # from down by 0.4; once the average turns negative, it stops being
@@ -721,6 +750,28 @@ def user_context(user_id: str, window=None, now_min: Optional[int] = None) -> Di
             t["they_said_today"] = said
     except Exception:
         pass
+    # What she said in the last hour, with how long ago. "Match dekh rahi
+    # hoon" twenty minutes ago means she is in the middle of something, and
+    # the right offer is none; the same words five hours ago mean nothing now.
+    try:
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        from memory.day import _conversation
+        now_utc = _dt.now(_tz.utc)
+        recent = []
+        for m in _conversation(user_id, (now_utc - _td(minutes=60)).isoformat()):
+            if m["who"] != "them":
+                continue
+            try:
+                at = _dt.fromisoformat(str(m["at"]).replace("Z", "+00:00"))
+                at = at if at.tzinfo else at.replace(tzinfo=_tz.utc)
+                ago = int((now_utc - at).total_seconds() // 60)
+            except Exception:
+                ago = None
+            recent.append({"minutes_ago": ago, "said": m["text"][:160]})
+        if recent:
+            t["said_in_last_hour"] = recent[-4:]
+    except Exception as e:
+        print(f"[Offers] recent words read failed: {e}")
     try:
         done = _offered_kinds_today(user_id)
         if done:
@@ -834,6 +885,11 @@ Choose the option that best suits THIS person at THIS moment:
 - Their health: a dish must suit their conditions, medicines and diet. With
   blood pressure, diabetes or heart trouble, nothing fried, very sweet, very
   salty or rich. Vegetarian means vegetarian. When unsure, the lighter one.
+  An exercise, yoga or breathing practice must be gentle and safe for their
+  age and conditions: with blood pressure or heart trouble nothing forceful
+  (no kapalbhati or bhastrika), no breath-holding, no inversions, no
+  strain; with knee or back pain nothing on the floor or weight-bearing.
+  When unsure, choose something that is not exercise.
 - Their world: songs, films, prayers and dishes from their own region,
   language and tradition, whatever else is famous.
 - The day: during a festival ("festival"), food follows it. If it fasts and
@@ -844,6 +900,11 @@ Choose the option that best suits THIS person at THIS moment:
 - Variety: prefer a kind not already offered today.
 - Real: only something they can actually listen to, watch, cook or do now.
   A past event, a famous innings or a memory is not something to offer.
+
+- Busy: if what they said in the last hour ("said_in_last_hour") shows they
+  are in the middle of something now — watching, cooking, eating, out, at
+  the temple, with family or guests, resting — answer 0. Someone already
+  absorbed in something does not want to be offered something else.
 
 If none truly suits, answer 0. An offer that does not fit is worse than none.
 
@@ -1086,7 +1147,10 @@ def hint(offer: Offer) -> str:
             f"\nTwo or three sentences, warm, like a friend who thought of "
             f"them: what it is, and why now. A bare title is not an offer."
             f"\nNever claim it is on, playing or happening right now; you "
-            f"cannot know that.")
+            f"cannot know that."
+            f"\nDo not tie it to something else in their day that is not "
+            f"happening now: no 'your walk' in the morning when the walk is in "
+            f"the evening.")
 
     if offer.because:
         # Describe the RELATION, not the geometry. "Sits next to it" is how

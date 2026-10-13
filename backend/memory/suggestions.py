@@ -742,7 +742,23 @@ def moment_facts(user_id: str, moment: dict = None) -> str:
     # leans familiar over novel. The composer simply never learns why.
 
     if not m.get("at_home"):
-        lines.append("They are away from home at the moment.")
+        # Where, and what it means. "They are away from home at the moment"
+        # became "kyunki aap abhi bahar hain" — you are out right now — to a
+        # woman sitting in her son's flat in Bengaluru, where she is staying
+        # for weeks, away from her own home in Surat. Away from home is a
+        # place she lives for now, not a trip out of the door.
+        where, home = "", ""
+        try:
+            from memory.declared import get_declared
+            d = get_declared(user_id)
+            where, home = (d.place.current or ""), (d.place.home or "")
+        except Exception:
+            pass
+        lines.append(
+            (f"They are staying in {where}" if where else "They are staying away")
+            + (f", away from their own home in {home}" if home else ", away from their own home")
+            + ". That is where they are living for now, indoors and settled — "
+              "not out of the house. Never say they are out or outside.")
 
     if not lines:
         return ""
