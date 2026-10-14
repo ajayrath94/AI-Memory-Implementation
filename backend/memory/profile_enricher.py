@@ -444,17 +444,16 @@ def enrich_profile_from_message(text: str, classified, user_id: str, session_id:
                 else:
                     updates[key] = val
 
-    # ── Path 3: Demographics extraction ──────────────────────────────────────
-    if _should_extract_demographics(classified, text):
-        demographics = _extract_demographics_from_haiku(text, classified)
-        if demographics:
-            updates["demographics"] = demographics
-
-    # ── Path 4: Cultural context extraction ───────────────────────────────────
-    if _should_extract_cultural(classified, text):
-        cultural = _extract_cultural_context_from_haiku(text)
-        if cultural:
-            updates["cultural_context"] = cultural
+    # ── Paths 3 + 4: who she is — age, marriage, diet, faith, region ─────────
+    # These ran only when the message contained one of a few dozen words
+    # ("saal", "pati", "mandir", "puja"), so "tengo 78 años" or "voy a misa"
+    # never reached the model at all. One call now reads both, in any
+    # language, on every message that got this far.
+    facts = _extract_self_facts(text)
+    if facts.get("demographics"):
+        updates["demographics"] = facts["demographics"]
+    if facts.get("cultural_context"):
+        updates["cultural_context"] = facts["cultural_context"]
 
     # ── Path 5: Location detection ───────────────────────────────────────────
     try:
@@ -476,109 +475,51 @@ def enrich_profile_from_message(text: str, classified, user_id: str, session_id:
 
 # ── Demographics extractor ─────────────────────────────────────────────────────
 
-def _extract_demographics_from_haiku(text: str, classified) -> dict:
-    """
-    Extract demographics via Haiku — gender, age, marital status, diet.
-    Only fires on HIGH/MEDIUM signals.
-    """
-    import os, json, anthropic
+def _extract_self_facts(text: str) -> dict:
+    """Age, gender, marital status, diet, religion, practices, festivals and
+    region — only what the message itself states, in any language.
+    {"demographics": {...}, "cultural_context": {...}}, empty when none."""
+    import json as _json
+    prompt = f"""An elderly person wrote this message, in any language:
 
-    prompt = f"""Extract demographic information from this message ONLY if explicitly stated.
-Return ONLY a JSON object. Use empty string if not found. Do NOT guess.
+"{text}"
 
-Message: "{text}"
-
+Extract ONLY what the message explicitly says about the person who wrote
+it. Do not guess. Return JSON only:
 {{
-  "age": null,
-  "gender": "",
-  "marital_status": "",
-  "diet": ""
+ "demographics": {{
+   "age": a number if they state their age, else null,
+   "gender": "male" or "female" only if clear from how they refer to
+             themselves, else "",
+   "marital_status": "married" / "widowed" / "single" / "divorced" if said,
+   "diet": "vegetarian" / "non-vegetarian" / "vegan" if said
+ }},
+ "cultural_context": {{
+   "religion": their religion in English if clear (e.g. Hindu, Muslim,
+               Sikh, Christian, Catholic, Jain, Buddhist, Jewish), else "",
+   "practices": religious practices they mention, in English
+                (e.g. "morning puja", "Sunday mass", "fasting"),
+   "festivals": festivals they mention, by their usual name,
+   "region": the state, region or country they say they are from, else ""
+ }}
 }}
-
-Rules:
-- age: number only if explicitly stated (e.g. "main 67 saal ki hoon" → 67)
-- gender: "male"/"female" only if clear from pronouns or name context
-- marital_status: "married"/"widowed"/"single"/"divorced" only if mentioned
-- diet: "vegetarian"/"non-vegetarian"/"vegan" only if mentioned
-
-Return ONLY the JSON."""
-
+Leave anything not stated empty."""
     try:
-        client = __import__("llm").client()
-        resp   = client.messages.create(
-            model      = __import__("llm").model(),
-            max_tokens = 150,
-            messages   = [{"role": "user", "content": prompt}]
-        )
-        raw  = resp.content[0].text.strip().replace("```json","").replace("```","").strip()
-        data = json.loads(raw)
-        return {k: v for k, v in data.items() if v}
+        from llm import ask
+        raw = ask(prompt, max_tokens=250) or ""
+        i, j = raw.find("{"), raw.rfind("}")
+        data = _json.loads(raw[i:j + 1]) if i >= 0 else {}
     except Exception as e:
-        print(f"[ProfileEnricher] Demographics extraction failed: {e}")
+        print(f"[ProfileEnricher] self-facts extraction failed: {e}")
         return {}
-
-
-def _extract_cultural_context_from_haiku(text: str) -> dict:
-    """
-    Extract religion, practices, festivals, region from text.
-    """
-    import os, json, anthropic
-
-    prompt = f"""Extract cultural/religious information from this message ONLY if explicitly mentioned.
-Return ONLY a JSON object. Use empty lists/strings if not found.
-
-Message: "{text}"
-
-{{
-  "religion": "",
-  "practices": [],
-  "festivals": [],
-  "region": ""
-}}
-
-Rules:
-- religion: "Hindu"/"Muslim"/"Sikh"/"Christian"/"Jain"/"Buddhist" only if clear
-- practices: list of religious practices mentioned (e.g. "morning puja", "namaz", "fasting")
-- festivals: list of festivals mentioned (e.g. "Diwali", "Eid", "Navratri")
-- region: state/region if mentioned (e.g. "Gujarat", "Punjab", "Tamil Nadu")
-
-Return ONLY the JSON."""
-
-    try:
-        client = __import__("llm").client()
-        resp   = client.messages.create(
-            model      = __import__("llm").model(),
-            max_tokens = 150,
-            messages   = [{"role": "user", "content": prompt}]
-        )
-        raw  = resp.content[0].text.strip().replace("```json","").replace("```","").strip()
-        data = json.loads(raw)
-        return {k: v for k, v in data.items() if v}
-    except Exception as e:
-        print(f"[ProfileEnricher] Cultural extraction failed: {e}")
-        return {}
-
-
-def _should_extract_demographics(classified, text: str) -> bool:
-    """Check if message likely contains demographic info."""
-    t = text.lower()
-    age_signals      = ["saal", "year", "old", "age", "born", "umar"]
-    gender_signals   = ["main hoon", "mai hoon", "i am", "myself"]
-    diet_signals     = ["vegetarian", "veg", "non-veg", "fasting", "upvas"]
-    marital_signals  = ["husband", "wife", "pati", "patni", "widow", "widower", "divorced"]
-    return any(s in t for s in age_signals + gender_signals + diet_signals + marital_signals)
-
-
-def _should_extract_cultural(classified, text: str) -> bool:
-    """Check if message likely contains cultural/religious info."""
-    t = text.lower()
-    religion_signals = ["mandir", "masjid", "gurudwara", "church", "temple", "mosque",
-                        "puja", "namaz", "prayer", "pooja", "aarti", "bhajan",
-                        "diwali", "eid", "navratri", "holi", "christmas", "vaisakhi",
-                        "fasting", "upvas", "roza", "ekadashi", "ramadan",
-                        "hindu", "muslim", "sikh", "christian", "jain",
-                        "pandit", "maulvi", "granthi"]
-    return any(s in t for s in religion_signals)
+    out = {}
+    for part in ("demographics", "cultural_context"):
+        d = data.get(part) or {}
+        if isinstance(d, dict):
+            d = {k: v for k, v in d.items() if v}
+            if d:
+                out[part] = d
+    return out
 
 
 # ── Behavioural events (interest signal for recommendations) ───────────────────
@@ -667,13 +608,17 @@ def recompute_cluster_trajectory(user_id: str, cluster_id: str):
 _HEDGES = ("appears to", "possibly", "probably", "seems", "maybe", "might be",
            "unclear", "unknown", "not sure", "likely")
 
-_RELATION_WORDS = {
-    "son", "daughter", "grandson", "granddaughter", "grandchild", "child",
-    "husband", "wife", "spouse", "mother", "father", "brother", "sister",
-    "son-in-law", "daughter-in-law", "nephew", "niece", "friend", "neighbour",
-    "neighbor", "caregiver", "maid", "doctor", "beta", "beti", "bahu",
-    "damad", "pota", "poti", "nati", "natin", "bhai", "behen", "padosi",
-}
+def _is_relation(part: str) -> bool:
+    """Is a bracketed word how someone is related to her — "son", "bahu",
+    "hijo", "Nachbarin"? Asked, in any language; remembered per word."""
+    try:
+        from memory.judge import yes_no
+        return yes_no(f'Is "{part}" a word for how a person is related to '
+                      f'someone (a family relation, friend, neighbour, '
+                      f'carer, doctor and so on), in any language?',
+                      key="rel:" + part.lower())
+    except Exception:
+        return False
 
 
 def clean_label(label: str, attributes: dict = None):
@@ -698,7 +643,7 @@ def clean_label(label: str, attributes: dict = None):
             continue
         parts = [x.strip() for x in _re.split(r"[,;/]", b) if x.strip()]
         for part in parts:
-            if part in _RELATION_WORDS and not attrs.get("relation"):
+            if not attrs.get("relation") and len(part) <= 30 and _is_relation(part):
                 attrs["relation"] = part
             elif part.startswith(("lives in ", "in ", "from ")) and not attrs.get("location"):
                 attrs["location"] = part.split(" ", 2)[-1].strip().title()
@@ -721,11 +666,20 @@ def clean_label(label: str, attributes: dict = None):
 # Relations that can be the same person mistaken. Son and grandson, daughter
 # and granddaughter: a model unsure of the generation guesses, and splitting
 # on its guess is what made six Shubhams. A daughter-in-law and a neighbour
-# are not a mistake about one person; they stay two.
-_SAME_PERSON_CONFUSABLE = {
-    "son", "grandson", "child", "grandchild", "beta", "pota", "nati",
-    "daughter", "granddaughter", "beti", "poti", "natin",
-}
+# are not a mistake about one person; they stay two. Asked, because the
+# relation is kept in her own words — "pota", "nieto", "Enkel".
+def _same_person_confusable(a: str, b: str) -> bool:
+    try:
+        from memory.judge import yes_no
+        x, y = sorted([a.lower(), b.lower()])
+        return yes_no(f'One person is called "{x}" and, later, "{y}" by the '
+                      f'same elderly speaker (relation words, any language). '
+                      f'Is one of these a child and the other a grandchild '
+                      f'of the speaker — the kind of generation mix-up a '
+                      f'listener could make about ONE person?',
+                      key=f"gen:{x}|{y}")
+    except Exception:
+        return False
 
 
 def _relation_candidates(attrs: dict, rel: str) -> dict:
@@ -860,7 +814,7 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
             _new_rel = (attributes or {}).get("relation")
             if _old_rel and _new_rel and str(_old_rel).lower() != str(_new_rel).lower():
                 o, n = str(_old_rel).lower(), str(_new_rel).lower()
-                if o in _SAME_PERSON_CONFUSABLE and n in _SAME_PERSON_CONFUSABLE:
+                if _same_person_confusable(o, n):
                     # Same name, a generation apart: far more often one
                     # person the model was unsure about than two people.
                     # Held as candidates on the one row and flagged, so the
@@ -950,13 +904,20 @@ _TYPE_TO_PILLAR = {
     "place": "GENERAL", "belief": "GENERAL", "other": "GENERAL",
 }
 
-import re as _re_when
-_HAS_WHEN = _re_when.compile(
-    r"\b(raat|rat|subah|subha|savere|shaam|sham|dopahar|kal|aaj|roz|rozana|"
-    r"har\s+\w+|baje|night|morning|evening|afternoon|daily|every|weekend|"
-    r"sunday|monday|tuesday|wednesday|thursday|friday|saturday|"
-    r"ravivar|somvar|mangalvar|budhvar|guruvar|shukravar|shanivar|itvar)\b",
-    _re_when.IGNORECASE)
+def _is_family(ref: str) -> bool:
+    """Is she talking about a relative? "beta", "hijo", "Tochter" — asked,
+    once per word. "self", "pronoun", "proper_name" are the extractor's own
+    markers, not relations."""
+    r = (ref or "").strip()
+    if not r or r.lower() in ("self", "user", "pronoun", "proper_name", "i", "me"):
+        return False
+    try:
+        from memory.judge import yes_no
+        return yes_no(f'Is "{r}" a word for a family member or relative '
+                      f'(not a friend, neighbour or helper), in any language?',
+                      key="fam:" + r.lower())
+    except Exception:
+        return False
 
 
 def _extract_propositions(text: str, user_id: str = "") -> list:
@@ -971,7 +932,7 @@ def _extract_propositions(text: str, user_id: str = "") -> list:
                      "'I love Lata' is about the USER (subject=self), NOT about any "
                      "known person. When unsure, keep the natural subject.") if known else ""
 
-    prompt = f'''You extract PROPOSITIONS (subject-relation-object facts) from an elderly person's message, including Hindi/Hinglish.{known_block}
+    prompt = f'''You extract PROPOSITIONS (subject-relation-object facts) from an elderly person's message, in any language (often Hindi/Hinglish).{known_block}
 
 ONE PROPOSITION PER FACT, NOT PER SENTENCE. "Mera beta Vikram Pune mein
 engineer hai" holds two: he lives in Pune, and he works as an engineer. It
@@ -1101,7 +1062,9 @@ Return ONLY a JSON array. Message:
         # learned. An empty answer is often right ("theek hoon"), so this is
         # not a retry for everything: only when she named a time, which is
         # exactly the sentence a habit is made of.
-        if not props and _HAS_WHEN.search(text or ""):
+        # Retried for any message long enough to state something — a
+        # list of time words only knew Hindi and English.
+        if not props and len((text or "").split()) >= 4:
             props = _once()
             if props:
                 print(f"[Propositions] empty first time, retried: {text[:50]!r}")
@@ -1111,16 +1074,6 @@ Return ONLY a JSON array. Message:
         return []
 
 
-
-_BARE_EMOTIONS = {
-    "proud", "happy", "sad", "worried", "scared", "angry", "lonely", "anxious",
-    "grateful", "excited", "nervous", "upset", "content", "hopeful", "afraid",
-    "khush", "udaas", "pareshan", "gussa", "akela", "dukhi", "naraz",
-}
-_VAGUE_HEALTH = {
-    "tabiyat theek nahi", "not well", "not feeling well", "feeling unwell",
-    "tabiyat kharab", "unwell", "not good", "bimaar", "theek nahi",
-}
 
 def _is_durable_fact(name: str, ptype: str = "", rel_type: str = "",
                      kind: str = "") -> bool:
@@ -1168,22 +1121,8 @@ def _is_durable_fact(name: str, ptype: str = "", rel_type: str = "",
     n = (name or "").strip().lower()
     if not n or len(n) < 2:
         return False
-    if n in _BARE_EMOTIONS:
-        return False
-    if n in _VAGUE_HEALTH:
-        return False
     # a single word that is purely an emotion label, even if mispillar'd
     if rel_type == "emotion" or ptype == "emotion":
-        return False
-    # Reject action-phrase names that slipped past extraction ("was given
-    # medicine by doctor", "missing daughter", "listen to songs daily"). A
-    # durable entity is a short noun, not a clause. Heuristic: multi-word names
-    # led by or containing verb/aux markers are actions, not things.
-    words = n.split()
-    _VERB_LEAD = {"was", "were", "is", "are", "am", "being", "been", "missing",
-                  "listen", "listening", "watching", "feeling", "given", "said",
-                  "told", "went", "going", "trying", "want", "wants", "mistakenly"}
-    if len(words) >= 3 and (words[0] in _VERB_LEAD or any(w in _VERB_LEAD for w in words[:2])):
         return False
     return True
 
@@ -1442,8 +1381,7 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # A person WITH a family relationship is FAMILY regardless of type
             # ("Vikram lives_in America" arrives as type=place, but he is her son).
             if attrs.get("relationship") or any(
-                    pr.get("subject_ref") in ("son","daughter","husband","wife",
-                                              "grandchild","mother","father")
+                    _is_family(str(pr.get("subject_ref") or ""))
                     for pr in subj_props):
                 pillar = "FAMILY"
                 # WHICH relation, not merely that there is one. The extractor

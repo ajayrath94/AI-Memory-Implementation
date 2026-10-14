@@ -167,33 +167,30 @@ def _on_her_schedule(user_id: str) -> set:
     return out
 
 
-_ROUTINE_FILLER = {"morning", "evening", "night", "afternoon", "daily", "my",
-                   "the", "subah", "shaam", "raat", "roz", "ki", "ka", "ke"}
-
-
 def _is_routine(label: str, routine: set) -> bool:
     """Is this interest one of her routines under another name?
 
     Matched by exact label it missed: the interest is "Walk", the routine is
     "Evening walk", and at 10am she was offered pranayam "because of Walk",
-    with a remark about her walk five hours before it. Compared by the words
-    that carry meaning, so "walk" is the evening walk and "puja" the morning
-    puja.
+    with a remark about her walk five hours before it. Then it was matched by
+    shared words with a filler list ("morning", "subah", "ki"), which knew
+    two languages. Now the model is asked, once per pair, in any language.
     """
     low = str(label or "").strip().lower()
-    if not low:
+    if not low or not routine:
         return False
     if low in routine:
         return True
-    words = {w for w in low.replace("-", " ").split() if w not in _ROUTINE_FILLER}
-    if not words:
+    rs = sorted(str(r) for r in routine)[:20]
+    try:
+        from memory.judge import yes_no
+        return yes_no(f'Her daily routines are: {rs}. Is "{label}" the same '
+                      f'activity as one of them, under another name (e.g. '
+                      f'"Walk" and "Evening walk")?',
+                      key="routine:" + low + "|" + "|".join(rs))
+    except Exception as e:
+        print(f"[Offers] routine check failed for {label!r}: {e}")
         return False
-    for r in routine:
-        rw = {w for w in r.replace("-", " ").replace("(", " ").replace(")", " ").split()
-              if w not in _ROUTINE_FILLER}
-        if words and words <= rw:
-            return True
-    return False
 
 
 def _artist(what: str) -> str:
@@ -359,13 +356,15 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
     # Suprabhatam was offered a Hindustani thumri "because of Suprabhatam".
     seeds = sorted(
         [v for k, v in mine.items()
-         if not _is_routine(k, routine) and v["strength"] >= 0.5
+         if v["strength"] >= 0.5
          and (v.get("category") or "") not in _FULFIL_ONLY
          # Soured on. A "pasand nahi" to an offer moves the interest it came
          # from down by 0.4; once the average turns negative, it stops being
          # a reason to offer anything. The older picker in suggestions.py
          # already skipped these; this path did not read it at all.
-         and not (v.get("state") is not None and v["state"] < 0)],
+         and not (v.get("state") is not None and v["state"] < 0)
+         # Last, because it asks the model: only for what is still in.
+         and not _is_routine(k, routine)],
         key=lambda v: -v["strength"])[:8]
 
     from memory.artefacts import adjacent
@@ -546,51 +545,22 @@ def _kinds_in_order(user_id: str, pool: List[Offer],
 
 
 def _title_matches(what: str, found: str) -> bool:
-    """Does the found title contain the thing offered?
+    """Is the video found the thing offered — the same song, and the singer
+    named when one is named?
 
-    By the song's own words, allowing for spelling: Nadaan and Nadan,
-    Chalo and Cholo, Aankhen and Ankhen are all the same word written by
-    different people.
+    This compared letters a-z with fuzzy matching, which allowed Nadaan for
+    Nadan but turned "Canción" into "canci" and "Für" into "f". The model
+    reads both titles in any script and language. Raises when it cannot
+    answer, so the caller offers without a link rather than striking the
+    offer for a check that never happened.
     """
-    import difflib
-    import re as _re
-
-    def words(t):
-        return [w for w in _re.findall(r"[a-z]+", (t or "").lower()) if len(w) >= 3]
-
-    want = words(_title(what))
-    have = words(found)
-    if not want:
-        return True
-    if not have:
-        return False
-    def found_(w):
-        return any(difflib.SequenceMatcher(None, w, h).ratio() >= 0.75
-                   for h in have)
-
-    hits = [found_(w) for w in want]
-    # Most of the title, or its opening words: video titles are often cut
-    # short, and "Dil-E-Nadan Tujhe" is that song even without the rest.
-    song_ok = (sum(hits) / len(want) >= 0.6
-               or (len(want) >= 3 and all(hits[:3])))
-    if not song_ok:
-        return False
-
-    # And the singer, when one is named. "Dil-e-Nadaan by Begum Akhtar"
-    # linked to Jagjit Singh's recording: the right song, a different
-    # voice, and to someone who chose Begum Akhtar that is not the same
-    # thing. A title that names the singer passes. A title that is little
-    # more than the song name passes too, since many uploads name nobody.
-    # A longer title that names someone else does not.
-    singer = [w for w in words(" ".join(_artists(what))) if len(w) >= 4]
-    if not singer:
-        return True
-    if any(found_(w) for w in singer):
-        return True
-    extra = [h for h in have
-             if not any(difflib.SequenceMatcher(None, h, w).ratio() >= 0.75
-                        for w in want)]
-    return len(extra) <= 2
+    from memory.judge import yes_no
+    return yes_no(f'We offered: "{what}". The video found is titled: '
+                  f'"{found}". Is this video that same song or piece '
+                  f'(allowing for spelling and transliteration)? If a singer '
+                  f'is named in what we offered and the video names a '
+                  f'different singer, answer NO.',
+                  key="title:" + what.lower() + "|" + found.lower())
 
 
 def _hm(m: int) -> str:
@@ -924,8 +894,9 @@ JSON only: {{"pick": <n or 0>, "why": "<one short reason, in English>"}}"""
 # How far a dish is worth going for, and what is not a place to eat.
 PLACE_MAX_KM = 3.0
 PLACE_MIN_RATING = 3.8
-_NOT_FOR_HER = ("bar", "pub", "brew", "lounge", "wine", "beer", "liquor",
-                "social", "taproom", "cloud kitchen")
+# Not a place to eat: by Google's own place types, not by words in the name —
+# "Kneipe", "taberna" and "cervecería" were never on a list of English names.
+_NOT_FOR_HER = {"night_club", "liquor_store", "casino"}
 
 
 def _place_for(user_id: str, dish: str) -> Optional[Dict]:
@@ -958,7 +929,12 @@ def _place_for(user_id: str, dish: str) -> Optional[Dict]:
             continue
         if p.get("rating") is not None and float(p["rating"]) < PLACE_MIN_RATING:
             continue
-        if any(w in name.lower() for w in _NOT_FOR_HER):
+        types = set(p.get("types") or [])
+        if types & _NOT_FOR_HER:
+            continue
+        # A bar that is not also a restaurant or cafe is a bar.
+        if "bar" in types and not types & {"restaurant", "cafe", "meal_takeaway",
+                                           "bakery", "food"}:
             continue
         url = ("https://www.google.com/maps/search/?api=1&query="
                + urllib.parse.quote(name)

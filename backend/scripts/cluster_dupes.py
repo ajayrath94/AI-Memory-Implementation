@@ -36,7 +36,7 @@ def main():
 
     from supabase_store import get_client
     from memory.profile_enricher import (clean_label, _relation_candidates,
-                                         _SAME_PERSON_CONFUSABLE)
+                                         _same_person_confusable)
     db = get_client()
 
     rows = (db.table("interest_clusters")
@@ -96,8 +96,7 @@ def main():
             ra = r["_attrs"]
             o = str(ka.get("relation") or "").lower()
             n = str(ra.get("relation") or "").lower()
-            if o and n and o != n and not (o in _SAME_PERSON_CONFUSABLE
-                                           and n in _SAME_PERSON_CONFUSABLE):
+            if o and n and o != n and not _same_person_confusable(o, n):
                 print(f"   kept apart: {r['label']!r} ({n}) is not {keep['label']!r} ({o})")
                 kept_apart += 1
                 continue

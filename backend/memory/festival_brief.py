@@ -109,7 +109,7 @@ Everything a companion would need to know, as JSON and nothing else:
               be specific: dishes and ingredients, not "special food".
   observance  what people actually do, in one line
   kept_by     which communities keep it, so it is not assumed of everyone
-  asked       ONE question worth asking her, in Hinglish, to learn what the
+  asked       ONE question worth asking her, in her language, to learn what the
               calendar cannot know — usually whether she keeps it and how.
               Short, the way a person would ask. "" if there is nothing
               worth asking.
@@ -220,20 +220,13 @@ def _ate_between(user_id: str, start, days: int) -> list:
     for r in rows:
         s = str(r.get("subject") or "").strip()
         low = s.lower()
-        if len(low) < 3 or low in seen or low in _NOT_A_THING:
+        if len(low) < 3 or low in seen:
             continue
         if any(low == o or (len(low) > 4 and low in o) for o in offered if o):
             continue
         seen.add(low)
         out.append(s)
     return out[:15]
-
-
-_NOT_A_THING = {"home", "ghar", "sab", "sabh", "kuch", "aaj", "kal", "din",
-                "monday", "tuesday", "wednesday", "thursday", "friday",
-                "saturday", "sunday", "somvar", "mangalvar", "budhvar",
-                "guruvar", "shukravar", "shanivar", "ravivar", "today",
-                "day", "time", "morning", "evening", "night"}
 
 
 def for_user(user_id: str, when=None) -> Optional[Dict]:

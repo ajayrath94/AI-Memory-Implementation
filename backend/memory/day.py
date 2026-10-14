@@ -254,10 +254,25 @@ def boundary(user_id: str, now_min: Optional[int] = None) -> Optional[Dict]:
     # gaya na?" about a blood pressure tablet, half an hour after the dinner
     # boundary said almost the same thing. Medication is a reminder; that path
     # already handles it and names the drug.
+    #
+    # Whether an entry is a medicine is asked, not matched: "Pastilla de la
+    # tensión" and "BP ki goli" are both tablets, and a word list knows only
+    # the languages someone wrote it in. Asked once per label and remembered.
+    # If the model cannot say, it is treated as a medicine — a tablet that
+    # gets no check-in loses nothing; one that gets "how did it go?" is the
+    # mistake this exists to stop.
     def _is_medicine(e):
-        lab = (e.get("label") or "").lower()
-        return any(w in lab for w in ("medicine", "tablet", "dawai", "dose",
-                                      "thyronorm", "amlodipine", "goli"))
+        lab = (e.get("label") or "").strip()
+        if not lab:
+            return False
+        try:
+            from memory.judge import yes_no
+            return yes_no(f'A daily schedule entry reads: "{lab}". Is it '
+                          f'about taking a medicine, tablet, injection or '
+                          f'other dose?', key="med:" + lab.lower())
+        except Exception as ex:
+            print(f"[Day] medicine check failed for {lab!r}: {ex}")
+            return True
 
     conv = [e for e in evs
             if (e.get("kind") or "") in CONVERSATIONAL_KINDS

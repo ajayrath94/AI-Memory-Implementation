@@ -75,7 +75,9 @@ Work out what it means for the food a companion may suggest. Return JSON only:
 {{
  "chat_notes": [short English lines, what their health means at the table,
                e.g. "blood pressure: low salt, nothing fried" — one per
-               condition or medicine that matters for food; [] if none],
+               condition or medicine that matters for food. Leave out
+               anything with no food consequence entirely — never write
+               "knee pain: none"; [] if none],
  "offer_rules": [short English LIMITS for choosing a dish to suggest,
                  e.g. "nothing heavily salted or deep fried". Limits only —
                  never what they like or what to feature; their likes are

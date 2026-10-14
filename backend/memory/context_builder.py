@@ -371,20 +371,27 @@ def curiosity_score(user_id: str) -> dict:
     repetition = 0.0
     lines = _recent_companion_lines(user_id, n=5)
     if len(lines) >= 3:
-        words = []
-        for l in lines:
-            words.append({w.lower().strip(".,!?—-")
-                          for w in l.split() if len(w) > 4})
-        # Requiring a word in EVERY line missed the obvious case: four
-        # messages about Kishore Kumar and one about something else scored
-        # zero. Count words appearing in most of them instead.
-        from collections import Counter
-        tally = Counter()
-        for s in words:
-            tally.update(s)
-        need = max(2, int(len(words) * 0.6))
-        shared = [w for w, n in tally.items() if n >= need]
-        repetition = min(len(shared) / 3.0, 1.0)
+        # How alike her recent messages from Nancy are, by meaning: the
+        # average similarity between each pair. This counted words longer
+        # than four letters, which suited Hinglish and inflated in German.
+        try:
+            from classifier.pillar_classifier import embed_text
+            import math
+            vs = [v for v in (embed_text(l) for l in lines) if v]
+            sims = []
+            for i in range(len(vs)):
+                for j in range(i + 1, len(vs)):
+                    a, b = vs[i], vs[j]
+                    na = math.sqrt(sum(x * x for x in a))
+                    nb = math.sqrt(sum(x * x for x in b))
+                    if na and nb:
+                        sims.append(sum(x * y for x, y in zip(a, b)) / (na * nb))
+            if sims:
+                avg = sum(sims) / len(sims)
+                # Unrelated messages sit around 0.3-0.5, near-repeats above 0.8.
+                repetition = max(0.0, min((avg - 0.5) / 0.35, 1.0))
+        except Exception as e:
+            print(f"[Context] repetition read failed: {e}")
 
     score = min(0.55 * thinness + 0.20 * staleness + 0.25 * repetition, 1.0)
 

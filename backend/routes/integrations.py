@@ -93,28 +93,12 @@ def get_weather(user_id: str, location: str = None):
             "description": data.get("weather", [{}])[0].get("description"),
             "icon":        data.get("weather", [{}])[0].get("main"),
             "wind_speed":  data.get("wind", {}).get("speed"),
-            "advice":      _weather_advice(data),
+            # No advice line: it was fixed Hinglish ("Thand hai — garam
+            # kapde pehenna"), and Nancy repeated it to everyone. She has
+            # the numbers and writes the advice herself, in their language.
         }
     except Exception as e:
         return {"error": str(e), "location": location}
-
-
-def _weather_advice(data: dict) -> str:
-    """Generate simple health advice based on weather."""
-    temp = data.get("main", {}).get("temp", 25)
-    desc = data.get("weather", [{}])[0].get("main", "").lower()
-
-    if temp > 38:
-        return "Bahut garmi hai — paani peete rehna, bahar mat jaana"
-    elif temp > 32:
-        return "Garmi hai — hydrated rehna, dhoop se bachna"
-    elif temp < 10:
-        return "Thand hai — garam kapde pehenna, chai lo"
-    elif "rain" in desc:
-        return "Baarish ho rahi hai — bahar jaate waqt chhata le jaana"
-    elif "storm" in desc:
-        return "Toofan aa sakta hai — ghar pe rehna"
-    return "Mausam theek hai"
 
 
 # ── News ───────────────────────────────────────────────────────────────────────
@@ -134,11 +118,11 @@ def get_news(user_id: str, topic: str = None):
 
     # Determine search query from interests
     queries = []
+    # Whatever sports she follows, as she named them — not only the two
+    # that were on a list.
     sports  = interests.get("sports", [])
-    if any("cricket" in s.lower() for s in sports):
-        queries.append("cricket India")
-    if any("football" in s.lower() for s in sports):
-        queries.append("football India")
+    for sp in [str(x).strip() for x in sports if str(x).strip()][:2]:
+        queries.append(f"{sp} news")
 
     region = interests.get("region", "")
     if region:
@@ -317,6 +301,9 @@ def get_nearby_places(user_id: str, place_type: str = "hospital",
                 # a fragment, and there is no number at all, so a hospital on
                 # an emergency screen had nothing to dial.
                 "place_id": p.get("place_id"),
+                # Google's own types, so "is this a bar" is a fact about the
+                # place, not a guess from words in its name.
+                "types":   p.get("types") or [],
                 "address": p.get("vicinity"),
                 "rating":  p.get("rating"),
                 "open":    p.get("opening_hours", {}).get("open_now"),
