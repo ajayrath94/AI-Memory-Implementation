@@ -320,7 +320,12 @@ LIST_ADD_SCHEMA = {
             "started_new_list, and then tell her in a few words which list "
             "you started ('bazar ki list bana di').\n\n"
             "Do NOT use this for things with a time — 'teen baje dawai "
-            "leni hai' is a reminder, not a list item."
+            "leni hai' is a reminder, not a list item.\n\n"
+            "If a word looks misheard or misspelt for the list it is going "
+            "on — 'carbon' and 'pool' on a market list were tarbooz and "
+            "phool — add what she most likely meant and check it with her "
+            "in a few words in your reply ('tarbooz likha hai, theek?'). "
+            "Do not add the garbled word as it is."
         ),
         "parameters": {
             "type": "object",

@@ -475,7 +475,34 @@ def pending_suggestion(user_id: str) -> Optional[dict]:
         return None
 
 
-def classify_reaction(offer_label: str, user_text: str) -> Optional[str]:
+def _said_after(user_id: str, since_iso: str) -> str:
+    """What the companion said after the offer, if anything — the latest
+    line, which is what a reply most often answers."""
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        made = datetime.fromisoformat(str(since_iso).replace("Z", "+00:00"))
+        if made.tzinfo is None:
+            made = made.replace(tzinfo=timezone.utc)
+        # A minute's grace: the offer itself is saved as a message too.
+        after = (made + timedelta(minutes=1)).isoformat()
+        sess = [r["id"] for r in (db.table("sessions").select("id")
+                .eq("user_id", user_id).gte("updated_at", after)
+                .limit(5).execute()).data or []]
+        if not sess:
+            return ""
+        rows = (db.table("messages").select("content,timestamp")
+                .in_("session_id", sess).eq("role", "assistant")
+                .gt("timestamp", after).order("timestamp", desc=True)
+                .limit(1).execute()).data or []
+        return str(rows[0].get("content") or "")[:300] if rows else ""
+    except Exception as e:
+        print(f"[Suggest] said-after read failed: {e}")
+        return ""
+
+
+def classify_reaction(offer_label: str, user_text: str,
+                      said_since: str = "") -> Optional[str]:
     """
     Is this reply about the offer, and if so what kind of no?
 
@@ -483,7 +510,16 @@ def classify_reaction(offer_label: str, user_text: str) -> Optional[str]:
     keyword check cannot make it — "nahi, abhi mann nahi hai" and "nahi, mujhe
     woh pasand nahi" share their first word and mean opposite things.
     """
-    prompt = f"""The companion offered: "{offer_label}"
+    # What came between. "Haan krdia phone" was credited to an offer of
+    # Sukhsagar as a yes — it answered the next message, which asked about
+    # her phone call. The offer log then said mornings work, and pushed more.
+    later = ""
+    if said_since:
+        later = (f'\nAFTER the offer, the companion also said: "{said_since}"\n'
+                 "A reply usually answers the LATEST thing said. If this "
+                 "reply answers that later message rather than the offer, "
+                 "it is unrelated to the offer.\n")
+    prompt = f"""The companion offered: "{offer_label}"{later}
 The person replied: "{user_text}"
 
 Is the reply a response to that offer? Answer with ONE word:
@@ -590,7 +626,8 @@ def handle_reply(user_id: str, user_text: str,
     if not pending:
         return None
 
-    reaction = classify_reaction(pending.get("label", ""), user_text)
+    reaction = classify_reaction(pending.get("label", ""), user_text,
+                                 _said_after(user_id, pending.get("created_at")))
     if not reaction or reaction == "unrelated":
         # Leave it open — they may still answer. The expiry sweep will close it.
         return None

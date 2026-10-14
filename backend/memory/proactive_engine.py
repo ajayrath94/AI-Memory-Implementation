@@ -111,6 +111,33 @@ def _awake_minutes(user_id: str, gap: int, hour) -> "int | None":
     return awake
 
 
+# Messages that wait for her. Medicine and safety are never held back.
+_WAITS = ("GREETING", "BOUNDARY", "RECOMMENDATION", "EXPLORE_OFFER", "CHECK_IN")
+UNANSWERED_LIMIT = 2
+
+
+def _unanswered(user_id: str, minutes_since_last) -> int:
+    """How many non-medicine messages went out since she last wrote.
+
+    On 14 October she was sent a greeting, a puja boundary, an offer and a
+    breakfast boundary between 06:31 and 09:31 with no reply to any of them.
+    Each was allowed on its own; nothing counted the silence after them.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        from supabase_store import get_client
+        now = datetime.now(timezone.utc)
+        mins = minutes_since_last if minutes_since_last is not None else 18 * 60
+        since = (now - timedelta(minutes=int(mins))).isoformat()
+        rows = (get_client().table("proactive_events").select("action")
+                .eq("user_id", user_id).gte("delivered_at", since)
+                .in_("action", list(_WAITS)).limit(20).execute()).data or []
+        return len(rows)
+    except Exception as e:
+        print(f"[Proactive] unanswered count failed: {e}")
+        return 0
+
+
 def proactive_check(user_id: str, override_hour: int = None) -> dict:
     from memory.time_context import time_context, _slot, _mode
     from memory.care_reader import get_due_schedule_items
@@ -140,6 +167,7 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
     hour   = tc.get("hour")
     quiet  = tc.get("unusual_silence")
     gap    = tc.get("minutes_since_last")
+    raw_gap = gap                      # since her last word, night included
 
     # Quiet while AWAKE, not quiet since she last spoke. The night counted:
     # her last word at 18:32, and at 06:13 the next morning "quiet ~11h
@@ -224,6 +252,15 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
     if away and mode == "safety":
         return decision("SAFETY_INFO", "away_night_mode",
                         "unfamiliar place, night", "high")
+
+    # ── 2.4 Waiting for her ──
+    # Two messages she has not answered is enough. Until she writes, only a
+    # tablet or a safety note goes out — another opener on top of two unread
+    # ones is talking at her, not with her.
+    waiting = (override_hour is None
+               and _unanswered(user_id, raw_gap) >= UNANSWERED_LIMIT)
+    if waiting:
+        return decision("SILENCE", "waiting_for_her")
 
     # ── 2.5 Morning greeting ──
     # Before the silence check-in on purpose. Someone quiet since yesterday
