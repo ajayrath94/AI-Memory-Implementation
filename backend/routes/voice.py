@@ -104,8 +104,10 @@ async def transcribe_audio(file: UploadFile = File(...),
         if user_id:
             try:
                 from memory.declared import get_declared
-                from memory.script import to_script
-                display = to_script(display, get_declared(user_id).language.pref)
+                from memory.script import to_her_script
+                # The script she writes in, not one decided by her language.
+                display = to_her_script(user_id, display,
+                                        get_declared(user_id).language.pref)
             except Exception as e:
                 print(f"[Voice] transliteration skipped: {e}")
 

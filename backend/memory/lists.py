@@ -413,6 +413,34 @@ def _pick(rows: List[Dict], what: str) -> Optional[Dict]:
         w = _what(r).lower()
         if want in w or (w and w in want):
             return r
+    # Not the same letters — ask which one she means. "ककड़ी" said aloud is
+    # the "kakdi" she typed; "kheera" may be it too. Spelling matched none of
+    # them, so "do kilo kakdi le aayi" ticked nothing.
+    return _pick_by_meaning(rows, what)
+
+
+def _pick_by_meaning(rows: List[Dict], what: str) -> Optional[Dict]:
+    if not rows:
+        return None
+    listed = "\n".join(f"{i + 1}. {_what(r)}" for i, r in enumerate(rows))
+    try:
+        from llm import ask
+        got = (ask(f"""Items on someone's list:
+{listed}
+
+They said: "{what}"
+
+Which ONE item do they mean? The same thing in another script, spelling or
+language counts (ककड़ी is kakdi; tarbuz is tarbooz). Reply with its number
+only, or NONE if it is not on the list.""", max_tokens=5) or "").strip().upper()
+    except Exception as e:
+        print(f"[Lists] meaning match failed: {e}")
+        return None
+    num = "".join(ch for ch in got.split()[0] if ch.isdigit()) if got else ""
+    if num and 1 <= int(num) <= len(rows):
+        r = rows[int(num) - 1]
+        print(f"[Lists] {what!r} -> {_what(r)!r} (by meaning)")
+        return r
     return None
 
 

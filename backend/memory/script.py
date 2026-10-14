@@ -117,3 +117,134 @@ def to_script(text: str, pref: Optional[str], threshold: float = 0.8) -> str:
     except Exception as e:
         print(f"[Script] transliterate failed ({target}): {e}")
         return text
+
+
+# ── Her own script ────────────────────────────────────────────────────────────
+#
+# The language she chose does not say how she WRITES it. A Hinglish speaker
+# types Roman letters; a Punjabi speaker may type Gurmukhi, or Roman, or both;
+# a Tamil speaker often types Tanglish. Whisper writes whatever it hears in
+# whatever script it guesses, so spoken and typed messages came out in two
+# scripts — "Abhi sardi theek hai" typed, "बस अभी निकल रही हूँ" spoken — and
+# anything that compared words ("ककड़ी" against "kakdi" on her list) missed.
+#
+# A rule per language would be wrong for half of every language. So the script
+# follows her: whatever most of her own typed messages are written in, spoken
+# ones are put into too. Nothing reads the words — only which alphabet the
+# letters come from.
+
+_BLOCKS = (
+    ("devanagari", 0x0900, 0x097F, "hi-IN"),
+    ("bengali",    0x0980, 0x09FF, "bn-IN"),
+    ("gurmukhi",   0x0A00, 0x0A7F, "pa-IN"),
+    ("gujarati",   0x0A80, 0x0AFF, "gu-IN"),
+    ("odia",       0x0B00, 0x0B7F, "od-IN"),
+    ("tamil",      0x0B80, 0x0BFF, "ta-IN"),
+    ("telugu",     0x0C00, 0x0C7F, "te-IN"),
+    ("kannada",    0x0C80, 0x0CFF, "kn-IN"),
+    ("malayalam",  0x0D00, 0x0D7F, "ml-IN"),
+)
+_LOCALE_OF = {name: loc for name, _, _, loc in _BLOCKS}
+_LOCALE_OF["latin"] = "en-IN"
+_WRITES_IN_CACHE = {}
+
+
+def script_of(text: str) -> str:
+    """Which alphabet most of the letters are in: latin, devanagari, ... or ''."""
+    counts = {}
+    for c in text or "":
+        if not c.isalpha():
+            continue
+        o = ord(c)
+        if o < 0x250:
+            name = "latin"
+        else:
+            name = next((n for n, lo, hi, _ in _BLOCKS if lo <= o <= hi), "other")
+        counts[name] = counts.get(name, 0) + 1
+    return max(counts, key=counts.get) if counts else ""
+
+
+def writes_in(user_id: str) -> str:
+    """The script of most of her recent messages. '' when there are too few
+    to tell. Remembered for an hour."""
+    import time
+    hit = _WRITES_IN_CACHE.get(user_id)
+    if hit and time.time() - hit[1] < 3600:
+        return hit[0]
+    found = ""
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        sess = [r["id"] for r in (db.table("sessions").select("id")
+                .eq("user_id", user_id).order("updated_at", desc=True)
+                .limit(10).execute()).data or []]
+        rows = (db.table("messages").select("content")
+                .in_("session_id", sess).eq("role", "user")
+                .order("timestamp", desc=True).limit(40)
+                .execute()).data or [] if sess else []
+        tally = {}
+        for r in rows:
+            s = script_of(str(r.get("content") or ""))
+            if s and s != "other":
+                tally[s] = tally.get(s, 0) + 1
+        if sum(tally.values()) >= 3:
+            found = max(tally, key=tally.get)
+    except Exception as e:
+        print(f"[Script] writes-in read failed: {e}")
+    _WRITES_IN_CACHE[user_id] = (found, time.time())
+    return found
+
+
+def _transliterate(text: str, source: str, target: str) -> str:
+    key = os.getenv("SARVAM_API_KEY")
+    if not key or source == target:
+        return text
+    try:
+        body = json.dumps({"input": text, "source_language_code": source,
+                           "target_language_code": target}).encode()
+        req = urllib.request.Request(
+            "https://api.sarvam.ai/transliterate", data=body,
+            headers={"api-subscription-key": key,
+                     "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            out = json.loads(r.read()).get("transliterated_text")
+        return (out or text).strip()
+    except Exception as e:
+        print(f"[Script] transliterate {source}->{target} failed: {e}")
+        return text
+
+
+def to_her_script(user_id: str, text: str, pref: Optional[str] = None) -> str:
+    """A transcript, written the way she writes. Unchanged when it already is,
+    when she has written too little to tell and her language says nothing,
+    or when conversion fails."""
+    text = (text or "").strip()
+    src = script_of(text)
+    if not text or not src or src == "other":
+        return text
+
+    target = writes_in(user_id)
+    if not target:
+        # Too few messages of her own yet: her chosen language decides.
+        p = (pref or "").lower()
+        if "hinglish" in p or "english" in p:
+            target = "latin"
+        else:
+            loc = locale_for(pref)
+            target = next((n for n, _, _, l in _BLOCKS if l == loc), "")
+    if not target or target == src:
+        return text
+
+    # Devanagari is Hindi or Marathi; her language says which.
+    pref_loc = locale_for(pref) or ""
+    def loc(name):
+        if name == "devanagari" and pref_loc == "mr-IN":
+            return "mr-IN"
+        return _LOCALE_OF.get(name, "")
+    s_loc, t_loc = loc(src), loc(target)
+    if not s_loc or not t_loc:
+        return text
+    out = _transliterate(text, s_loc, t_loc)
+    if out != text:
+        print(f"[Script] {src}->{target}: {text[:40]!r} -> {out[:40]!r}")
+    return out
