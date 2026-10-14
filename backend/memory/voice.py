@@ -175,6 +175,22 @@ def _google(text: str, lang: str) -> Optional[bytes]:
         return None
 
 
+def _speakable(text: str) -> str:
+    """The message as it should be heard.
+
+    A map link went to the voice whole — "https colon slash slash www dot
+    google dot com" — and so did the heart at the end. Links and pictographs
+    are for the eye; the text on screen keeps them.
+    """
+    import re
+    import unicodedata
+    t = re.sub(r"https?://\S+|www\.\S+", " ", text or "")
+    t = "".join(c for c in t
+                if unicodedata.category(c) not in ("So", "Cs", "Co")
+                and c not in "\u200d\ufe0f")
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def speak(user_id: str, text: str, intent: str = "",
           valence: float = 0.0) -> Optional[dict]:
     """Audio for one message, or None.
@@ -183,7 +199,7 @@ def speak(user_id: str, text: str, intent: str = "",
     both providers fail, and the caller shows the text as it always did —
     voice is an addition, never a dependency.
     """
-    text = (text or "").strip()
+    text = _speakable(text)
     if len(text) < 2:
         return None
 
@@ -192,14 +208,17 @@ def speak(user_id: str, text: str, intent: str = "",
 
     audio = _sarvam(text, lang, speaker, instruction)
     if audio:
+        print(f"[Voice] {user_id}: sarvam/{speaker} {lang} {len(audio)} bytes")
         return {"audio": audio, "format": "wav", "voice": speaker,
                 "lang": lang, "tone": instruction or "plain"}
 
     audio = _google(text, lang)
     if audio:
+        print(f"[Voice] {user_id}: google {lang} {len(audio)} bytes (sarvam failed)")
         return {"audio": audio, "format": "mp3", "voice": "google",
                 "lang": lang, "tone": "plain"}
 
+    print(f"[Voice] {user_id}: no audio — both providers failed")
     return None
 
 

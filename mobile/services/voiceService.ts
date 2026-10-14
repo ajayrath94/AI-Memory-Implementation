@@ -132,16 +132,19 @@ export async function speak(
       throw new Error('Audio.Sound.createAsync missing - expo-av not linked')
     }
 
-    // Named, so a failure says which half broke even when Hermes gives no
-    // stack: 'undefined is not a function' alone has cost most of a morning.
-    if (typeof (FileSystem as any).downloadAsync !== 'function') {
-      throw new Error('FileSystem.downloadAsync missing')
-    }
-    if (typeof (Audio as any)?.Sound?.createAsync !== 'function') {
-      throw new Error('Audio.Sound.createAsync missing - expo-av not linked')
+    // Sarvam sends WAV, Google (the fallback) sends MP3. iOS goes by the file
+    // name, so an MP3 saved as .wav would not play — silently, on exactly
+    // the days the fallback is needed.
+    let playUri = uri
+    const ctype = String(
+      (result.headers as any)?.['Content-Type'] ?? (result.headers as any)?.['content-type'] ?? '',
+    ).toLowerCase()
+    if (ctype.includes('mpeg') || ctype.includes('mp3')) {
+      playUri = uri.replace(/\.wav$/, '.mp3')
+      await FileSystem.moveAsync({ from: uri, to: playUri })
     }
 
-    const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true })
+    const { sound } = await Audio.Sound.createAsync({ uri: playUri }, { shouldPlay: true })
     current = sound
     announce(opts.id || null)
 
@@ -151,7 +154,7 @@ export async function speak(
         announce(null)
         current = null
         sound.unloadAsync().catch(() => {})
-        FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {})
+        FileSystem.deleteAsync(playUri, { idempotent: true }).catch(() => {})
       }
     })
     return true
