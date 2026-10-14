@@ -850,6 +850,20 @@ async def process_input(text: str, model: str,
     sid = session["id"]
     update_session_weight(sid)
 
+    # What she meant, for understanding; what she wrote, for the record.
+    # The keyboard and the transcriber both change her words — "carbon" for
+    # tarbuz, "Dhyanesh" for "dhyan hai" — and everything below used to read
+    # them as written. Her own words are what is saved and shown.
+    original = text
+    corrected = False
+    if text and text.strip():
+        try:
+            from memory.meant import what_she_meant
+            text, corrected = what_she_meant(user_id, text)
+        except Exception as _me:
+            print(f"[Router] meaning step failed: {_me}")
+            text = original
+
     # If the companion offered something and this is the answer, attribute it
     # before anything else reads the message. Costs nothing when no suggestion
     # is open, which is most turns. Fire-and-forget: a failed attribution must
@@ -975,7 +989,7 @@ async def process_input(text: str, model: str,
 
     # 5. Save user message with embedding
     save_message(
-        session_id=sid, role="user", content=text, model=model,
+        session_id=sid, role="user", content=original, model=model,
         pillar_core=classified.core,
         pillar_emotion=classified.emotion,
         pillar_functional=classified.functional,
@@ -1036,8 +1050,14 @@ async def process_input(text: str, model: str,
 
     # 11. Build context window
     context_messages = _build_context(sid, model)
-    if not context_messages or context_messages[-1].get("content") != text:
-        context_messages.append({"role": "user", "content": text})
+    # The model sees her words and, when they were garbled, what she meant —
+    # so it answers the meaning and can still check a word with her.
+    _turn = (f"{original}\n[what they meant: {text}]" if corrected else original)
+    if context_messages and context_messages[-1].get("role") == "user" \
+            and context_messages[-1].get("content") == original:
+        context_messages[-1] = {"role": "user", "content": _turn}
+    else:
+        context_messages.append({"role": "user", "content": _turn})
 
     # 12. Nancy system prompt
     system_prompt = _build_system_prompt(classified, user_memory, session_memory, user_id)

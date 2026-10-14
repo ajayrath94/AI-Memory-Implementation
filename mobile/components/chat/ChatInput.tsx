@@ -63,6 +63,8 @@ export function ChatInput({ onSubmit, loading }: Props) {
 
       {/* Text input */}
       <TextInput
+          autoCorrect={false}
+          spellCheck={false}
         value={text}
         onChangeText={setText}
         placeholder={
