@@ -655,6 +655,17 @@ def compose(user_id: str, intent: str = "check_in",
         print(f"[Context] fusion failed: {e}")
         fused = ""
 
+    # Short-term health: what is open, what is over, whether a check-in is
+    # due. "Sardi kaisi hai?" went out twice six days after "theek hai",
+    # because the cold lived in her profile forever. Not for a reminder.
+    episode_note = ""
+    if intent not in ("medication", "safety"):
+        try:
+            from memory.episodes import prompt_note
+            episode_note = prompt_note(user_id)
+        except Exception as e:
+            print(f"[Context] episode note failed: {e}")
+
     prompt = f"""{persona}
 
 {task}
@@ -665,6 +676,7 @@ def compose(user_id: str, intent: str = "check_in",
 {hints}
 {curiosity}
 {fused}
+{episode_note}
 
 {blocks}
 
@@ -808,4 +820,12 @@ Write only the message. No preamble, no quotation marks."""
         # explore offer.
         return spec.get("fixed") or ""
 
+    if episode_note:
+        try:
+            import threading
+            from memory.episodes import mark_asked_if
+            threading.Thread(target=mark_asked_if, args=(user_id, text),
+                             daemon=True).start()
+        except Exception as e:
+            print(f"[Context] episode ask-check failed: {e}")
     return text

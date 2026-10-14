@@ -209,9 +209,26 @@ def review(user_id: str, dry_run: bool = True) -> Dict:
 
     n = 0
     for h in found:
+        # A cold said on three days is three days of a cold, not a liking.
+        # "Sardi" became an interest with dishes attached this way.
+        if _is_health(user_id, h["subject"]):
+            print(f"[Promote] {h['subject']!r} skipped — a health matter, not a habit")
+            continue
         if _promote(user_id, h["subject"], h):
             n += 1
     return {"habits": found, "promoted": n}
+
+
+def _is_health(user_id: str, subject: str) -> bool:
+    """Filed under health when she said it — the classifier already decided."""
+    try:
+        rows = (_db().table("subject_mentions").select("pillar")
+                .eq("user_id", user_id).eq("subject", subject)
+                .limit(20).execute()).data or []
+        return any((r.get("pillar") or "") == "HEALTH_WELLNESS" for r in rows)
+    except Exception as e:
+        print(f"[Promote] health check failed for {subject!r}: {e}")
+        return False
 
 
 def _promote(user_id: str, subject: str, evidence: Dict) -> bool:

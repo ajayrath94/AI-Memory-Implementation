@@ -607,6 +607,13 @@ Use this to shape your response — ask about the right things, not generic ques
     # puts its instruction last.
     nancy_persona += _gender_instruction(user_id)
 
+    # ── Her health right now: what is open, what is over, what may be asked ──
+    try:
+        from memory.episodes import prompt_note as _episode_note
+        nancy_persona += _episode_note(user_id)
+    except Exception as _en:
+        print(f"[Router] episode note failed: {_en}")
+
     # ── Language — the very last word ────────────────────────────────────
     # The prompt above is full of Hinglish examples, and it used to say
     # outright "you speak Hinglish". Her chosen language — the same
@@ -987,6 +994,18 @@ async def process_input(text: str, model: str,
     classified = classify_input(text)
     embedding  = classified.embedding  # real 1024-dim vector
 
+    # Health episodes: a cold that starts, is checked on and ends. Read in the
+    # background against what is open — "theek hai" closes the cold it is
+    # about. See memory/episodes.py.
+    def _episodes(_t=text, _p=classified.core):
+        try:
+            from memory.meant import _last_said
+            from memory.episodes import hear
+            hear(user_id, _t, said=_last_said(user_id), pillar=_p)
+        except Exception as _ee:
+            print(f"[Router] episodes failed: {_ee}")
+    threading.Thread(target=_episodes, daemon=True).start()
+
     # 5. Save user message with embedding
     save_message(
         session_id=sid, role="user", content=original, model=model,
@@ -1064,6 +1083,16 @@ async def process_input(text: str, model: str,
 
     # 13. Call AI
     reply, tool_results = _route(model, system_prompt, context_messages, user_id=user_id)
+
+    # Did the reply ask about the health problem that was due? Then it is not
+    # asked again today.
+    def _asked(_r=reply):
+        try:
+            from memory.episodes import mark_asked_if
+            mark_asked_if(user_id, _r)
+        except Exception as _ae:
+            print(f"[Router] episode ask-check failed: {_ae}")
+    threading.Thread(target=_asked, daemon=True).start()
 
     # 14. Save assistant message with embedding
     save_message(
