@@ -49,122 +49,41 @@ def _retrieve_memory(
     top_k: int = 5,
     query_text: str = "",
 ) -> Optional[str]:
+    """What HAPPENED that bears on what she just said, with the day it
+    happened on. For "kab gaye the", the date is the answer.
+
+    This used to score stm_clusters and ltm_patterns first and return early
+    when they were empty. Both were retired and are always empty, so it
+    returned before the events were ever read: asked "Hum zoo kab gaye the",
+    she got "pichhle hafte" while the zoo outing sat in storage with its date.
+    What was SAID lives in the thread (thread.recall); this is the events.
     """
-    Pure embedding cosine similarity.
-    No TF-IDF. No keyword matching. Done.
-    """
-    # stm_clusters and ltm_patterns are dropped. Both were retired — session-
-    # keyed fragments and undated lines that produced "abhi Janmashtami hai"
-    # a fortnight after the festival — and the thread does this properly now.
-    stm = []
-    # ltm_patterns is retired, not read.
-    #
-    # Eighteen rows for one user and almost none of them was memory: the
-    # companion's own greetings recalled twenty times, "USER_PATTERN: NUDGE,
-    # SADNESS, SEARCH" seventeen, a reminder from August that had long since
-    # passed, and her one-word replies. The Janmashtami row said "abhi
-    # Janmashtami hai toh mandir jana hai" with no date and was recalled
-    # twenty-eight times, a fortnight after Janmashtami.
-    #
-    # The thread does this properly now — dated, compressed, and rendered as
-    # "twelve days ago" rather than as an undated line that reads as today.
-    ltm = []
-
-    all_entries = [(e, "stm") for e in stm] + [(e, "ltm") for e in ltm]
-    if not all_entries:
-        return None
-
-    results = []
-    # User pillar priorities bias what gets recalled: a pillar marked
-    # important surfaces more readily, a de-prioritised one is suppressed.
-    try:
-        from memory.pillar_weights import get_pillar_weights
-        pillar_weights = get_pillar_weights(user_id)
-    except Exception as e:
-        print(f"[Retrieve] weights unavailable: {e}")
-        pillar_weights = {}
-
-    for entry, tier in all_entries:
-        # Use stored embedding if available
-        stored_emb = entry.get("embedding", [])
-        if stored_emb and len(stored_emb) > 0:
-            score = cosine_similarity(query_embedding, stored_emb)
-        else:
-            # Fallback: simple word overlap for old entries
-            q_words = set(entry.get("text", "").lower().split())
-            score   = 0.1 if q_words else 0.0
-
-        # Two-stage scoring. Relevance (cosine) decides what is eligible;
-        # user priority only decides ordering. This stops a high weight from
-        # dragging in memories that are not actually relevant.
-        weight = pillar_weights.get(entry.get("pillar"), 1.0)
-        if weight < MUTE_THRESHOLD:
-            continue
-
-        if score >= RECALL_THRESHOLD:
-            new_strength = min(1.0, entry["strength"] + 0.05)
-            new_count    = entry["recall_count"] + 1
-            # The old tiers are neither read nor written now.
-            #
-            # Promotion here ran backwards: three recalls in one conversation
-            # moved a memory DOWN into long-term storage, so the subjects she
-            # returned to most were archived first. And what ltm_patterns
-            # collected was not memory — the companion's own greetings
-            # recalled twenty times, "USER_PATTERN: NUDGE, SADNESS, SEARCH"
-            # seventeen, and "abhi Janmashtami hai toh mandir jana hai" at
-            # twenty-eight, undated, a fortnight after Janmashtami.
-            #
-            # The recall counts kept climbing after we stopped reading them,
-            # which is how that row was found again after being deleted.
-            #
-            # memory_stm and memory_ltm do this properly: dated, compressed by
-            # neglect, and rendered as "twelve days ago" rather than as a line
-            # that reads as now.
-            if tier == "stm":
-                pass          # nothing to write back to
-
-            results.append({
-                "text":  entry["text"],
-                "score": score,
-                "rank":  score * weight,
-                "tier":  tier,
-            })
-
-    if not results:
-        return None
-
-    results.sort(key=lambda x: x["rank"], reverse=True)
-    # Clean what reaches Nancy: strip the internal tier/score tag and the
-    # "PILLAR:" prefix so she sees plain recalled content, not plumbing metadata.
-    def _clean(t: str) -> str:
-        t = t.strip()
-        if ":" in t[:20]:
-            head, _, rest = t.partition(":")
-            if head.isupper() and len(head) <= 16:
-                t = rest.strip()
-        return t
     lines = []
-    for r in results[:top_k]:
-        cleaned = _clean(r["text"])
-        if cleaned and len(cleaned) > 3:
-            lines.append(cleaned)
-
-    # And what HAPPENED, with the day it happened on.
-    #
-    # Asked "doctor ke paas kab gayi thi", the reply was "haal hi mein" —
-    # recently — while the event sat in storage with 2026-09-05 on it. STM and
-    # LTM hold what was said; only events carry the date, and retrieval was
-    # not reading them.
     try:
         from memory.events import find_events
+        from datetime import date as _date
+        try:
+            from memory.thread import _today as _her_today
+            today = _her_today(user_id)
+        except Exception:
+            today = _date.today()
         for e in find_events(user_id, query_text or "", limit=3):
-            when = str(e.get("happened_on") or "")[:10]
             what = str(e.get("label") or "").strip()
-            if what:
-                lines.append(f"{when}: {what}" if when else what)
+            if not what:
+                continue
+            when = str(e.get("happened_on") or "")[:10]
+            try:
+                d = _date.fromisoformat(when)
+                ago = (today - d).days
+                rel = ("today" if ago == 0 else "yesterday" if ago == 1
+                       else f"{ago} days ago" if ago > 1 else f"in {-ago} days")
+                lines.append(f"{what}: {d.strftime('%A %d %B %Y')} ({rel})")
+            except Exception:
+                lines.append(f"{what}: {when}" if when else what)
     except Exception as e:
         print(f"[Retrieve] events failed: {e}")
-
+    if lines:
+        print(f"[Retrieve] events: {lines}")
     return "\n".join(lines) if lines else None
 
 
@@ -484,7 +403,10 @@ TOOL RESULTS:
         )
 
     if session_memory:
-        nancy_persona += f"\nFROM THIS CONVERSATION:\n{session_memory}\n"
+        # Events with their dates. Labelled as what they are: under "from
+        # this conversation" a trip from last week read as something said now.
+        nancy_persona += (f"\nTHINGS THAT HAPPENED, WITH THE DAY THEY HAPPENED "
+                          f"(when she asks when, answer with this day):\n{session_memory}\n")
 
     # ── Temporal awareness: Nancy must know the user's real local time so she
     # can greet correctly AND resolve relative times ("kal", "12 baje") into
@@ -1066,7 +988,11 @@ async def process_input(text: str, model: str,
     # 10. Within-session memory (EMBEDDING-BASED!)
     # The text as well as the vector: events are matched on what she asked,
     # and the date is the answer to "kab".
-    session_memory = _retrieve_memory(embedding, sid, user_id, query_text=text)
+    # Both her words and what we think she meant: if the correction is
+    # wrong ("zoo" read as "sunne"), her own word still finds the event.
+    session_memory = _retrieve_memory(
+        embedding, sid, user_id,
+        query_text=(f"{original}\n{text}" if corrected else text))
 
     # 11. Build context window
     context_messages = _build_context(sid, model)

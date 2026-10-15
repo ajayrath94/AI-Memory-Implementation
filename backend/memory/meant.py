@@ -62,6 +62,22 @@ def _people(user_id: str) -> str:
         return ""
 
 
+def _things(user_id: str) -> str:
+    """What is in her life — her recent events and what she likes — so a
+    real word she used about one of them is not "corrected" into something
+    that fits the companion's last line better. "Hum zoo kab gaye the" came
+    back as "Hum sunne kab gaye the" because the companion had just said
+    "gaane sun lena"; the Zoo Outing she was asking about was not in view."""
+    try:
+        from supabase_store import get_client
+        rows = (get_client().table("interest_clusters").select("label")
+                .eq("user_id", user_id).eq("status", "active")
+                .order("last_event", desc=True).limit(40).execute()).data or []
+        return ", ".join(dict.fromkeys(str(r["label"]) for r in rows if r.get("label")))
+    except Exception:
+        return ""
+
+
 def what_she_meant(user_id: str, text: str,
                    said: str = None) -> Tuple[str, bool]:
     """(the message as she meant it, whether anything was changed).
@@ -73,6 +89,7 @@ def what_she_meant(user_id: str, text: str,
         said = _last_said(user_id)
     lists = _on_lists(user_id)
     people = _people(user_id)
+    things = _things(user_id)
     try:
         from llm import ask
         got = (ask(f"""An elderly person typed or spoke this message to their companion.
@@ -82,6 +99,7 @@ transcription mishears them, so a word may not be what they meant.
 The companion had just said: "{said or '(nothing yet)'}"
 {('Their open lists: ' + lists) if lists else ''}
 {('People in their life: ' + people) if people else ''}
+{('Things in their life (events, interests): ' + things) if things else ''}
 
 Their message: "{t}"
 
@@ -93,6 +111,11 @@ fits what the companion just said far better, is that ordinary word — the
 keyboard made it a name: "Haan Dhyanesh hai" after "did you make the call?"
 is "Haan dhyan hai". Someone new they clearly mean to mention stays as they
 wrote it.
+A REAL WORD THAT MAKES SENSE WHERE IT STANDS IS NEVER REPLACED — not even
+when another word would fit what the companion said better. A message can
+change the subject: "Hum zoo kab gaye the?" right after the companion talked
+about songs is a question about the zoo, and "zoo" stays. Correct only what
+does not make sense as written.
 Do not translate, rephrase, add, remove or answer anything. If nothing is
 wrong, write it back unchanged.
 
