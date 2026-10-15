@@ -249,51 +249,23 @@ def merge_clusters(user_id: str, keep_id: str, absorb_id: str, label: str = None
     Fold one cluster into another: repoint its events, sum the totals,
     recompute the centroid as the count-weighted mean, delete the absorbed row.
     """
-    from supabase_store import get_client
-    db = get_client()
-    try:
-        rows = (db.table("interest_clusters")
-                .select("id,event_count,strength,centroid")
-                .in_("id", [keep_id, absorb_id]).execute()).data or []
-        by_id = {r["id"]: r for r in rows}
-        keep, absorb = by_id.get(keep_id), by_id.get(absorb_id)
-        if not keep or not absorb:
-            return
-
-        kn, an = keep.get("event_count") or 0, absorb.get("event_count") or 0
-        kc, ac = keep.get("centroid"), absorb.get("centroid")
-        merged_centroid = keep.get("centroid")
-        if kc and ac and len(kc) == len(ac) and (kn + an) > 0:
-            merged_centroid = [
-                round((k * kn + a * an) / (kn + an), 6)
-                for k, a in zip(kc, ac)
-            ]
-
-        db.table("user_behavioral_events").update(
-            {"cluster_id": keep_id}).eq("cluster_id", absorb_id).execute()
-
-        db.table("interest_clusters").delete().eq("id", absorb_id).execute()
-
-        # Recompute the count from actual rows rather than summing — the summed
-        # value can drift if any event was pointing at a stale cluster id.
-        real = (db.table("user_behavioral_events")
-                .select("id", count="exact")
-                .eq("cluster_id", keep_id).execute())
-        real_count = real.count if real.count is not None else (kn + an)
-
-        update = {
-            "event_count": real_count,
-            "strength":    round((keep.get("strength") or 0) + (absorb.get("strength") or 0), 4),
-            "centroid":    merged_centroid,
-        }
-        if label:
-            update["label"] = label
-        db.table("interest_clusters").update(update).eq("id", keep_id).execute()
-        print(f"[ClusterResolver] merged {absorb_id} -> {keep_id}")
-        return keep_id
-    except Exception as e:
-        print(f"[ClusterResolver] merge failed: {e}")
-        return keep_id
+    # Soft now (concepts.merge): the absorbed row forwards to keep_id and
+    # everything that pointed at it follows. It used to delete the row and
+    # leave mentions, edges and day tags pointing at nothing.
+    from memory.concepts import merge
+    merge(user_id, keep_id, absorb_id, "cluster_resolver")
+    if label:
+        try:
+            from supabase_store import get_client
+            db = get_client()
+            taken = (db.table("interest_clusters").select("id")
+                     .eq("user_id", user_id).eq("label", label)
+                     .neq("id", keep_id).limit(1).execute()).data
+            if not taken:
+                db.table("interest_clusters").update({"label": label}).eq("id", keep_id).execute()
+        except Exception as e:
+            print(f"[ClusterResolver] relabel failed: {e}")
+    return keep_id
 
 
 def reconcile(user_id: str, cluster_id: str, pillar: str):

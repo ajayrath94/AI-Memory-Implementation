@@ -112,19 +112,14 @@ def _resolve_tags(user_id: str, subjects: List[str]) -> List[str]:
         return [], []
     ids, loose = [], []
     try:
-        from supabase_store import get_client
-        rows = (get_client().table("interest_clusters").select("id,label")
-                .eq("user_id", user_id).eq("status", "active")
-                .limit(200).execute()).data or []
-        by_label = {str(r["label"]).lower(): r["id"] for r in rows}
+        # By meaning (concepts.about), not by substring — "tea" tagged
+        # "Teacher". Archived concepts count: a day about her cold is a day
+        # about "Common cold", which is how its history is found later.
+        from memory.concepts import about as _about
         for s in subjects:
             low = str(s).lower().strip()
-            hit = by_label.get(low)
-            if not hit:
-                # A loose match, because "Kishore Kumar songs" and "Kishore
-                # Kumar" are the same tag.
-                hit = next((i for l, i in by_label.items()
-                            if low and (low in l or l in low)), None)
+            _c = _about(user_id, str(s))
+            hit = _c["id"] if _c else None
             if hit and hit not in ids:
                 ids.append(hit)
             elif not hit and low:
@@ -170,8 +165,26 @@ def write_stm(user_id: str, messages: List[dict], topics: List[Dict] = None,
     except Exception:
         _gender_line = "Do not guess whether they are a man or a woman. Say 'they'."
 
-    prompt = f"""Someone said these things during one day:
+    # Earlier the same day. Each conversation closes on its own and this
+    # used to REPLACE the day's note: on a five-conversation day only the
+    # last one was kept. Now the earlier note is part of what is written.
+    _earlier, _old_tags, _old_loose = "", [], []
+    try:
+        _prev = (_db().table("memory_stm").select("text,tags,untagged")
+                 .eq("user_id", user_id).eq("happened_on", day.isoformat())
+                 .limit(1).execute()).data or []
+        if _prev:
+            _earlier = (_prev[0].get("text") or "").strip()
+            _old_tags = list(_prev[0].get("tags") or [])
+            _old_loose = list(_prev[0].get("untagged") or [])
+    except Exception as _pe:
+        print(f"[Thread] earlier note read failed: {_pe}")
+    _earlier_block = (f"\nEarlier the same day you already noted:\n{_earlier}\n"
+                      f"Write ONE note for the whole day that keeps what that "
+                      f"says and adds what is new below.\n") if _earlier else ""
 
+    prompt = f"""Someone said these things during one day:
+{_earlier_block}
 {hers}
 
 Write what happened, in two or three short sentences, as a note to yourself
@@ -225,6 +238,8 @@ Just the note."""
     # session — no second call to work out what it was about.
     subjects = [t.get("subject") for t in (topics or []) if t.get("subject")]
     tag_ids, loose = _resolve_tags(user_id, subjects)
+    tag_ids = list(dict.fromkeys(_old_tags + tag_ids))
+    loose = list(dict.fromkeys(_old_loose + loose))
 
     row = {
         "user_id": user_id,

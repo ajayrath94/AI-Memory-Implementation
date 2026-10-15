@@ -142,14 +142,12 @@ def record(user_id: str, topics: List[Dict], when: date = None) -> int:
     # recorded against it, so promotion never offers up a subject that is
     # already knowledge — Rajesh had a cluster and was still a candidate,
     # because cluster_id was only ever filled in ON promotion.
-    known = {}
-    try:
-        for r in (_db().table("interest_clusters").select("id,label")
-                  .eq("user_id", user_id).eq("status", "active")
-                  .limit(200).execute()).data or []:
-            known[str(r["label"]).strip().lower()] = r["id"]
-    except Exception as e:
-        print(f"[Mentions] cluster read failed: {e}")
+    #
+    # Found by meaning (concepts.about), not by substring: "rice" matched
+    # "Lemon rice" and "tea" "Teacher". Archived concepts count — a day she
+    # mentioned "aram" is linked to the archived "Aram", so it is known and
+    # is never promoted again.
+    from memory.concepts import about as _about
 
     # One name for a thing, or nothing can be counted.
     #
@@ -175,12 +173,8 @@ def record(user_id: str, topics: List[Dict], when: date = None) -> int:
             continue
         subject = canonical(user_id, subject, _seen)
         low = subject.lower()
-        cid = known.get(low)
-        if not cid:
-            # Loosely, because "Kishore Kumar's songs" and "Kishore Kumar"
-            # are the same subject to her.
-            cid = next((i for l, i in known.items()
-                        if len(l) > 3 and (low in l or l in low)), None)
+        _c = _about(user_id, subject)
+        cid = _c["id"] if _c else None
         rows.append({
             "user_id": user_id,
             "subject": subject[:80],
@@ -191,6 +185,23 @@ def record(user_id: str, topics: List[Dict], when: date = None) -> int:
         })
     if not rows:
         return 0
+
+    # Junk is a judgement about the word, not about one day of it. It was
+    # set on each day's row, so "aj" marked junk on Monday came back as a
+    # fresh, unmarked row on Tuesday and counted toward a habit again. A
+    # subject marked junk once is junk on every new day too; unmarking it
+    # (every row back to false) is how a wrong mark is undone.
+    try:
+        _junk = {str(r["subject"]).strip().lower() for r in
+                 (_db().table("subject_mentions").select("subject")
+                  .eq("user_id", user_id).eq("junk", True)
+                  .limit(1000).execute()).data or []}
+    except Exception as e:
+        print(f"[Mentions] junk read failed: {e}")
+        _junk = set()
+    for r in rows:
+        if r["subject"].strip().lower() in _junk:
+            r["junk"] = True
 
     try:
         _db().table("subject_mentions").upsert(
@@ -305,7 +316,9 @@ def attach(user_id: str, subject: str, cluster_id: str) -> int:
     """
     try:
         r = (_db().table("subject_mentions").update({"cluster_id": cluster_id})
-             .eq("user_id", user_id).ilike("subject", f"%{subject.strip()}%")
+             # This subject, not every subject containing it: "%rice%"
+             # attached "Lemon rice" days to "Rice".
+             .eq("user_id", user_id).ilike("subject", subject.strip().replace("%", "").replace("_", "\\_"))
              .is_("cluster_id", "null").execute())
         return len(r.data or [])
     except Exception as e:

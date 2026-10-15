@@ -28,7 +28,12 @@ TABLES = ("window_state", "suggestions", "day_events", "subject_mentions",
           "user_behavioral_events", "interest_clusters", "observances",
           "profile_anchors", "user_patterns", "care_schedule", "proactive_events",
           "weather_log", "user_context", "user_memory", "calendar_events",
-          "push_tokens", "lists", "list_items")
+          "push_tokens", "lists", "list_items",
+          # Added since: a sim that stopped halfway left these behind.
+          "health_episodes", "entity_relations", "memory_cache", "memory_stm",
+          "memory_ltm", "care_alerts", "reminders", "user_pillar_weights",
+          "pillar_weight_history", "festival_brief", "stm_clusters",
+          "ltm_patterns")
 
 
 def main():

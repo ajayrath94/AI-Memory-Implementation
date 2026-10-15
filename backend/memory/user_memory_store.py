@@ -611,6 +611,15 @@ def process_session_end(session_id: str, user_id: str = "default"):
     # 2. Summarize. A session too short to summarise still had a mood.
     session_summary = summarize_session(messages, user_id)
     if not session_summary:
+        # Mark it read. A conversation too short to summarise kept a null
+        # summary, and "summary is null" is how the next new session finds
+        # the previous one to close — so a short chat was closed again every
+        # time she started a new one: its mentions, notes and events filed
+        # once per new session.
+        try:
+            db.table("sessions").update({"summary": ""}).eq("id", session_id).execute()
+        except Exception as e:
+            print(f"[UserMemory] could not mark short session read: {e}")
         return
 
     centroid = compute_session_centroid(session_id)

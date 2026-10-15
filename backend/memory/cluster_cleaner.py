@@ -154,11 +154,10 @@ def clean_clusters(user_id: str, dry_run: bool = False) -> dict:
             continue
         report["drops"].append(d)
         if not dry_run:
-            try:
-                db.table("user_behavioral_events").delete().eq("cluster_id", cid).execute()
-                db.table("interest_clusters").delete().eq("id", cid).execute()
-            except Exception as e:
-                print(f"[Cleaner] drop failed: {e}")
+            # Set aside, not deleted: known, not offered, and undoable. A
+            # drop used to delete the group AND every event in it.
+            from memory.concepts import set_aside
+            set_aside(cid, f"cleaner: {d.get('reason') or d.get('why') or 'dropped'}")
 
     # RENAMES
     for r in plan.get("renames", []):
@@ -169,6 +168,14 @@ def clean_clusters(user_id: str, dry_run: bool = False) -> dict:
         report["renames"].append(r)
         if not dry_run:
             try:
+                # Not onto a name another row already has — the table allows
+                # one row per name, and the update failed without a word.
+                taken = (db.table("interest_clusters").select("id")
+                         .eq("user_id", user_id).eq("label", lbl)
+                         .neq("id", cid).limit(1).execute()).data
+                if taken:
+                    print(f"[Cleaner] rename to {lbl!r} skipped: name in use")
+                    continue
                 db.table("interest_clusters").update({"label": lbl}).eq("id", cid).execute()
             except Exception as e:
                 print(f"[Cleaner] rename failed: {e}")
@@ -184,27 +191,18 @@ def clean_clusters(user_id: str, dry_run: bool = False) -> dict:
         report["merges"].append(m)
         if dry_run:
             continue
+        # Soft: each absorbed group forwards to the one kept, and what
+        # pointed at it follows (concepts.merge). It used to delete them.
+        from memory.concepts import merge as _merge
         try:
-            keep_row = next(c for c in clusters if c["id"] == keep)
-            absorb_rows = [c for c in clusters if c["id"] in absorb]
-            new_strength = round((keep_row.get("strength") or 0)
-                                 + sum((c.get("strength") or 0) for c in absorb_rows), 4)
-            new_events = (keep_row.get("event_count") or 0) \
-                         + sum((c.get("event_count") or 0) for c in absorb_rows)
-            merged_attrs = dict(keep_row.get("attributes") or {})
-            for c in absorb_rows:
-                for k, v in (c.get("attributes") or {}).items():
-                    if v and not merged_attrs.get(k):
-                        merged_attrs[k] = v
-            upd = {"strength": new_strength, "event_count": new_events,
-                   "attributes": merged_attrs}
-            if lbl:
-                upd["label"] = lbl
-            db.table("interest_clusters").update(upd).eq("id", keep).execute()
             for a in absorb:
-                db.table("user_behavioral_events").update(
-                    {"cluster_id": keep}).eq("cluster_id", a).execute()
-                db.table("interest_clusters").delete().eq("id", a).execute()
+                _merge(user_id, keep, a, "cleaner")
+            if lbl:
+                taken = (db.table("interest_clusters").select("id")
+                         .eq("user_id", user_id).eq("label", lbl)
+                         .neq("id", keep).limit(1).execute()).data
+                if not taken:
+                    db.table("interest_clusters").update({"label": lbl}).eq("id", keep).execute()
         except Exception as e:
             print(f"[Cleaner] merge failed: {e}")
 

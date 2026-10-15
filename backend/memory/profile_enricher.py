@@ -698,6 +698,20 @@ def _relation_candidates(attrs: dict, rel: str) -> dict:
     return attrs
 
 
+def _with_english(label: str, attrs: dict) -> dict:
+    """The label in plain English, kept on the concept from the start, so the
+    one same-thing check finds it in any of her languages without asking
+    again (concepts.english — already worked out for this name, usually)."""
+    try:
+        from memory.concepts import english
+        e = english(label, (attrs or {}).get("kind") or "", (attrs or {}).get("category") or "")
+        if e:
+            attrs = dict(attrs or {}, english=e)
+    except Exception:
+        pass
+    return attrs
+
+
 def _upsert_cluster(user_id: str, label: str, pillar: str,
                     strength: float, embedding: list = None,
                     attributes: dict = None, resolve_into: bool = True) -> str:
@@ -719,7 +733,6 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
         return None
     try:
         from supabase_store import get_client
-        from memory.cluster_resolver import find_cluster
         db = get_client()
 
         # resolve_into=False for anything a person named deliberately.
@@ -737,8 +750,28 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
         # named works, which are siblings rather than instances — and it is a
         # subtle enough distinction that relying on it holding, in every
         # domain and nine languages, is worse than not asking.
-        cluster_id = (find_cluster(user_id, label, pillar, embedding)
-                      if resolve_into else None)
+        # Is this something she already has? One question, asked one way,
+        # everywhere: memory/concepts.py. It used to be find_cluster, which
+        # asked whether this BELONGS to an ongoing concern in the same pillar
+        # — so a medicine joined "blood pressure" and a song its film, and
+        # the same thing under two pillars was two things.
+        cluster_id = None
+        if resolve_into:
+            from memory.concepts import same_as, known_not_offered
+            _hit = same_as(user_id, label,
+                           kind=(attributes or {}).get("kind") or "",
+                           relation=(attributes or {}).get("relation") or "",
+                           embedding=embedding)
+            if _hit and known_not_offered(_hit):
+                # Known, not offered (decided 15 Oct). The mention belongs to
+                # it — the next cold under "Common cold" — and it stays
+                # archived: never shown as an interest, never brought back by
+                # being said again.
+                print(f"[Cluster] {label!r} is {_hit['label']!r} "
+                      f"({_hit['status']}); kept, not brought back")
+                return _hit["id"]
+            if _hit:
+                cluster_id = _hit["id"]
 
         if cluster_id:
             row = (db.table("interest_clusters")
@@ -784,11 +817,6 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
                     if merged.get("kind"):
                         update["kind"] = merged["kind"]
             db.table("interest_clusters").update(update).eq("id", cluster_id).execute()
-            try:
-                from memory.cluster_resolver import reconcile
-                cluster_id = reconcile(user_id, cluster_id, pillar) or cluster_id
-            except Exception as e:
-                print(f"[Cluster] reconcile failed: {e}")
             return cluster_id
 
         # Exact-label safety net: find_cluster scopes by pillar + centroid, but the
@@ -909,7 +937,7 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
             "strength":    round(strength, 4),
             "event_count": 1,
             "centroid":    embedding,
-            "attributes":  {k: v for k, v in (attributes or {}).items() if v} or {},
+            "attributes":  _with_english(label, {k: v for k, v in (attributes or {}).items() if v} or {}),
             # From the attributes, not the column default. A new cluster came
             # out kind=interest whatever it was, and only a SECOND mention
             # corrected it — so a concern or a person was an interest until
@@ -917,12 +945,14 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
             "kind":        (attributes or {}).get("kind") or "interest",
         }).execute()).data
         new_id = created[0]["id"] if created else None
-        if new_id:
-            try:
-                from memory.cluster_resolver import reconcile
-                new_id = reconcile(user_id, new_id, pillar) or new_id
-            except Exception as e:
-                print(f"[Cluster] reconcile failed: {e}")
+        # No reconcile. It merged a new concept into any same-pillar one the
+        # model said it "belonged to", and deleted it — a medicine into the
+        # illness, an instance into its category. Belonging is an edge
+        # (relations.extract_edges); only sameness merges, and same_as asked
+        # that before this row was made.
+        if new_id and resolve_into:
+            from memory.concepts import remember
+            remember(user_id, label, new_id, (attributes or {}).get("relation") or "")
         return new_id
 
     except Exception as e:
@@ -1178,18 +1208,16 @@ def _node_for(user_id: str, label: str, kind: str, pillar: str = "GENERAL"):
         return None
     from supabase_store import get_client
     db = get_client()
-    try:
-        found = (db.table("interest_clusters").select("id")
-                 .eq("user_id", user_id).ilike("label", label)
-                 .limit(1).execute()).data or []
-        if found:
-            return found[0]["id"]
-    except Exception:
-        pass
+    # The same check as everything else: "Bangalore" finds "Bengaluru",
+    # and a merged node forwards. An archived one is still that place.
+    from memory.concepts import same_as, remember
+    hit = same_as(user_id, label, kind=kind)
+    if hit:
+        return hit["id"]
 
     row = {"user_id": user_id, "label": label[:120], "pillar": pillar,
            "kind": kind, "status": "active", "strength": 0.5,
-           "attributes": {"kind": kind}}
+           "attributes": _with_english(label, {"kind": kind})}
     try:
         from classifier.pillar_classifier import embed_text
         v = embed_text(label)
@@ -1198,7 +1226,9 @@ def _node_for(user_id: str, label: str, kind: str, pillar: str = "GENERAL"):
     except Exception:
         pass
     try:
-        return (db.table("interest_clusters").insert(row).execute()).data[0]["id"]
+        nid = (db.table("interest_clusters").insert(row).execute()).data[0]["id"]
+        remember(user_id, label, nid)
+        return nid
     except Exception as e:
         print(f"[Prop] could not create node {label!r}: {e}")
         return None
@@ -1362,6 +1392,21 @@ def _already_this_session(db, user_id: str, session_id: str, name: str) -> bool:
         return bool(got)
     except Exception:
         return False
+
+
+def _concept_name(user_id: str, name: str, attrs: dict) -> dict:
+    """The name to file this under: the concept it already is, or its own.
+
+    Was entity_resolver.resolve, which matched against old event values —
+    names that may belong to archived or merged groups — with a 0.87 floor
+    that missed ghutna/knee pain. Now the one shared check (concepts.py),
+    so the event value, the dedupe and the group all use the same name.
+    """
+    from memory.concepts import same_as, _embed
+    hit = same_as(user_id, name, kind=(attrs or {}).get("kind") or "",
+                  relation=(attrs or {}).get("relation") or "")
+    label = (hit or {}).get("label") or name
+    return {"name": label, "embedding": _embed(label), "matched": bool(hit)}
 
 
 def record_propositions(props: list, classified, user_id: str, session_id: str = "",
@@ -1559,8 +1604,7 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # more often than two conditions do, and "bahu" versus "padosan"
             # is the only thing telling her daughter-in-law Priya from her
             # neighbour Priya ji.
-            res = resolve(subj, etype, pillar, user_id,
-                          relation=attrs.get("relation", ""))
+            res = _concept_name(user_id, subj, attrs)
             # Strength scales by the LLM's salience classification: a stated
             # passion ("I love X", salience~0.8) stores strong and surfaces now;
             # a passing mention ("watched some cricket", ~0.3) stores weak and
@@ -1697,7 +1741,7 @@ def record_entity_events(entities: list, classified, user_id: str, session_id: s
 
             # Reuse an existing name if this is the same thing said differently,
             # so repeat mentions accumulate instead of fragmenting.
-            res = resolve(name, ent_type, pillar, user_id)
+            res = _concept_name(user_id, name, ent.get("attributes") or {})
 
             ev_strength = round(float(classified.core_score or 0.5), 4)
             cluster_id  = _upsert_cluster(user_id, res["name"], pillar, ev_strength,
