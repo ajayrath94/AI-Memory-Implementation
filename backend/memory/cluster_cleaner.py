@@ -135,7 +135,11 @@ def clean_clusters(user_id: str, dry_run: bool = False) -> dict:
     db = get_client()
     clusters = (db.table("interest_clusters").select(
         "id,label,pillar,strength,event_count,attributes,centroid")
-        .eq("user_id", user_id).execute()).data or []
+        # Active only. This pass hard-deletes what it drops or absorbs, and
+        # it was reading merged and archived rows too — so a clean-up's
+        # forwarding addresses and set-aside groups could be deleted on any
+        # heartbeat, and the backup's undo would then have nothing to restore.
+        .eq("user_id", user_id).eq("status", "active").execute()).data or []
     if len(clusters) < 2:
         return {"skipped": "fewer than 2 clusters", "clusters": len(clusters)}
 

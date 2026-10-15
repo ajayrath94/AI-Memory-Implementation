@@ -797,10 +797,37 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
         # pillar earlier), UPDATE it instead of inserting — avoids the dup-key
         # collision AND heals stale pillars (Vikram GENERAL -> FAMILY on re-mention).
         try:
-            dupe = (db.table("interest_clusters").select("id,strength,event_count,attributes")
+            dupe = (db.table("interest_clusters")
+                    .select("id,label,strength,event_count,attributes,status")
                     .eq("user_id", user_id).eq("label", label).limit(1).execute()).data
         except Exception:
             dupe = None
+        # A clean-up decided what this name is. Merged: it lives in another
+        # group now, so the mention goes there. Archived: known and set
+        # aside, so it is not brought back — this match used to set it
+        # "active" again, undoing the clean-up the next time she said it.
+        # A caregiver typing it into the form (resolve_into=False) is a
+        # deliberate choice and may still bring it back.
+        _forwarded = False
+        if dupe:
+            from memory.cluster_resolver import follow, parked
+            if (dupe[0].get("status") or "active") == "merged":
+                to = follow(db, dupe[0],
+                            "id,label,strength,event_count,attributes,status")
+                if to and to.get("id") != dupe[0]["id"] and not parked(to) \
+                        and (to.get("status") or "active") != "merged":
+                    print(f"[Cluster] {label!r} was merged -> {to.get('label')!r}")
+                    label = to.get("label") or label
+                    dupe = [to]
+                    _forwarded = True
+                elif resolve_into:
+                    print(f"[Cluster] {label!r} was merged into a group that is "
+                          f"gone; left as it is")
+                    return dupe[0]["id"]
+            elif parked(dupe[0]) and resolve_into:
+                print(f"[Cluster] {label!r} is {dupe[0].get('status')}; "
+                      f"not brought back")
+                return dupe[0]["id"]
         # Same name, different person. Her daughter-in-law Priya and her
         # neighbour Priya ji became one cluster — an exact-label match with
         # nothing asked, so two people merged and neither is recoverable.
@@ -838,7 +865,7 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
                           f"a different person, kept as {alt!r}")
                     try:
                         dupe = (db.table("interest_clusters")
-                                .select("id,strength,event_count,attributes")
+                                .select("id,strength,event_count,attributes,status")
                                 .eq("user_id", user_id).eq("label", alt)
                                 .limit(1).execute()).data or None
                     except Exception:
@@ -847,19 +874,32 @@ def _upsert_cluster(user_id: str, label: str, pillar: str,
 
         if dupe:
             d = dupe[0]
+            from memory.cluster_resolver import parked as _parked
+            if _parked(d) and resolve_into:
+                print(f"[Cluster] {label!r} is {d.get('status')}; not brought back")
+                return d["id"]
             merged_attrs = d.get("attributes") or {}
             if isinstance(merged_attrs, str):
                 try: merged_attrs = json.loads(merged_attrs)
                 except Exception: merged_attrs = {}
             merged_attrs.update({k: v for k, v in (attributes or {}).items() if v})
-            db.table("interest_clusters").update({
+            # Only reached for a merged row when a caregiver brings it back
+            # deliberately; then it is no longer a forwarding address.
+            if not _forwarded:
+                merged_attrs.pop("merged_into", None)
+            upd = {
                 "strength":    round((d.get("strength") or 0) + strength, 4),
                 "event_count": (d.get("event_count") or 0) + 1,
-                "pillar":      pillar,
                 "last_event":  "now()",
                 "status":      "active",
                 "attributes":  merged_attrs,
-            }).eq("id", d["id"]).execute()
+            }
+            # A forwarded mention keeps the survivor where the clean-up put
+            # it: "puja" arriving from the habit path as GENERAL must not
+            # move Morning puja out of FAITH.
+            if not _forwarded:
+                upd["pillar"] = pillar
+            db.table("interest_clusters").update(upd).eq("id", d["id"]).execute()
             return d["id"]
 
         created = (db.table("interest_clusters").insert({
@@ -1284,7 +1324,48 @@ def _note_when(db, cluster_id: str, whens: list) -> None:
         print(f"[Prop] when note failed: {e}")
 
 
-def record_propositions(props: list, classified, user_id: str, session_id: str = "") -> dict:
+def _lasting(user_id: str, subject: str) -> bool:
+    """Is this health matter something that lasts, or something that passes?
+
+    A passing illness — a cold, a fever, an upset stomach — is an episode: it
+    starts, is checked on, and ends, and memory/episodes.py keeps exactly
+    that. Filed here as well it became a concern group that never ended:
+    "Sardi", "Cold" and "Common cold" were three groups for one week of a
+    cold, and the episode already had it. What lasts — her knee, BP, thyroid
+    — is what a group is for.
+
+    Asked, not listed, so it works for "zukaam" and "jalubu" alike. When the
+    model cannot answer it is kept: a group too many is recoverable, a knee
+    nobody tracks is not."""
+    try:
+        from memory.judge import yes_no
+        return yes_no(
+            f'An elderly person mentioned this about their own health: "{subject}".\n'
+            f'Is it a LASTING condition — one that goes on for months or keeps '
+            f'coming back (joint pain, blood pressure, diabetes, thyroid, '
+            f'weak eyesight) — rather than a passing illness or a symptom of '
+            f'one (a cold, cough, fever, upset stomach, a headache today)?',
+            key="lasting:" + subject.strip().lower())
+    except Exception as e:
+        print(f"[Prop] lasting check failed for {subject!r}: {e}")
+        return True
+
+
+def _already_this_session(db, user_id: str, session_id: str, name: str) -> bool:
+    """Did the live path already file this, in this conversation?"""
+    if not session_id or not name:
+        return False
+    try:
+        got = (db.table("user_behavioral_events").select("id")
+               .eq("user_id", user_id).eq("session_id", session_id)
+               .eq("value", name).limit(1).execute()).data
+        return bool(got)
+    except Exception:
+        return False
+
+
+def record_propositions(props: list, classified, user_id: str, session_id: str = "",
+                        once_per_session: bool = False) -> dict:
     """Turn propositions into cluster operations:
     - pillar from entity_type (deterministic)
     - group by subject so one person's facts merge into one cluster + attributes
@@ -1351,6 +1432,13 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             etype, _kind, _cat, _why = decide(subj, subj_props)
             print(f"[Prop] {subj!r} -> {_kind}"
                   + (f"/{_cat}" if _cat else "") + f" ({_why})")
+
+            # A passing illness is an episode, not a group. episodes.hear
+            # reads the same message and keeps it, with its start, its
+            # check-ins and its end.
+            if _kind == "concern" and not _lasting(user_id, subj):
+                print(f"[Prop] {subj!r} passes — an episode, not a group")
+                continue
 
             # Gate: skip bare emotions ("proud") and vague complaints
             # ("tabiyat theek nahi") — they belong to the summary's texture,
@@ -1426,7 +1514,8 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                     continue
                 try:
                     old_c = (db.table("interest_clusters").select("id,strength,label")
-                             .eq("user_id", user_id).ilike("label", f"%{repl}%")
+                             .eq("user_id", user_id).eq("status", "active")
+                             .ilike("label", f"%{repl}%")
                              .limit(1).execute()).data
                     if old_c:                       # validated: it exists
                         new_str = round((old_c[0].get("strength") or 0) * 0.3, 4)
@@ -1445,7 +1534,8 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
                 print(f"[Prop] '{subj}' retracted — fading, not re-adding")
                 try:
                     gone = (db.table("interest_clusters").select("id,strength")
-                            .eq("user_id", user_id).ilike("label", f"%{subj}%")
+                            .eq("user_id", user_id).eq("status", "active")
+                            .ilike("label", f"%{subj}%")
                             .limit(1).execute()).data
                     if gone:
                         faded = round((gone[0].get("strength") or 0) * 0.3, 4)
@@ -1477,6 +1567,14 @@ def record_propositions(props: list, classified, user_id: str, session_id: str =
             # only surfaces if it accumulates over repeated mentions. The LLM
             # judges importance; we just multiply. No thresholds, no verb rules.
             ev_strength = round(float(classified.core_score or 0.5) * max(0.15, salience), 4)
+            # The conversation is read twice: each message as it arrives, and
+            # all of hers together when it closes. Both filed every fact, so
+            # every mention counted double — strength, event_count, events.
+            if once_per_session and (
+                    _already_this_session(db, user_id, session_id, res["name"])
+                    or _already_this_session(db, user_id, session_id, subj)):
+                print(f"[Prop] {subj!r} already filed this conversation")
+                continue
             cluster_id = _upsert_cluster(user_id, res["name"], pillar, ev_strength,
                                          res.get("embedding"), attrs or None)
             if cluster_id:

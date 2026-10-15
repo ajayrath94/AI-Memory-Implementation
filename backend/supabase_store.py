@@ -148,8 +148,15 @@ def save_message(session_id: str, role: str, content: str, model: str,
                  pillar_functional: str = "", pillar_modifiers: list = None,
                  pillar_score: float = 0.0, is_summary: bool = False,
                  pillar_vector: list = None,
-                 embedding: list = None) -> dict:
-    """Save message with full pillar data + embedding vector."""
+                 embedding: list = None,
+                 meant: str = None) -> dict:
+    """Save message with full pillar data + embedding vector.
+
+    `meant` is what she meant, when the keyboard or the transcriber changed
+    her words ("Haan Dhyanesh hai" -> "Haan dhyan hai"). `content` stays what
+    she wrote, for the chat; everything that reads a conversation later to
+    understand it reads `meant` where there is one.
+    """
     db = get_client()
 
     # A session's title. Nothing has ever written one — the column exists, the
@@ -169,7 +176,7 @@ def save_message(session_id: str, role: str, content: str, model: str,
         except Exception as e:
             print(f"[Store] title write failed: {e}")
 
-    result = db.table("messages").insert({
+    row = {
         "session_id":        session_id,
         "role":              role,
         "content":           content,
@@ -183,7 +190,19 @@ def save_message(session_id: str, role: str, content: str, model: str,
         "memory_tier":       "cache",
         "pillar_vector":     pillar_vector or [],
         "embedding":         embedding or [],
-    }).execute()
+    }
+    if meant and meant != content:
+        row["meant"] = meant
+    try:
+        result = db.table("messages").insert(row).execute()
+    except Exception as e:
+        # Before the column exists the insert fails on it — and losing her
+        # message for the sake of a correction would be the wrong trade.
+        if "meant" not in row:
+            raise
+        print(f"[Store] saved without meant ({e})")
+        row.pop("meant", None)
+        result = db.table("messages").insert(row).execute()
     return result.data[0]
 
 def get_session_messages(session_id: str, limit: int = 100) -> List[dict]:

@@ -1009,6 +1009,7 @@ async def process_input(text: str, model: str,
     # 5. Save user message with embedding
     save_message(
         session_id=sid, role="user", content=original, model=model,
+        meant=(text if corrected else None),
         pillar_core=classified.core,
         pillar_emotion=classified.emotion,
         pillar_functional=classified.functional,

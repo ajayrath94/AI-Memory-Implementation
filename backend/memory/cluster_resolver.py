@@ -27,6 +27,55 @@ def _cosine(a, b) -> float:
     return cosine_similarity(a, b)
 
 
+# ── What a status means to the writers ────────────────────────────────────
+#
+# active    a live group: matched, counted, shown.
+# merged    the same thing as another group, which holds it now. Its id is
+#           a forwarding address: attributes.merged_into says where to go.
+# archived  decided against — a state ("Aram"), a generic word ("movie"), a
+# dropped   word mistaken for a person ("Dhyanesh"), a bucket that was split.
+#           Known, so not created again, but never brought back by a mention.
+#
+# Before this, every writer matched groups of any status and set the match
+# back to "active", so a clean-up lasted only until she said the word again.
+
+def _status(row: dict) -> str:
+    return (row or {}).get("status") or "active"
+
+
+def parked(row: dict) -> bool:
+    """Archived or dropped: known, not to be revived by a mention."""
+    return _status(row) not in ("active", "merged")
+
+
+def _attrs(row: dict) -> dict:
+    a = (row or {}).get("attributes")
+    if isinstance(a, str):
+        try:
+            a = json.loads(a)
+        except Exception:
+            a = {}
+    return a if isinstance(a, dict) else {}
+
+
+def follow(db, row: dict, fields: str = "id,label,status,attributes") -> dict:
+    """The group a merged row now lives in. Follows merged_into (a few hops
+    at most, in case a survivor was itself merged later) and returns that
+    row; any other row is returned as it is."""
+    seen = set()
+    while row and _status(row) == "merged" and len(seen) < 5:
+        seen.add(row.get("id"))
+        to = _attrs(row).get("merged_into")
+        if not to or to in seen:
+            break
+        got = (db.table("interest_clusters").select(fields)
+               .eq("id", to).limit(1).execute()).data
+        if not got:
+            break
+        row = got[0]
+    return row
+
+
 def find_cluster(user_id: str, label: str, pillar: str,
                  embedding: List[float]) -> Optional[str]:
     """
@@ -41,7 +90,7 @@ def find_cluster(user_id: str, label: str, pillar: str,
         from supabase_store import get_client
         db = get_client()
         rows = (db.table("interest_clusters")
-                .select("id,label,pillar,centroid")
+                .select("id,label,pillar,centroid,status,attributes")
                 .eq("user_id", user_id)
                 .eq("pillar", pillar)            # concerns don't cross pillars
                 .not_.is_("centroid", "null")
@@ -50,6 +99,13 @@ def find_cluster(user_id: str, label: str, pillar: str,
     except Exception as e:
         print(f"[ClusterResolver] fetch failed: {e}")
         return None
+
+    # Archived groups are not candidates: the old catch-all "Health" sits
+    # close to every health word and would swallow a new concern into a
+    # group nobody sees. Merged rows stay — they are the same thing under
+    # another name — and a match on one is forwarded to where it went.
+    rows = [r for r in rows if not parked(r)]
+    by_id = {r["id"]: r for r in rows}
 
     scored = []
     for r in rows:
@@ -75,6 +131,18 @@ def find_cluster(user_id: str, label: str, pillar: str,
     if verdict:
         print(f"[ClusterResolver] {label!r} -> cluster {verdict['label']!r} "
               f"({[c['label'] for c in candidates]})")
+        hit = by_id.get(verdict["id"]) or {"id": verdict["id"]}
+        if _status(hit) == "merged":
+            try:
+                to = follow(db, hit)
+            except Exception as e:
+                print(f"[ClusterResolver] follow failed: {e}")
+                return None
+            if not to or _status(to) == "merged" or parked(to):
+                return None
+            print(f"[ClusterResolver] {verdict['label']!r} was merged -> "
+                  f"{to.get('label')!r}")
+            return to["id"]
         return verdict["id"]
     return None
 
@@ -239,9 +307,12 @@ def reconcile(user_id: str, cluster_id: str, pillar: str):
     from supabase_store import get_client
     db = get_client()
     try:
+        # Active only. Merging into a merged or archived survivor hid the
+        # live group from everything that reads "active", and deleted it.
         rows = (db.table("interest_clusters")
                 .select("id,label,event_count,centroid")
                 .eq("user_id", user_id).eq("pillar", pillar)
+                .eq("status", "active")
                 .not_.is_("centroid", "null").limit(100).execute()).data or []
     except Exception as e:
         print(f"[ClusterResolver] reconcile fetch failed: {e}")

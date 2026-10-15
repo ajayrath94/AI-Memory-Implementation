@@ -216,6 +216,9 @@ def get_wellbeing(user_id: str, days: int = 7):
     health = (db.table("interest_clusters")
               .select("label,strength,event_count")
               .eq("user_id", user_id).eq("pillar", "HEALTH_WELLNESS")
+              # Live concerns only: the archived "Health" bucket and an
+              # over cold are not health flags for a caregiver.
+              .eq("status", "active")
               .order("strength", desc=True).limit(8).execute().data or [])
     health_flags = [{"label": h.get("label"), "strength": h.get("strength"),
                      "mentions": h.get("event_count")} for h in health]

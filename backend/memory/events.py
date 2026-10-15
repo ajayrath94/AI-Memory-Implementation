@@ -56,45 +56,16 @@ def _their_time(user_id: str, said_on: datetime = None) -> datetime:
     return said_on
 
 
-# Relative days, in the languages she might use. The model resolves the rest;
-# these are the ones common enough to be worth catching without a call.
-_RELATIVE = {
-    "kal": -1, "yesterday": -1, "kaal": -1, "ਕੱਲ੍ਹ": -1, "काल": -1,
-    "parso": -2, "parsoon": -2, "परसों": -2,
-    "aaj": 0, "today": 0, "आज": 0,
-}
-
-
-def _resolve_when(text: str, said_on: datetime) -> Optional[str]:
-    """The day it happened, from the way she referred to it.
-
-    "Kal" is the trap: in Hindi it means both yesterday and tomorrow, and only
-    the verb tense separates them. A past-tense sentence with "kal" is
-    yesterday; this returns None for anything it cannot settle, and the model
-    handles those.
-    """
-    low = (text or "").lower()
-    for word, delta in _RELATIVE.items():
-        if re.search(rf"\b{re.escape(word)}\b", low):
-            # Future tense with "kal" means tomorrow, which is not an event
-            # yet. Crude, and the model call is the safety net.
-            if delta < 0 and re.search(r"\b(jaungi|jaunga|karungi|karunga|"
-                                       r"will|going to)\b", low):
-                return None
-            return (said_on + timedelta(days=delta)).date().isoformat()
-    return None
+# Which day something happened is the model's to work out (extract_events
+# gives it "today" and asks for the date). There was a table of "kal",
+# "parso", "aaj" here, with a regex for future tense — a word list that knew
+# three languages and guessed at tense. A caller with no date is filed on
+# the day it was said.
 
 
 # Judged once per label and remembered. "Lunch" comes up every day and is
 # the same answer every time.
 _WORTH: dict = {}
-
-# Not a list of what to skip — a list would hold the words someone thought
-# of. These are only the ones seen so often that a model call for them is
-# waste.
-_NEVER = {"lunch", "dinner", "breakfast", "nashta", "khana", "meal",
-          "light meal", "snack", "chai", "tea"}
-
 
 def worth_keeping(what: str, text: str = "") -> bool:
     """Would anyone recall this next week?
@@ -119,9 +90,6 @@ def worth_keeping(what: str, text: str = "") -> bool:
             low = low[len(lead):].strip()
             break
 
-    if low in _NEVER:
-        print(f"[Events] not keeping {label!r} — a meal is not an event")
-        return False
 
     if low in _WORTH:
         return _WORTH[low]
@@ -178,16 +146,62 @@ def record_event(user_id: str, what: str, said_on: datetime = None,
     if not worth_keeping(what, text):
         return None
 
-    when = happened_on or _resolve_when(text or what, said_on) \
-        or said_on.date().isoformat()
+    when = happened_on or said_on.date().isoformat()
+
+    # The same event, said again, is the same event. The table allows one
+    # row per name, so a second "Delhi trip" — the same trip at the next
+    # conversation's close, or another trip next year — failed on the key
+    # and was lost without a word.
+    label = (what or "").strip()[:60]
+    try:
+        same = (_db().table("interest_clusters")
+                .select("id,label,happened_on,event_count,status,attributes")
+                .eq("user_id", user_id).ilike("label", label)
+                .order("happened_on", desc=True).limit(5).execute()).data or []
+    except Exception as e:
+        print(f"[Events] lookup failed: {e}")
+        same = []
+    for r in same:
+        if (r.get("status") or "active") == "merged":
+            try:
+                from memory.cluster_resolver import follow
+                r = follow(_db(), r, "id,label,happened_on,event_count,status,attributes")
+            except Exception:
+                continue
+        try:
+            gap = abs((datetime.fromisoformat(str(r.get("happened_on"))[:10]).date()
+                       - datetime.fromisoformat(when).date()).days)
+        except Exception:
+            continue
+        if gap <= 3:
+            a = r.get("attributes") if isinstance(r.get("attributes"), dict) else {}
+            said = list(a.get("said_on_all") or [])
+            if not said and a.get("said_on"):
+                said = [a["said_on"]]
+            if said_on.date().isoformat() not in said:
+                said.append(said_on.date().isoformat())
+            a["said_on_all"] = said
+            try:
+                _db().table("interest_clusters").update({
+                    "event_count": (r.get("event_count") or 0) + 1,
+                    "attributes": a}).eq("id", r["id"]).execute()
+            except Exception as e:
+                print(f"[Events] same-event update failed: {e}")
+            print(f"[Events] {label!r} on {when} is {r.get('label')!r} again")
+            return r["id"]
+    if same:
+        # Another time it happened: same name, its own date.
+        d = datetime.fromisoformat(when)
+        label = f"{label[:44]} · {d.strftime('%d-%b-%y')}"
 
     row = {
         "user_id":     user_id,
         # Short. "Cooked chicken curry and rice at home" is a sentence, and
         # the sentence already lives in the day's note — an event is a thing
         # with a date on it, for finding later.
-        "label":       (what or "").strip()[:60],
+        "label":       label,
         "kind":        "event",
+        "event_count": 1,
         "happened_on": when,
         "pillar":      "GENERAL",
         "strength":    1.0,
@@ -227,6 +241,9 @@ def find_events(user_id: str, query: str, limit: int = 5) -> List[Dict]:
     try:
         rows = (_db().table("interest_clusters").select("*")
                 .eq("user_id", user_id).eq("kind", "event")
+                # Not merged or archived ones: a merged "Delhi trip" is the
+                # same trip as "Delhi Trip" and was recalled twice.
+                .or_("status.is.null,status.eq.active")
                 .order("happened_on", desc=True).limit(80).execute()).data or []
     except Exception as e:
         print(f"[Events] read failed: {e}")
@@ -293,8 +310,8 @@ Did anything HAPPEN? Return JSON only:
 An event is a moment with a date. A visit, a festival they observed, an
 appointment they went to, a fall, news that arrived.
 
-"what" is SHORT — three or four words, the thing itself. "Chicken curry", not
-"cooked chicken curry and rice at home"; "Delhi trip", not "went to Delhi for
+"what" is SHORT — three or four words, the thing itself. "Arjun's visit", not
+"Arjun came over with the children on Sunday"; "Delhi trip", not "went to Delhi for
 a few days with Shubham". The sentence already lives in the day's note; this
 is a label with a date on it, for finding later.
 
@@ -308,6 +325,9 @@ NOT an event:
 - a standing fact. "Mera beta Delhi mein hai" is true every day and belongs
   elsewhere.
 - a habit. "Roz sair karti hoon" is a routine, not a moment.
+- the ordinary run of a day: what she cooked or ate, her puja, a nap, a
+  walk, the chores. Those live in the day's note. A meal is an event only
+  when the meal is the occasion — a birthday dinner, a feast for guests.
 
 Dates: work them out from today. "Kal" in a past-tense sentence is yesterday;
 in a future one it is tomorrow and therefore not an event. "Pichle hafte" is
@@ -329,7 +349,9 @@ Empty list if nothing happened. That is the common answer."""
         if not what:
             continue
         rid = record_event(
-            user_id, what, said_on=said_on, text=hers,
+            # Judged on itself. Given the whole conversation, "Chicken curry"
+            # was worth keeping because the same chat held a trip to Delhi.
+            user_id, what, said_on=said_on, text=what,
             kind=e.get("kind") or "", people=e.get("people") or [],
             feeling=e.get("feeling") or "",
             happened_on=e.get("happened_on") or None)

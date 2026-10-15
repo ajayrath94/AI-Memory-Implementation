@@ -380,6 +380,50 @@ def summarize_idle_sessions(idle_hours: float = 4.0, limit: int = 50) -> dict:
     return {"summarized": done, "scanned": len(rows)}
 
 
+def _her_days(user_id: str, messages: list) -> list:
+    """[(her date, when she last spoke that day, that day's messages)], oldest
+    first. Usually one. Dated by each message's own timestamp in her time
+    zone, not by when this runs."""
+    from datetime import datetime as _dt
+    try:
+        from memory.events import _their_time
+    except Exception:
+        _their_time = None
+    groups, order = {}, []
+    last_key = None
+    for m in messages:
+        at = None
+        ts = m.get("timestamp") or m.get("created_at")
+        if ts:
+            try:
+                at = _dt.fromisoformat(str(ts).replace("Z", "+00:00"))
+                if _their_time:
+                    at = _their_time(user_id, at)
+            except Exception:
+                at = None
+        key = at.date() if at else last_key
+        if key is None:
+            continue
+        if key not in groups:
+            groups[key] = {"msgs": [], "said_on": at}
+            order.append(key)
+        groups[key]["msgs"].append(m)
+        if at and m.get("role") == "user":
+            groups[key]["said_on"] = at
+        last_key = key
+    if not order:
+        # No timestamps at all: the old behaviour, dated now.
+        from datetime import date as _d
+        _now = _their_time(user_id, None) if _their_time else None
+        return [((_now.date() if _now else _d.today()), _now, messages)]
+    # Messages before the first timestamp belong to the first day.
+    first = [m for m in messages if all(m is not x for k in order
+                                         for x in groups[k]["msgs"])]
+    if first:
+        groups[order[0]]["msgs"] = first + groups[order[0]]["msgs"]
+    return [(k, groups[k]["said_on"], groups[k]["msgs"]) for k in order]
+
+
 def process_session_end(session_id: str, user_id: str = "default"):
     """
     Called when a session ends:
@@ -395,6 +439,19 @@ def process_session_end(session_id: str, user_id: str = "default"):
     if not messages or len(messages) < 2:
         print("[UserMemory] Not enough messages to summarize")
         return
+
+    # What she meant, not what the keyboard made of it. The chat keeps her
+    # own words; this reads them to understand them, and "Haan Dhyanesh hai"
+    # read as written made a person out of "dhyan hai".
+    for m in messages:
+        if m.get("role") == "user" and m.get("meant"):
+            m["content"] = m["meant"]
+
+    # And WHEN she said it. This runs when the conversation is closed — the
+    # next morning, when she opens a new one, or on the idle sweep — and
+    # every date below was "today" at that moment: last night's khichdi
+    # filed under this morning, and "kal" counted from the wrong day.
+    days = _her_days(user_id, messages)
 
     # 1. Mood FIRST, and unconditionally.
     #
@@ -428,9 +485,13 @@ def process_session_end(session_id: str, user_id: str = "default"):
     # evidence about which signal is worth keeping.
     tps = []          # the thread write reads this; a failed topics call
                       # must not take it down with it
+    day_tps = {}      # her day -> what she talked about that day
     try:
         from memory.topics import extract_topics, save_topics
-        tps = extract_topics(messages)
+        for _day, _said_on, _msgs in days:
+            _t = extract_topics(_msgs) if len(days) > 1 else extract_topics(messages)
+            day_tps[_day] = _t or []
+            tps.extend(_t or [])
         if tps:
             save_topics(session_id, tps)
             print(f"[Topics] {', '.join(t['subject'] for t in tps)}")
@@ -438,7 +499,9 @@ def process_session_end(session_id: str, user_id: str = "default"):
             # takes stm's untagged array with it when a month folds; these
             # stay, so a count across weeks is reliable.
             from memory.mentions import record as _record_mentions
-            _record_mentions(user_id, tps)
+            for _day, _t in day_tps.items():
+                if _t:
+                    _record_mentions(user_id, _t, when=_day)
 
             # Some things do not wait for repetition. "Doctor ne kaha
             # operation karana padega" is knowledge the first time she says
@@ -459,7 +522,7 @@ def process_session_end(session_id: str, user_id: str = "default"):
                         1.0, embed_text(w["subject"]),
                         {"source": "weighty", "kind": "concern"
                          if (w.get("pillar") == "HEALTH_WELLNESS") else "other",
-                         "promoted_on": __import__("datetime").date.today().isoformat()})
+                         "promoted_on": days[-1][0].isoformat()})
                     print(f"[Promote] {w['subject']!r} at once ({w['score']:.2f})")
             except Exception as _we:
                 print(f"[UserMemory] weighty check failed: {_we}")
@@ -474,8 +537,9 @@ def process_session_end(session_id: str, user_id: str = "default"):
     # next day.
     try:
         from memory.thread import write_cache, write_stm
-        write_cache(user_id, session_id, messages)
-        write_stm(user_id, messages, tps)
+        for _day, _said_on, _msgs in days:
+            write_cache(user_id, session_id, _msgs, when=_day)
+            write_stm(user_id, _msgs, day_tps.get(_day) or tps, when=_day)
     except Exception as e:
         print(f"[UserMemory] thread write failed: {e}")
 
@@ -499,8 +563,12 @@ def process_session_end(session_id: str, user_id: str = "default"):
             props = _extract_propositions(hers, user_id) or []
             print(f"[UserMemory] {len(props)} propositions from {len(hers)} chars")
             if props:
+                # once_per_session: the live path already filed what each
+                # message said, under this session. This pass is for what only
+                # the whole conversation shows ("wo" two messages later), not
+                # for counting every fact a second time.
                 record_propositions(props, classify_input(hers), user_id,
-                                    session_id)
+                                    session_id, once_per_session=True)
                 # Things named in one conversation belong together — the
                 # evidence neither similarity nor the model has alone.
                 from memory.clusters import group_session
@@ -535,7 +603,8 @@ def process_session_end(session_id: str, user_id: str = "default"):
     # 1c. And what HAPPENED, with the date it happened on.
     try:
         from memory.events import extract_events
-        extract_events(user_id, messages)
+        for _day, _said_on, _msgs in days:
+            extract_events(user_id, _msgs, said_on=_said_on)
     except Exception as e:
         print(f"[UserMemory] event extraction failed: {e}")
 
