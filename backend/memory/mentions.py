@@ -249,7 +249,7 @@ def recurring(user_id: str, min_days: int = 3, window: int = 14,
     cutoff = (date.today() - timedelta(days=window)).isoformat()
     try:
         rows = (_db().table("subject_mentions")
-                .select("subject,happened_on,cluster_id,pillar,sentiment")
+                .select("subject,happened_on,cluster_id,pillar,sentiment,junk")
                 .eq("user_id", user_id).gte("happened_on", cutoff)
                 .limit(500).execute()).data or []
     except Exception as e:
@@ -258,6 +258,9 @@ def recurring(user_id: str, min_days: int = 3, window: int = 14,
 
     by_subject: Dict[str, dict] = {}
     for r in rows:
+        # Marked as not a thing ("aj", "sab", a whole sentence): never a habit.
+        if r.get("junk"):
+            continue
         if unresolved_only and r.get("cluster_id"):
             continue
         key = str(r.get("subject") or "").strip().lower()
