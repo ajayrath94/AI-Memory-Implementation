@@ -58,8 +58,13 @@ def _retrieve_memory(
     she got "pichhle hafte" while the zoo outing sat in storage with its date.
     What was SAID lives in the thread (thread.recall); this is the events.
     """
-    lines = []
+    # LINEAGE (16 Oct): when her message is about something with a history
+    # — the zoo, her colds, Arjun's visits — the whole timeline goes in, so
+    # "kab", "pichli baar", "kitni baar" and "abhi bhi hai?" are read off it
+    # rather than guessed from the three closest events.
+    lines, covered = [], set()
     try:
+        from memory.lineage import concepts_in, render
         from memory.events import find_events
         from datetime import date as _date
         try:
@@ -67,7 +72,20 @@ def _retrieve_memory(
             today = _her_today(user_id)
         except Exception:
             today = _date.today()
-        for e in find_events(user_id, query_text or "", limit=3):
+        ids = list(concepts_in(user_id, query_text or ""))
+        # Events by meaning only when no timeline was picked, and only those
+        # that belong to no concept — a matched zoo visit added Zoo's whole
+        # timeline to a question about Arjun.
+        found = [] if ids else [e for e in find_events(user_id, query_text or "", limit=3)
+                                if not e.get("parent_id")]
+        for cid in ids[:3]:
+            block = render(user_id, cid)
+            if block:
+                lines.append(block)
+                covered.add(cid)
+        for e in found:
+            if e.get("parent_id") in covered:
+                continue
             what = str(e.get("label") or "").strip()
             if not what:
                 continue
@@ -81,9 +99,9 @@ def _retrieve_memory(
             except Exception:
                 lines.append(f"{what}: {when}" if when else what)
     except Exception as e:
-        print(f"[Retrieve] events failed: {e}")
+        print(f"[Retrieve] lineage failed: {e}")
     if lines:
-        print(f"[Retrieve] events: {lines}")
+        print(f"[Retrieve] lineage: {lines}")
     return "\n".join(lines) if lines else None
 
 
@@ -405,8 +423,9 @@ TOOL RESULTS:
     if session_memory:
         # Events with their dates. Labelled as what they are: under "from
         # this conversation" a trip from last week read as something said now.
-        nancy_persona += (f"\nTHINGS THAT HAPPENED, WITH THE DAY THEY HAPPENED "
-                          f"(when she asks when, answer with this day):\n{session_memory}\n")
+        nancy_persona += (f"\nTHINGS THAT HAPPENED, WITH THEIR DAYS — answer when, the last "
+                          f"time, how many times and whether it is still going from "
+                          f"this, not from memory:\n{session_memory}\n")
 
     # ── Temporal awareness: Nancy must know the user's real local time so she
     # can greet correctly AND resolve relative times ("kal", "12 baje") into

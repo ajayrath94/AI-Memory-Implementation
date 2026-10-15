@@ -792,6 +792,10 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
                         "last_state,current_state,relationship,attributes,"
                         "last_event")
                 .eq("user_id", user_id).eq("status", "active")
+                # Events are not things she is: "Dal Chawal [3w ago]" and
+                # "Sightseeing" sat under General in what Nancy knew about
+                # her. They reach the reply through their lineage instead.
+                .or_("kind.is.null,kind.neq.event")
                 .order("strength", desc=True).limit(60).execute()).data or []
     except Exception as e:
         print(f"[Recall] cluster read failed: {e}")

@@ -131,9 +131,84 @@ One word."""
     return keep
 
 
+_ABOUT_KIND = {"person": "person", "place": "place", "activity": "interest",
+               "health": "concern"}
+
+
+def _parent_for(user_id: str, about: str, about_kind: str) -> Optional[str]:
+    """The concept this event hangs under — the person, place or activity it
+    happened to or at — made if she has none. Found with the one same-thing
+    check (concepts.same_as), so "Zoo", "chidiyaghar" and "the zoo" are one
+    parent and five visits are five children of it."""
+    about = (about or "").strip()
+    if not about:
+        return None
+    k = _ABOUT_KIND.get((about_kind or "").strip().lower(), "")
+    if k == "concern":
+        return None              # health goes to episodes, not events
+    try:
+        from memory.concepts import same_as, remember, english
+        hit = same_as(user_id, about, kind=k)
+        if hit:
+            return hit["id"]
+        label = about[:1].upper() + about[1:]
+        row = {"user_id": user_id, "label": label[:80], "kind": k or "place",
+               "pillar": "FAMILY" if k == "person" else "GENERAL",
+               "status": "active", "strength": 0.5, "event_count": 0,
+               "attributes": {"kind": k or "place", "source": "event",
+                              "english": english(label, k or "place")}}
+        try:
+            v = __import__("classifier.pillar_classifier", fromlist=["embed_text"]).embed_text(label)
+            if v:
+                row["centroid"] = v
+        except Exception:
+            pass
+        try:
+            cid = _db().table("interest_clusters").insert(row).execute().data[0]["id"]
+        except Exception:
+            got = (_db().table("interest_clusters").select("id")
+                   .eq("user_id", user_id).eq("label", row["label"])
+                   .limit(1).execute()).data
+            cid = got[0]["id"] if got else None
+        if cid:
+            remember(user_id, about, cid)
+            print(f"[Events] new concept {label!r} ({row['kind']}) for what happened")
+        return cid
+    except Exception as e:
+        print(f"[Events] parent lookup failed: {e}")
+        return None
+
+
+def _again(user_id: str, r: Dict, said_on: datetime) -> str:
+    """The same event told again: one more telling on the row it already has."""
+    a = r.get("attributes") if isinstance(r.get("attributes"), dict) else {}
+    said = list(a.get("said_on_all") or [])
+    if not said and a.get("said_on"):
+        said = [a["said_on"]]
+    if said_on.date().isoformat() not in said:
+        said.append(said_on.date().isoformat())
+    a["said_on_all"] = said
+    try:
+        _db().table("interest_clusters").update({
+            "event_count": (r.get("event_count") or 0) + 1,
+            "attributes": a}).eq("id", r["id"]).execute()
+    except Exception as e:
+        print(f"[Events] same-event update failed: {e}")
+    return r["id"]
+
+
+def _gap(a, when: str) -> Optional[int]:
+    try:
+        return abs((datetime.fromisoformat(str(a)[:10]).date()
+                    - datetime.fromisoformat(when).date()).days)
+    except Exception:
+        return None
+
+
 def record_event(user_id: str, what: str, said_on: datetime = None,
                  text: str = "", kind: str = "", people: List[str] = None,
-                 feeling: str = "", happened_on: str = None) -> Optional[str]:
+                 feeling: str = "", happened_on: str = None,
+                 about: str = "", about_kind: str = "") -> Optional[str]:
     """Store something that happened. Returns the row id.
 
     happened_on is resolved from the phrasing when not given — "kal beta aaya
@@ -148,51 +223,68 @@ def record_event(user_id: str, what: str, said_on: datetime = None,
 
     when = happened_on or said_on.date().isoformat()
 
-    # The same event, said again, is the same event. The table allows one
-    # row per name, so a second "Delhi trip" — the same trip at the next
-    # conversation's close, or another trip next year — failed on the key
-    # and was lost without a word.
     label = (what or "").strip()[:60]
+
+    # What it happened to or at: the parent concept (lineage). Five zoo
+    # visits are five children of "Zoo"; Arjun's visits hang under Arjun.
+    parent = _parent_for(user_id, about, about_kind)
+
+    # The same event told again is the same event: same parent, within three
+    # days. Matched by concept, not by name — "zoo gaye the" and "Zoo trip"
+    # are one visit.
+    if parent:
+        try:
+            sibs = (_db().table("interest_clusters")
+                    .select("id,label,happened_on,event_count,status,attributes")
+                    .eq("user_id", user_id).eq("parent_id", parent)
+                    .eq("kind", "event").execute()).data or []
+        except Exception as e:
+            print(f"[Events] sibling read failed: {e}")
+            sibs = []
+        for r in sibs:
+            if (r.get("status") or "active") in ("merged", "archived", "dropped"):
+                continue
+            g = _gap(r.get("happened_on"), when)
+            if g is not None and g <= 3:
+                print(f"[Events] {label!r} on {when} is {r.get('label')!r} again")
+                return _again(user_id, r, said_on)
+
+    # The table allows one row per name. Without a parent, the same name
+    # within three days is the same event; otherwise a later one gets its
+    # date in the name — and if THAT name is taken, it is that event again
+    # (a second mention of "Delhi trip · 01-Nov-26" used to fail on the key
+    # and be lost).
     try:
-        same = (_db().table("interest_clusters")
-                .select("id,label,happened_on,event_count,status,attributes")
-                .eq("user_id", user_id).ilike("label", label)
-                .order("happened_on", desc=True).limit(5).execute()).data or []
+        named = (_db().table("interest_clusters")
+                 .select("id,label,happened_on,event_count,status,attributes,parent_id")
+                 .eq("user_id", user_id).ilike("label", label.replace("%", "").replace("_", "\\_"))
+                 .limit(5).execute()).data or []
     except Exception as e:
         print(f"[Events] lookup failed: {e}")
-        same = []
-    for r in same:
-        if (r.get("status") or "active") == "merged":
-            try:
-                from memory.cluster_resolver import follow
-                r = follow(_db(), r, "id,label,happened_on,event_count,status,attributes")
-            except Exception:
-                continue
+        named = []
+    if not parent:
+        for r in named:
+            if (r.get("status") or "active") == "merged":
+                try:
+                    from memory.concepts import follow
+                    r = follow(r) or r
+                except Exception:
+                    continue
+            g = _gap(r.get("happened_on"), when)
+            if g is not None and g <= 3:
+                print(f"[Events] {label!r} on {when} is {r.get('label')!r} again")
+                return _again(user_id, r, said_on)
+    if named:
+        dated = f"{label[:44]} · {datetime.fromisoformat(when).strftime('%d-%b-%y')}"
         try:
-            gap = abs((datetime.fromisoformat(str(r.get("happened_on"))[:10]).date()
-                       - datetime.fromisoformat(when).date()).days)
+            taken = (_db().table("interest_clusters")
+                     .select("id,label,happened_on,event_count,status,attributes")
+                     .eq("user_id", user_id).eq("label", dated).limit(1).execute()).data
         except Exception:
-            continue
-        if gap <= 3:
-            a = r.get("attributes") if isinstance(r.get("attributes"), dict) else {}
-            said = list(a.get("said_on_all") or [])
-            if not said and a.get("said_on"):
-                said = [a["said_on"]]
-            if said_on.date().isoformat() not in said:
-                said.append(said_on.date().isoformat())
-            a["said_on_all"] = said
-            try:
-                _db().table("interest_clusters").update({
-                    "event_count": (r.get("event_count") or 0) + 1,
-                    "attributes": a}).eq("id", r["id"]).execute()
-            except Exception as e:
-                print(f"[Events] same-event update failed: {e}")
-            print(f"[Events] {label!r} on {when} is {r.get('label')!r} again")
-            return r["id"]
-    if same:
-        # Another time it happened: same name, its own date.
-        d = datetime.fromisoformat(when)
-        label = f"{label[:44]} · {d.strftime('%d-%b-%y')}"
+            taken = None
+        if taken:
+            return _again(user_id, taken[0], said_on)
+        label = dated
 
     row = {
         "user_id":     user_id,
@@ -206,7 +298,9 @@ def record_event(user_id: str, what: str, said_on: datetime = None,
         "pillar":      "GENERAL",
         "strength":    1.0,
         "status":      "active",
+        **({"parent_id": parent} if parent else {}),
         "attributes":  {
+            "about": about or "",
             "said_on": said_on.date().isoformat(),
             "event_kind": kind or "",
             "people": people or [],
@@ -305,7 +399,13 @@ def extract_events(user_id: str, messages: List[dict],
 Did anything HAPPEN? Return JSON only:
 {{"events": [{{"what": "...", "happened_on": "YYYY-MM-DD",
                "kind": "visit|festival|medical|milestone|loss|outing",
+               "about": "...", "about_kind": "person|place|activity|health",
                "people": ["..."], "feeling": "..."}}]}}
+
+"about" is the ONE thing it happened to or at, by its short plain name —
+what she would later ask "kab ... tha?" about: the person who visited
+("Arjun"), the place she went ("Zoo", "Delhi"), the activity ("Carrom").
+A trip's sightseeing and outings are about the trip's place.
 
 An event is a moment with a date. A visit, a festival they observed, an
 appointment they went to, a fall, news that arrived.
@@ -354,7 +454,9 @@ Empty list if nothing happened. That is the common answer."""
             user_id, what, said_on=said_on, text=what,
             kind=e.get("kind") or "", people=e.get("people") or [],
             feeling=e.get("feeling") or "",
-            happened_on=e.get("happened_on") or None)
+            happened_on=e.get("happened_on") or None,
+            about=str(e.get("about") or "").strip()[:60],
+            about_kind=str(e.get("about_kind") or ""))
         if rid:
             ids.append(rid)
     return ids
