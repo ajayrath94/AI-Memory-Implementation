@@ -1067,6 +1067,18 @@ async def process_input(text: str, model: str,
 
     # 13. Call AI
     reply, tool_results = _route(model, system_prompt, context_messages, user_id=user_id)
+    # Does her list match what was just said? On 15 Oct Nancy said "hata di"
+    # and "sab aa gaya" with no list tool run. Checked after the reply, in the
+    # background; fixes are logged "[Lists] claimed without action -> fixed".
+    try:
+        from memory.list_guard import check_after_reply
+        _prev = next((str(m.get("content") or "") for m in reversed(context_messages)
+                      if isinstance(m, dict) and m.get("role") == "assistant"), "")
+        threading.Thread(target=check_after_reply,
+                         args=(user_id, model, text, _prev, reply or "", tool_results or []),
+                         daemon=True).start()
+    except Exception as _lg:
+        print(f"[Lists] guard start failed: {_lg}")
 
     # Did the reply ask about the health problem that was due? Then it is not
     # asked again today.
