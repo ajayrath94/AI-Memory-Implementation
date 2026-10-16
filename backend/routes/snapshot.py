@@ -136,6 +136,7 @@ def _proactive(user_id: str, limit: int = 15) -> list:
                 .select("action,reason,detail,outcome,slot,created_at")
                 .eq("user_id", user_id)
                 .neq("action", "TRACE")     # engine trace rows are not messages
+                .neq("action", "TRACE")     # engine trace rows are not messages
                 .order("created_at", desc=True).limit(limit).execute()).data or []
     except Exception as e:
         return [{"error": str(e)[:200]}]
