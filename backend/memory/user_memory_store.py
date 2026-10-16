@@ -893,7 +893,7 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
     try:
         db = get_client()
         rows = (db.table("interest_clusters")
-                .select("label,pillar,strength,event_count,centroid,trend,"
+                .select("label,kind,pillar,strength,event_count,centroid,trend,"
                         "last_state,current_state,relationship,attributes,"
                         "last_event")
                 .eq("user_id", user_id).eq("status", "active")
@@ -905,6 +905,15 @@ def _clusters_for_recall(user_id: str, current_embedding=None) -> str:
     except Exception as e:
         print(f"[Recall] cluster read failed: {e}")
         return ""
+    # People and her lasting health conditions each have ONE place now (step
+    # 3, 16 Oct): people in THEIR PEOPLE (_people, below), conditions in the
+    # HEALTH note (episodes.prompt_note). In the reply prompt her knee was
+    # given up to six times and Shubham four — here, in the profile, the
+    # summary, the key facts, the food notes and the health note — and the
+    # copies disagreed on dates and wording.
+    rows = [r for r in rows
+            if r.get("kind") != "person"
+            and not (r.get("kind") == "concern" and r.get("pillar") == "HEALTH_WELLNESS")]
     if not rows:
         return ""
 
@@ -1009,16 +1018,138 @@ def _stands_out(vec: list, i: int) -> bool:
     return vec[i] - (sum(others) / len(others)) >= PILLAR_MARGIN
 
 
+def _same_person(a: str, b: str) -> bool:
+    """Two STORED names for one person: "Shubham" and "Shubham Rath". A join
+    on her own data, not a reading of what she said."""
+    a, b = (a or "").strip().lower(), (b or "").strip().lower()
+    if not a or not b:
+        return False
+    return a == b or a.split()[0] == b.split()[0]
+
+
+def _people(user_id: str, numbers: bool = False) -> str:
+    """Everyone in her life, each once: who they are to her, where they are,
+    when she last spoke of them, and — for the chat only — their number.
+
+    Three stores held people, and each reached the prompt on its own: the
+    profile's family ("children: Shubham, Arjun"), her person concepts
+    ("Shubham (beta, in Bengaluru) [2d ago]") and the caregivers table (the
+    number). Joined here on the stored name.
+    """
+    db = get_client()
+    people = []   # {"name", "bits", "age", "num"}
+
+    def _find(name):
+        return next((p for p in people if _same_person(p["name"], name)), None)
+
+    try:
+        rows = (db.table("interest_clusters").select("label,attributes,last_event,strength")
+                .eq("user_id", user_id).eq("kind", "person").eq("status", "active")
+                .order("strength", desc=True).limit(20).execute()).data or []
+    except Exception as e:
+        print(f"[Memory] people read failed: {e}")
+        rows = []
+    for r in rows:
+        a = r.get("attributes") or {}
+        if isinstance(a, str):
+            try:
+                a = json.loads(a)
+            except Exception:
+                a = {}
+        name = str(r.get("label") or "").strip()
+        if not name or _find(name):
+            continue
+        bits = []
+        for k in ("relation", "relationship"):
+            v = str(a.get(k) or "").strip()
+            # Not her name again: Shubham's relation was stored as "shubham",
+            # and his line read "Shubham (shubham, son, in Bengaluru)".
+            if v and v.lower() not in [b.lower() for b in bits] and not _same_person(v, name):
+                bits.append(v)
+        if a.get("location"):
+            bits.append(f"in {a['location']}")
+        if a.get("occupation"):
+            bits.append(str(a["occupation"]))
+        people.append({"name": name, "bits": bits, "age": _ago(r.get("last_event")), "num": ""})
+
+    try:
+        from memory.profile_store import get_user_profile
+        fam = (get_user_profile(user_id) or {}).get("family") or {}
+    except Exception:
+        fam = {}
+    if isinstance(fam, dict):
+        def _names(v):
+            return [str(x).strip() for x in (v if isinstance(v, list) else [v]) if x and str(x).strip()]
+        for role, key in (("spouse", "spouse"), ("child", "children"),
+                          ("grandchild", "grandchildren"), ("", "other")):
+            for n in _names(fam.get(key)):
+                # "other" is stored as "Meera (sister)": the name and its relation.
+                name, rel = (n.split(" (", 1)[0].strip(), n.split(" (", 1)[1].rstrip(") ")) \
+                    if " (" in n else (n, role)
+                p = _find(name)
+                if p:
+                    if rel and not p["bits"]:
+                        p["bits"].append(rel)
+                    continue
+                people.append({"name": name, "bits": [rel] if rel else [], "age": "", "num": ""})
+
+    if numbers:
+        try:
+            from memory.alert_engine import get_caregivers_for_user
+            for link in get_caregivers_for_user(user_id):
+                cg = link.get("caregivers") or {}
+                num = (cg.get("phone") or "").strip()
+                name = (cg.get("name") or "").strip()
+                if not num or not name:
+                    continue
+                rel = (link.get("relationship") or "").strip()
+                p = _find(name)
+                if p:
+                    p["num"] = num
+                    if rel and not p["bits"]:
+                        p["bits"].append(rel)
+                else:
+                    people.append({"name": name, "bits": [rel] if rel else [], "age": "", "num": num})
+        except Exception as e:
+            print(f"[Memory] caregiver numbers failed: {e}")
+
+    if not people:
+        return ""
+    lines = []
+    for p in people[:14]:
+        line = f"- {p['name']}" + (f" ({', '.join(p['bits'])})" if p["bits"] else "")
+        if p["age"]:
+            line += f" — last mentioned {p['age']}"
+        if p["num"]:
+            line += f" — phone {p['num']}"
+        lines.append(line)
+    out = ("\nTHEIR PEOPLE — everyone they have told you about, each once. As far as "
+           "you know there is nobody else; never add a name.\n" + "\n".join(lines))
+    if numbers and any(p["num"] for p in people):
+        # Asked "Shubham ka number kya hai?" it said the number was not saved
+        # and suggested she look in a diary — while it sat in the caregivers
+        # table.
+        out += ("\nGive a number plainly when asked. Wanting your son's number is "
+                "an ordinary thing — asked for it, the reply was 'call him now, is "
+                "everything alright?', which turns a question into an emergency.")
+    return out
+
+
 def build_memory_prompt(user_id: str = "default", current_embedding=None,
-                        _query_text: str = "") -> Optional[str]:
+                        _query_text: str = "", in_chat: bool = False) -> Optional[str]:
     """Everything the composer knows about her, for every message it writes.
 
-    FOUR BLOCKS, and one rule they all answer to.
+    THE BLOCKS, and one rule they all answer to.
 
-        what she likes      clusters, recalled by similarity
+        what she likes      clusters, recalled by similarity (not people,
+                            not her lasting conditions — each has one place)
         the summary         accumulated across every session
-        key facts           the durable handful
+        her people          once each; numbers in the chat only
+        the thread          what was said lately
+        the months          a line a month, in the chat only
         the count           how many conversations there have been
+
+    Her health lives in one place, the HEALTH note (episodes.prompt_note).
 
     THE RULE: a fact about her LIFE may be stated back to her. A fact about
     her STATE may not.
@@ -1053,90 +1184,72 @@ def build_memory_prompt(user_id: str = "default", current_embedding=None,
     if cluster_recall:
         parts.append(f"What I know about this person:\n{cluster_recall}")
 
-    # Summary/facts/alerts depend on the user_memory row, which may be absent
-    # (clusters can be populated while session-end summarization never ran).
-    if memory:
-        if memory.get("summary"):
-            parts.append(f"\nSummary of past conversations:\n{memory['summary']}")
-        if memory.get("key_facts"):
-            facts = "\n".join(f"- {f}" for f in memory["key_facts"])
-            parts.append(f"\nKey facts:\n{facts}")
-        fingerprint = memory.get("behavioural_fingerprint") or {}
-        if isinstance(fingerprint, str):
-            try:
-                fingerprint = json.loads(fingerprint)
-            except Exception:
-                fingerprint = {}
-        # The alerts are NOT given to the composer, deliberately.
-        #
-        # They are written for a caregiver — "Sadness increasing — may need
-        # emotional support", "Emotional distress in last 3 sessions — check
-        # in". Handed to the thing writing her message, they read as
-        # instructions, and it follows them: "aap thodi pareshan lag rahi
-        # hain, sab theek toh hai na?" on Ganesh Chaturthi morning.
-        #
-        # THE RULE, arrived at three separate times:
-        #   the composer receives facts about the WORLD — the weather, where
-        #   she is, what day it is.
-        #   it never receives facts about HER STATE.
-        #
-        # Told her knee hurts it opened with her knee. Told she was low it
-        # asked whether she was alright. Told she may need emotional support
-        # it provided some. Each time the instruction said not to, and each
-        # time naming the thing was more tempting than not naming it.
-        #
-        # Her state still decides everything — which offer, which register,
-        # whether to send at all, and whether her son hears about it. It
-        # shapes what is CHOSEN and never what is SAID.
-        #
-        # The alerts remain on the fingerprint for the caregiver path and the
-        # picker, which is where they belong.
-        # The people she would ring, with their numbers.
-        #
-        # Asked "Shubham ka number kya hai?" it said the number was not saved
-        # and suggested she look in a diary — while it sat in the caregivers
-        # table. A son's phone number is a fact about her life, and the kind
-        # she is likeliest to want at the worst moment.
-        try:
-            from memory.alert_engine import get_caregivers_for_user
-            people = []
-            for link in get_caregivers_for_user(user_id):
-                cg = link.get("caregivers") or {}
-                num = (cg.get("phone") or "").strip()
-                if not num:
-                    continue
-                rel = (link.get("relationship") or "").strip()
-                nm = cg.get("name") or ""
-                people.append(f"- {nm}" + (f" ({rel})" if rel else "") + f": {num}")
-            if people:
-                parts.append("\nTheir people, and their numbers:\n"
-                             + "\n".join(people)
-                             + "\nGive a number plainly when asked. Wanting "
-                               "your son's number is an ordinary thing — "
-                               "asked for it, the reply was 'call him now, "
-                               "is everything alright?', which turns a "
-                               "question into an emergency.")
-        except Exception as e:
-            print(f"[Memory] caregiver numbers failed: {e}")
+    # The user_memory row may be absent (clusters can be populated while
+    # session-end summarization never ran). Only the summary and the count
+    # depend on it. The thread, the months and her people used to sit behind
+    # the same check, so a user without the row lost all three.
+    if memory and memory.get("summary"):
+        parts.append(f"\nSummary of past conversations:\n{memory['summary']}")
+    # Key facts are NOT given (step 3, 16 Oct). They are drawn from the
+    # summary just above (summarizer.extract_key_facts) — a second copy of
+    # every fact in it, which is how her medicines and her knee appeared
+    # twice in a row. They stay stored, for the dashboard and the cache seed.
+    #
+    # The behavioural alerts are not given either, deliberately.
+    #
+    # They are written for a caregiver — "Sadness increasing — may need
+    # emotional support", "Emotional distress in last 3 sessions — check
+    # in". Handed to the thing writing her message, they read as
+    # instructions, and it follows them: "aap thodi pareshan lag rahi
+    # hain, sab theek toh hai na?" on Ganesh Chaturthi morning.
+    #
+    # THE RULE, arrived at three separate times:
+    #   the composer receives facts about the WORLD — the weather, where
+    #   she is, what day it is.
+    #   it never receives facts about HER STATE.
+    #
+    # Her state still decides everything — which offer, which register,
+    # whether to send at all, and whether her son hears about it. It
+    # shapes what is CHOSEN and never what is SAID.
 
-        # The thread. Facts about her LIFE are above; this is what was SAID,
-        # which is a different thing and the reason tomorrow can pick up where
-        # yesterday left off.
-        #
-        # It passes the rule at the top of this function because a note about
-        # a dal that came out too salty is not a reading of her state — it is
-        # something that happened, the way the weather is.
-        try:
-            from memory.thread import recall as _thread_recall
-            t = _thread_recall(user_id, _query_text or "")
-            if t:
-                parts.append(t)
-        except Exception as e:
-            print(f"[Memory] thread recall failed: {e}")
+    # Her people, once each. Numbers only in the chat, where she can ask for
+    # one: a proactive message has no use for a phone number, and one in its
+    # context is one it might write out.
+    people = _people(user_id, numbers=in_chat)
+    if people:
+        parts.append(people)
 
-        count = memory.get("session_count", 0)
-        if count > 0:
-            parts.append(f"\nThis is conversation #{count + 1} with this person.")
+    # The thread. Facts about her LIFE are above; this is what was SAID,
+    # which is a different thing and the reason tomorrow can pick up where
+    # yesterday left off.
+    #
+    # It passes the rule at the top of this function because a note about
+    # a dal that came out too salty is not a reading of her state — it is
+    # something that happened, the way the weather is.
+    try:
+        from memory.thread import recall as _thread_recall
+        t = _thread_recall(user_id, _query_text or "")
+        if t:
+            parts.append(t)
+    except Exception as e:
+        print(f"[Memory] thread recall failed: {e}")
+
+    # The months. Day notes live a fortnight and are then folded into one
+    # line a month (thread.compress_stm) — which nothing read, so anything
+    # older than about two weeks had fallen out of every reply. Chat only:
+    # she may ask about August; a proactive message should not bring it up.
+    if in_chat:
+        try:
+            from memory.thread import months as _months
+            m = _months(user_id, n=4)
+            if m:
+                parts.append(m)
+        except Exception as e:
+            print(f"[Memory] months failed: {e}")
+
+    count = (memory or {}).get("session_count", 0) or 0
+    if count > 0:
+        parts.append(f"\nThis is conversation #{count + 1} with this person.")
 
     if not parts:
         return None

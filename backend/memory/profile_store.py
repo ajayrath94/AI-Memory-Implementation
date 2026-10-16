@@ -640,22 +640,13 @@ def build_profile_prompt(user_id: str) -> Optional[str]:
     # apart, and the stored personality.communication_style said "English"
     # while language_pref said "hinglish" in the same block.
 
-    # Family
-    family = profile.get("family", {})
-    if family:
-        family_parts = []
-        if family.get("spouse"):
-            family_parts.append(f"spouse: {family['spouse']}")
-        if family.get("children"):
-            family_parts.append(f"children: {_join(family['children'])}")
-        if family.get("grandchildren"):
-            family_parts.append(f"grandchildren: {_join(family['grandchildren'])}")
-        if family_parts:
-            lines.append(f"- Family: {'; '.join(family_parts)}")
+    # Family is NOT rendered here (step 3, 16 Oct). Her people have one place,
+    # THEIR PEOPLE in build_memory_prompt, which joins this family block with
+    # her person concepts and the caregivers' numbers. Here as well, Shubham
+    # reached the reply four times.
 
-    # Health is NOT rendered here. It reaches the companion through the cluster
-    # recall block, which is dated and similarity-gated, and through the running
-    # summary. A third undated copy was the reason every reply opened by asking
+    # Health is NOT rendered here. It reaches the reply in one place, the HEALTH
+    # note (episodes.prompt_note, lasting=True). A copy here was the reason every reply opened by asking
     # after her knee. The medication guard in context_builder reads
     # profile.health.medications directly and does not need it in the prose.
 

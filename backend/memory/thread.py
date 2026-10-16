@@ -506,30 +506,83 @@ def sweep(user_id: str) -> dict:
     }
 
 
+_NAMED: Dict[tuple, tuple] = {}
+
+
 def _clusters_named(user_id: str, text: str) -> List[str]:
     """Which of her subjects this message touches. Ids, not words.
 
-    The same resolution the tags were written with, so a mention of "beta"
-    finds days tagged with Arjun's cluster.
+    This looked for each label inside her message, letter for letter. So
+    "chidiyaghar" never found the days tagged Zoo, "beta" never found Arjun,
+    and "ghutna" never found Knee pain — the tags were written by meaning
+    (concepts.about) and read by spelling. Now the model reads her message
+    against her concepts, with their English and who each person is to her.
+    One call, only when she said something, and kept an hour for the same
+    words.
     """
-    if not (text or "").strip():
+    import time as _t
+    text = (text or "").strip()
+    if not text:
         return []
+    key = (user_id, text.lower()[:300])
+    hit = _NAMED.get(key)
+    if hit and _t.time() - hit[1] < 3600:
+        return hit[0]
     try:
-        rows = (_db().table("interest_clusters").select("id,label")
-                .eq("user_id", user_id).eq("status", "active")
-                .limit(200).execute()).data or []
+        # Archived too: known, never offered — Common cold, the zoo — and
+        # their days are still hers to be asked about.
+        rows = [r for r in (_db().table("interest_clusters").select("id,label,kind,status,attributes")
+                            .eq("user_id", user_id).in_("status", ["active", "archived"])
+                            .limit(150).execute()).data or []
+                if r.get("kind") != "event" and str(r.get("label") or "").strip()]
     except Exception:
         return []
+    if not rows:
+        return []
 
-    low = text.lower()
-    hits = []
-    for r in rows:
-        label = str(r.get("label") or "").strip().lower()
-        if len(label) < 3:
-            continue
-        if label in low:
-            hits.append(r["id"])
-    return hits
+    def _a(r):
+        a = r.get("attributes") or {}
+        if isinstance(a, str):
+            try:
+                a = json.loads(a)
+            except Exception:
+                a = {}
+        return a if isinstance(a, dict) else {}
+
+    listing = []
+    for i, r in enumerate(rows):
+        a, label = _a(r), r["label"]
+        extra = []
+        en = str(a.get("english") or "").strip()
+        if en and en.lower() != label.lower():
+            extra.append(en)
+        rel = str(a.get("relation") or a.get("relationship") or "").strip()
+        if rel:
+            extra.append(f"her {rel}")
+        listing.append(f"{i + 1}. {label}" + (f" ({', '.join(extra)})" if extra else ""))
+    picked = []
+    try:
+        from llm import ask
+        ans = (ask(f"""An elderly woman said to her companion: "{text[:400]}"
+
+Things and people in her life:
+{chr(10).join(listing)}
+
+Which of these is she talking about — by name, by who they are to her ("beta"
+for her son), or in another language ("chidiyaghar" is the zoo, "ghutna" the
+knee)? Only what she is actually talking about, not what is merely related.
+Usually none, one or two.
+
+Answer with the numbers, comma-separated, or NONE.""", max_tokens=30) or "").upper()
+        for tok in ans.replace(",", " ").split():
+            d = "".join(ch for ch in tok if ch.isdigit())
+            if d and 1 <= int(d) <= len(rows) and rows[int(d) - 1]["id"] not in picked:
+                picked.append(rows[int(d) - 1]["id"])
+    except Exception as e:
+        print(f"[Thread] naming failed: {e}")
+        return []
+    _NAMED[key] = (picked[:4], _t.time())
+    return picked[:4]
 
 
 def _similar_days(user_id: str, text: str, limit: int = 2) -> List[Dict]:
@@ -648,4 +701,8 @@ def months(user_id: str, n: int = 6) -> str:
         except Exception:
             continue
         out.append(f"- {p.strftime('%B %Y')}: {r.get('text', '')}")
-    return "\n\nEARLIER MONTHS:\n" + "\n".join(out) if out else ""
+    # Framed as the past. An undated line is read as now — that is how "abhi
+    # Janmashtami hai" survived a fortnight — and a month line has no day.
+    return ("\n\nEARLIER MONTHS — a line for each, all of it PAST. Use it when "
+            "they ask about then or bring it up; never speak of it as now, never "
+            "recite it:\n" + "\n".join(out)) if out else ""

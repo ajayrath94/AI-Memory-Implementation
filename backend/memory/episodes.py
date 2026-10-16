@@ -527,17 +527,54 @@ def due(user_id: str) -> Optional[Dict]:
     return best
 
 
-def prompt_note(user_id: str) -> str:
-    """Plain lines for any prompt that might mention her health."""
+def _lasting(user_id: str) -> str:
+    """Her lasting conditions and her medicines, as one line, for the chat."""
+    conds, meds = [], []
+    try:
+        rows = (_db().table("interest_clusters").select("label,pillar")
+                .eq("user_id", user_id).eq("kind", "concern")
+                .eq("status", "active").limit(20).execute()).data or []
+        conds = [r["label"] for r in rows
+                 if r.get("label") and r.get("pillar") in (None, "", "HEALTH_WELLNESS")]
+    except Exception as e:
+        print(f"[Episodes] lasting read failed: {e}")
+    try:
+        from memory.profile_store import get_user_profile
+        h = (get_user_profile(user_id) or {}).get("health") or {}
+        def _l(v):
+            return [str(x).strip() for x in (v if isinstance(v, list) else [v]) if x and str(x).strip()]
+        meds = _l(h.get("medications"))
+        if not conds:
+            conds = _l(h.get("conditions"))
+    except Exception:
+        pass
+    bits = []
+    if conds:
+        bits.append("lasting conditions: " + ", ".join(conds[:8]))
+    if meds:
+        bits.append("medicines they take: " + ", ".join(meds[:8]))
+    return "; ".join(bits)
+
+
+def prompt_note(user_id: str, lasting: bool = False) -> str:
+    """Plain lines for any prompt that might mention her health.
+
+    lasting=True (the chat) adds her lasting conditions and medicines, so
+    this is the ONE place her health reaches a reply (step 3, 16 Oct). They
+    were scattered across the recall list, the summary, the key facts and
+    the food notes, up to six copies. The proactive writer does not get the
+    lasting line: told about her knee, it opened with her knee.
+    """
     try:
         sweep(user_id)
     except Exception:
         pass
     opened = open_episodes(user_id)
     done = recently_resolved(user_id)
-    if not opened and not done:
+    known = _lasting(user_id) if lasting else ""
+    if not opened and not done and not known:
         return ""
-    d = due(user_id)
+    d = due(user_id) if opened else None
     lines = []
     for ep in opened:
         since = _day(user_id, ep.get("first_reported"))
@@ -555,10 +592,20 @@ def prompt_note(user_id: str) -> str:
         lines.append(f"- {ep['what']} ({ep.get('english') or ''}): OVER since "
                      f"{_day(user_id, ep.get('resolved_at'))}. Do not ask about it. "
                      f"Only talk about it if they bring it up.")
-    return ("\nHEALTH RIGHT NOW — short-term problems they told you about. This "
-            "overrides anything else in these notes about them:\n" + "\n".join(lines) +
-            "\nLasting conditions (knee, BP, thyroid) are not checked on — only a "
-            "flare-up listed here is.\n")
+    if not lasting:
+        return ("\nHEALTH RIGHT NOW — short-term problems they told you about. This "
+                "overrides anything else in these notes about them:\n" + "\n".join(lines) +
+                "\nLasting conditions are not checked on — only a problem listed "
+                "here is.\n")
+    out = ("\nHEALTH — everything you know about their health, in one place. This "
+           "overrides anything else in these notes about it.\n")
+    if lines:
+        out += "Right now:\n" + "\n".join(lines) + "\n"
+    if known:
+        out += (f"Known, and lasting — {known}. Known so you can be considerate and "
+                "answer if they ask. Never ask after these and never bring them up; "
+                "only a problem above marked CHECK-IN DUE may be asked about.\n")
+    return out
 
 
 def _before(user_id: str, ep: Dict) -> str:
