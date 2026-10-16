@@ -47,61 +47,80 @@ def _retrieve_memory(
     session_id: str,
     user_id: str = "default",
     top_k: int = 5,
-    query_text: str = "",
 ) -> Optional[str]:
-    """What HAPPENED that bears on what she just said, with the day it
-    happened on. For "kab gaye the", the date is the answer.
-
-    This used to score stm_clusters and ltm_patterns first and return early
-    when they were empty. Both were retired and are always empty, so it
-    returned before the events were ever read: asked "Hum zoo kab gaye the",
-    she got "pichhle hafte" while the zoo outing sat in storage with its date.
-    What was SAID lives in the thread (thread.recall); this is the events.
     """
-    # LINEAGE (16 Oct): when her message is about something with a history
-    # — the zoo, her colds, Arjun's visits — the whole timeline goes in, so
-    # "kab", "pichli baar", "kitni baar" and "abhi bhi hai?" are read off it
-    # rather than guessed from the three closest events.
-    lines, covered = [], set()
+    Pure embedding cosine similarity.
+    No TF-IDF. No keyword matching. Done.
+    """
+    stm = get_stm_clusters(session_id)
+    ltm = get_ltm_patterns(user_id)
+
+    all_entries = [(e, "stm") for e in stm] + [(e, "ltm") for e in ltm]
+    if not all_entries:
+        return None
+
+    results = []
+    # User pillar priorities bias what gets recalled: a pillar marked
+    # important surfaces more readily, a de-prioritised one is suppressed.
     try:
-        from memory.lineage import concepts_in, render
-        from memory.events import find_events
-        from datetime import date as _date
-        try:
-            from memory.thread import _today as _her_today
-            today = _her_today(user_id)
-        except Exception:
-            today = _date.today()
-        ids = list(concepts_in(user_id, query_text or ""))
-        # Events by meaning only when no timeline was picked, and only those
-        # that belong to no concept — a matched zoo visit added Zoo's whole
-        # timeline to a question about Arjun.
-        found = [] if ids else [e for e in find_events(user_id, query_text or "", limit=3)
-                                if not e.get("parent_id")]
-        for cid in ids[:3]:
-            block = render(user_id, cid)
-            if block:
-                lines.append(block)
-                covered.add(cid)
-        for e in found:
-            if e.get("parent_id") in covered:
-                continue
-            what = str(e.get("label") or "").strip()
-            if not what:
-                continue
-            when = str(e.get("happened_on") or "")[:10]
-            try:
-                d = _date.fromisoformat(when)
-                ago = (today - d).days
-                rel = ("today" if ago == 0 else "yesterday" if ago == 1
-                       else f"{ago} days ago" if ago > 1 else f"in {-ago} days")
-                lines.append(f"{what}: {d.strftime('%A %d %B %Y')} ({rel})")
-            except Exception:
-                lines.append(f"{what}: {when}" if when else what)
+        from memory.pillar_weights import get_pillar_weights
+        pillar_weights = get_pillar_weights(user_id)
     except Exception as e:
-        print(f"[Retrieve] lineage failed: {e}")
-    if lines:
-        print(f"[Retrieve] lineage: {lines}")
+        print(f"[Retrieve] weights unavailable: {e}")
+        pillar_weights = {}
+
+    for entry, tier in all_entries:
+        # Use stored embedding if available
+        stored_emb = entry.get("embedding", [])
+        if stored_emb and len(stored_emb) > 0:
+            score = cosine_similarity(query_embedding, stored_emb)
+        else:
+            # Fallback: simple word overlap for old entries
+            q_words = set(entry.get("text", "").lower().split())
+            score   = 0.1 if q_words else 0.0
+
+        # Two-stage scoring. Relevance (cosine) decides what is eligible;
+        # user priority only decides ordering. This stops a high weight from
+        # dragging in memories that are not actually relevant.
+        weight = pillar_weights.get(entry.get("pillar"), 1.0)
+        if weight < MUTE_THRESHOLD:
+            continue
+
+        if score >= RECALL_THRESHOLD:
+            new_strength = min(1.0, entry["strength"] + 0.05)
+            new_count    = entry["recall_count"] + 1
+            if tier == "stm":
+                update_stm_recall(entry["id"], new_strength, new_count)
+                if new_count >= PROMOTION_THRESHOLD:
+                    promote_stm_to_ltm(entry, user_id)
+            else:
+                update_ltm_recall(entry["id"], new_strength, new_count)
+
+            results.append({
+                "text":  entry["text"],
+                "score": score,
+                "rank":  score * weight,
+                "tier":  tier,
+            })
+
+    if not results:
+        return None
+
+    results.sort(key=lambda x: x["rank"], reverse=True)
+    # Clean what reaches Nancy: strip the internal tier/score tag and the
+    # "PILLAR:" prefix so she sees plain recalled content, not plumbing metadata.
+    def _clean(t: str) -> str:
+        t = t.strip()
+        if ":" in t[:20]:
+            head, _, rest = t.partition(":")
+            if head.isupper() and len(head) <= 16:
+                t = rest.strip()
+        return t
+    lines = []
+    for r in results[:top_k]:
+        cleaned = _clean(r["text"])
+        if cleaned and len(cleaned) > 3:
+            lines.append(cleaned)
     return "\n".join(lines) if lines else None
 
 
@@ -218,131 +237,7 @@ def _compress_cache_to_stm(session_id: str, query_embedding: List[float]):
             print(f"[STM] Save failed: {e}")
 
 
-# ── Food, in the background ───────────────────────────────────────────────────
-
-def _food_notes(user_id: str) -> str:
-    """Everything that bears on what she eats, in one place, for when food
-    comes up — and only then.
-
-    The chat had pieces: interests sometimes, diet only if a form had it,
-    health deliberately left out, and what she had said she dislikes never at
-    all — it was saved by the food tool and read by nobody but the recipe
-    search. So "aaj sham ko kya banaya jaye" was answered without knowing she
-    takes a blood-pressure tablet, and "namak kam rakhna" was luck.
-    """
-    lines = []
-    try:
-        from memory.profile_store import get_user_profile
-        p = get_user_profile(user_id) or {}
-    except Exception as e:
-        print(f"[Food] profile read failed: {e}")
-        p = {}
-
-    demo = p.get("demographics") or {}
-    food = p.get("food") or {}
-    health = p.get("health") or {}
-
-    diet = food.get("diet") or demo.get("diet")
-    if diet:
-        lines.append(f"- Diet: {diet}")
-
-    def _list(v):
-        return [str(x) for x in (v if isinstance(v, list) else [v]) if x]
-
-    likes = _list(food.get("likes"))
-    dislikes = _list(food.get("dislikes"))
-    avoid = _list(food.get("avoid")) + _list(food.get("avoids"))
-    if likes:
-        lines.append(f"- Likes: {', '.join(likes[:10])}")
-    if dislikes:
-        lines.append(f"- Does not like: {', '.join(dislikes[:10])}")
-    if avoid:
-        lines.append(f"- Does not eat: {', '.join(avoid[:10])}")
-
-    # Dishes she enjoys, from what she has talked about.
-    try:
-        from memory.offers import hers
-        dishes = [v["label"] for v in sorted(hers(user_id).values(),
-                                             key=lambda v: -float(v.get("strength") or 0))
-                  if (v.get("category") or "") == "khana"
-                  and not (v.get("state") is not None and v["state"] < 0)][:6]
-        if dishes:
-            lines.append(f"- Enjoys: {', '.join(dishes)}")
-    except Exception as e:
-        print(f"[Food] interests read failed: {e}")
-
-    # Food she turned down when it was offered.
-    try:
-        from memory.offers import _refused
-        no = sorted(_refused(user_id))[:8]
-        if no:
-            lines.append(f"- Turned down when offered: {', '.join(no)}")
-    except Exception:
-        pass
-
-    # What her health means at the table — decided by the model from her
-    # conditions and medicines as written, in whatever language. This was a
-    # list of English words ("blood pressure", "kidney"), and a condition
-    # recorded as "hipertensión" got no rule at all.
-    try:
-        from memory.food_rules import rules as _food_rules, raw_line as _raw
-        fr = _food_rules(user_id)
-        if fr.get("chat_notes"):
-            lines.append("- For their health: " + "; ".join(fr["chat_notes"]))
-        if fr.get("doctor_decides"):
-            lines.append("- Their doctor sets their diet: suggest nothing specific "
-                         "for that condition")
-        if not fr.get("ok"):
-            r = _raw(fr)
-            if r:
-                lines.append("- " + r)
-    except Exception as e:
-        print(f"[Food] rules failed: {e}")
-
-    # Meat today is a date, not a flag: Tuesdays, Shravan, her own days.
-    try:
-        from memory.diet import can_eat_meat_today
-        v = can_eat_meat_today(user_id)
-        if v and not v.get("ok"):
-            lines.append("- Today: nothing with meat, fish or egg")
-    except Exception:
-        pass
-
-    if not lines:
-        return ""
-    return ("\nFOOD — background, for when food comes up. Use it to make any food "
-            "you suggest or discuss right for them. Never bring food up because of "
-            "it, never read it back to them, and never explain why something is "
-            "or is not suitable unless they ask.\n" + "\n".join(lines) + "\n")
-
-
 # ── Nancy system prompt ────────────────────────────────────────────────────────
-
-# Where a reply's time goes. On 16 Oct replies took 26-43 s from her message
-# being saved to Nancy's, and the app gave up at 60 s ("not delivered"), so
-# she sent the same message six times. One line per message, by stage.
-import time as _time
-_TICKS = {}
-
-
-def _tick_start():
-    _TICKS[threading.get_ident()] = [_time.perf_counter(), []]
-
-
-def _tick(label: str):
-    t = _TICKS.get(threading.get_ident())
-    if not t:
-        return
-    now = _time.perf_counter()
-    t[1].append(f"{label} {now - t[0]:.1f}s")
-    t[0] = now
-
-
-def _tick_done(user_id: str):
-    t = _TICKS.pop(threading.get_ident(), None)
-    if t:
-        print(f"[Timing] {user_id}: " + " | ".join(t[1]))
-
 
 def _build_system_prompt(classified, user_memory: Optional[str],
                           session_memory: Optional[str],
@@ -362,15 +257,12 @@ YOUR PERSONALITY:
 - Warm, friendly, and conversational — like a caring friend
 - You remember past conversations, and let that shape how you respond
   without ever reciting it back
-- You speak THEIR language — the LANGUAGE note at the very end says which
+- You speak in a mix of English and Hindi (Hinglish) naturally
 - You ask follow-up questions — you're genuinely curious
 - You celebrate small things enthusiastically
 - You're patient, never rush, never dismiss
 - You have opinions and share them when asked
-- You follow THEIR lead. Reply to what they raised; do not bring in a new
-  subject of your own — a match, a film, a song, a show — and do not offer to
-  look something up they did not ask about. When they say they are resting,
-  let them rest: a warm line is the whole reply.
+- You initiate topics based on what you know about the person
 
 CRITICAL RULES:
 - NEVER say "I don't have any record of previous conversations"
@@ -389,26 +281,6 @@ CONVERSATION STYLE:
 - Keep it short. Two or three sentences. They read this on a phone.
 - Draw topics from what you actually know about this person, below — never
   from generic assumptions about what people their age enjoy.
-- When they put something aside — "later", "not now", "this evening",
-  "I have puja now", in whatever words — let it go. Do not bring it back in this
-  conversation, and do not keep steering towards it. One morning a film was
-  raised three times after she had said who watches films this early.
-- Never tell them what they usually do, like or feel unless it is in your
-  notes below, word for word in substance. "Aap puja ke baad film dekhne ka
-  mood kar leti hain" was invented, and a companion who makes up your habits
-  is one you stop trusting.
-- Never state a clock time from their routine. Name the part of the day
-  (breakfast time, the afternoon) in their language, or say nothing.
-- Their message usually answers the last thing you said. Read it that way
-  first: after "phone kiya?", "haan dhyan hai, kar diya" is about the call.
-- A word that looks like a typo or a misheard word is what they most likely
-  meant, given what you last said. Never turn an unclear word into a new
-  person: "Haan dhyan hai" became "Dhyanesh", and she was asked how long
-  it had been since she spoke to him. If you truly cannot tell, ask simply.
-- You cannot hear their voice or see their face. Never say how they sound
-  or look.
-- They are where their notes say they are. Staying away from home is where
-  they live for now; never say they are out unless they said so.
 TOOL RESULTS:
 - When you use a tool (weather, music search, news, places) and get results back, always share the concrete details — real numbers, real titles, real links
 - For music/video results specifically: always include the actual youtube_url for each song you mention, so the person can tap and actually play it, not just talk about the song
@@ -447,11 +319,7 @@ TOOL RESULTS:
         )
 
     if session_memory:
-        # Events with their dates. Labelled as what they are: under "from
-        # this conversation" a trip from last week read as something said now.
-        nancy_persona += (f"\nTHINGS THAT HAPPENED, WITH THEIR DAYS — answer when, the last "
-                          f"time, how many times and whether it is still going from "
-                          f"this, not from memory:\n{session_memory}\n")
+        nancy_persona += f"\nFROM THIS CONVERSATION:\n{session_memory}\n"
 
     # ── Temporal awareness: Nancy must know the user's real local time so she
     # can greet correctly AND resolve relative times ("kal", "12 baje") into
@@ -467,42 +335,6 @@ current local time into a concrete date and time.
 """
     except Exception:
         pass
-    # ── Her lists, and whether she is going through one in a shop ─────────────
-    # Without this the chat cannot know "mil gaya" means the sabudana it just
-    # read out, or that "bazar" already has six things on it.
-    try:
-        from memory.lists import hint as _list_hint
-        nancy_persona += _list_hint(user_id)
-    except Exception as _lh:
-        print(f"[Router] list hint failed: {_lh}")
-
-    # ── Food, in the background ──────────────────────────────────────────────
-    try:
-        nancy_persona += _food_notes(user_id)
-    except Exception as _fn:
-        print(f"[Router] food notes failed: {_fn}")
-
-    # ── Her festival, if she keeps one and it is running ─────────────────────
-    # The chat did not know. On day three of a Navratri she keeps, she asked
-    # what to cook tonight and was offered red lentil soup and garlicky kale.
-    # The proactive messages and the offers knew; the conversation, where she
-    # actually asks, did not.
-    try:
-        from memory.festival_brief import for_user as _festival_for
-        _f = _festival_for(user_id)
-        if _f:
-            line = f"\nTODAY: {_f['name']}, day {_f.get('day_of')} of {_f.get('days')}."
-            if _f.get("fasting") and _f.get("she_keeps_it"):
-                line += (f" She keeps this fast. It avoids {_f.get('fast_avoids')}."
-                         f" What is eaten instead: {_f.get('eaten_instead')}."
-                         " Any food you suggest or discuss must keep this fast.")
-            elif _f.get("fasting"):
-                line += (" Many people fast during it and you do not know whether"
-                         " she does: ask before suggesting food.")
-            nancy_persona += line + "\n"
-    except Exception as _fe:
-        print(f"[Router] festival read failed: {_fe}")
-
     # ── Current context with priority ────────────────────────────────────────
     nancy_persona += f"""
 CURRENT CONTEXT:
@@ -523,7 +355,7 @@ This is the person's PRIMARY concern right now. Address it directly and warmly b
         nancy_persona += f"""
 💙 EMOTIONAL SUPPORT NEEDED — {classified.emotion}:
 The person is emotionally vulnerable right now. Lead with empathy. Don't rush to solutions.
-Speak softly and simply, in their language — ask what happened, tell them not to worry.
+Use soft Hinglish: "Arre, kya hua? Batao mujhe..." or "Arey, pareshan mat ho..."
 """
     if classified.emotion_priority == "HIGH" and classified.emotion == "LOVE":
         nancy_persona += """
@@ -574,36 +406,7 @@ Use this to shape your response — ask about the right things, not generic ques
     # puts its instruction last.
     nancy_persona += _gender_instruction(user_id)
 
-    # ── Her health right now: what is open, what is over, what may be asked ──
-    try:
-        from memory.episodes import prompt_note as _episode_note
-        nancy_persona += _episode_note(user_id)
-    except Exception as _en:
-        print(f"[Router] episode note failed: {_en}")
-
-    # ── Language — the very last word ────────────────────────────────────
-    # The prompt above is full of Hinglish examples, and it used to say
-    # outright "you speak Hinglish". Her chosen language — the same
-    # instruction the proactive messages use — never reached the chat, so a
-    # Tamil speaker, or a Spanish one, was pulled towards Hinglish, most of
-    # all when upset. It goes last because the last instruction is the one
-    # that holds.
-    nancy_persona += _language_instruction(user_id)
-
     return nancy_persona
-
-
-def _language_instruction(user_id: str = "") -> str:
-    try:
-        from memory.context_builder import _language
-        lang = _language(user_id)
-    except Exception as e:
-        print(f"[Router] language read failed: {e}")
-        lang = ("Write back in whatever language and script they wrote in.")
-    return ("\nLANGUAGE — THIS DECIDES THE LANGUAGE OF EVERY REPLY.\n"
-            f"{lang}\n"
-            "Quoted examples anywhere above are illustrations of tone and "
-            "meaning only — never copy their language.\n")
 
 
 def _gender_instruction(user_id: str = "") -> str:
@@ -633,10 +436,9 @@ def _gender_instruction(user_id: str = "") -> str:
 
     if gender == "male":
         return (
-            "\nGRAMMATICAL GENDER — THIS OVERRIDES EVERYTHING ABOVE EXCEPT LANGUAGE.\n"
+            "\nGRAMMATICAL GENDER — THIS OVERRIDES EVERYTHING ABOVE.\n"
             "You are male. Speaking about YOURSELF in Hindi, Hinglish or any\n"
-            "gendered language (Spanish: cansado, Portuguese: obrigado),\n"
-            "always use MASCULINE forms:\n"
+            "gendered language, always use MASCULINE verb forms:\n"
             "  main kar raha hoon / main gaya tha / de sakta hoon\n"
             "  main confuse ho gaya tha / dekh raha hoon\n"
             "Never feminine forms for yourself. Every message, however short.\n"
@@ -645,10 +447,9 @@ def _gender_instruction(user_id: str = "") -> str:
         )
 
     return (
-        "\nGRAMMATICAL GENDER — THIS OVERRIDES EVERYTHING ABOVE EXCEPT LANGUAGE.\n"
+        "\nGRAMMATICAL GENDER — THIS OVERRIDES EVERYTHING ABOVE.\n"
         "You are female. Speaking about YOURSELF in Hindi, Hinglish or any\n"
-        "gendered language (Spanish: cansada, Portuguese: obrigada),\n"
-        "always use FEMININE forms:\n"
+        "gendered language, always use FEMININE verb forms:\n"
         "  main kar rahi hoon        (NOT kar raha hoon)\n"
         "  main gayi thi             (NOT gaya tha)\n"
         "  de sakti hoon             (NOT de sakta hoon)\n"
@@ -824,21 +625,6 @@ async def process_input(text: str, model: str,
     sid = session["id"]
     update_session_weight(sid)
 
-    # What she meant, for understanding; what she wrote, for the record.
-    # The keyboard and the transcriber both change her words — "carbon" for
-    # tarbuz, "Dhyanesh" for "dhyan hai" — and everything below used to read
-    # them as written. Her own words are what is saved and shown.
-    original = text
-    corrected = False
-    if text and text.strip():
-        try:
-            _tick_start()
-            from memory.meant import what_she_meant
-            text, corrected = what_she_meant(user_id, text)
-        except Exception as _me:
-            print(f"[Router] meaning step failed: {_me}")
-            text = original
-
     # If the companion offered something and this is the answer, attribute it
     # before anything else reads the message. Costs nothing when no suggestion
     # is open, which is most turns. Fire-and-forget: a failed attribution must
@@ -869,63 +655,8 @@ async def process_input(text: str, model: str,
                 # anything, and that is where most confirmations come from.
                 # Costs nothing when nothing is past due and unanswered, which
                 # is most of the day.
-                # Is she in danger right now?
-                #
-                # The alert engine ran only at session end, so "saans nahi aa
-                # rahi" at two in the morning reached her son when the session
-                # closed — hours later, or whenever the backstop sweep got to
-                # it. The most important path in the product was the slowest.
-                #
-                # One question, read in any language, on the message itself.
-                try:
-                    from memory.alert_engine import alert_now
-                    alert_now(user_id, text)
-                except Exception as _ae:
-                    print(f"[Router] urgent check failed: {_ae}")
-
-                # Did she just settle something about herself?
-                #
-                # "Main shakahari hoon", "ab Bangalore mein rehti hoon",
-                # "janamdin 14 March ko hai". Usually nothing — most of what
-                # she says is about her day, not about her. Costly ones are
-                # asked about before they are believed.
-                try:
-                    from memory.anchors import hear, settle
-                    settle(user_id, text)        # her answer to a question
-                    _ah = hear(user_id, text)    # and anything new
-
-                    # And her days. "Mangalvar aur Shanivar ko vrat rakhti
-                    # hoon" is four facts: two fasts, no meat on either, and
-                    # a temple visit worth having something to say about.
-                    from memory.observances import hear as _obs_hear
-                    _obs_hear(user_id, text)
-                    if _ah:
-                        print(f"[Anchor] asking about: {_ah[:60]}")
-                except Exception as _ke:
-                    print(f"[Anchor] read failed: {_ke}")
-
-                # (A second copy of the anchor block above stood here, so
-                # every message was heard twice: two model calls, and a fact
-                # said once counted as said twice.)
-
                 from memory.day import note_from_message
                 note_from_message(user_id, text)
-
-                # Whatever she just touched comes back up. Recall REVIVES
-                # rather than promotes — what was built did the opposite,
-                # pushing frequently recalled things down into long-term
-                # storage, so the subjects she returned to most were archived
-                # first.
-                #
-                # It also leaves a behavioural event, because strength alone
-                # says she mentioned something and the event log is what says
-                # WHEN. Arjun reached 2.29 across six mentions with an event
-                # count of one, so his trajectory could never form.
-                try:
-                    from memory.clusters import reactivate
-                    reactivate(user_id, text)
-                except Exception as _re:
-                    print(f"[Router] reactivate failed: {_re}")
 
                 from memory.ambiguity import (needs_asking, match_answer,
                                               resolve)
@@ -962,22 +693,9 @@ async def process_input(text: str, model: str,
     classified = classify_input(text)
     embedding  = classified.embedding  # real 1024-dim vector
 
-    # Health episodes: a cold that starts, is checked on and ends. Read in the
-    # background against what is open — "theek hai" closes the cold it is
-    # about. See memory/episodes.py.
-    def _episodes(_t=text, _p=classified.core):
-        try:
-            from memory.meant import _last_said
-            from memory.episodes import hear
-            hear(user_id, _t, said=_last_said(user_id), pillar=_p)
-        except Exception as _ee:
-            print(f"[Router] episodes failed: {_ee}")
-    threading.Thread(target=_episodes, daemon=True).start()
-
     # 5. Save user message with embedding
     save_message(
-        session_id=sid, role="user", content=original, model=model,
-        meant=(text if corrected else None),
+        session_id=sid, role="user", content=text, model=model,
         pillar_core=classified.core,
         pillar_emotion=classified.emotion,
         pillar_functional=classified.functional,
@@ -987,108 +705,42 @@ async def process_input(text: str, model: str,
         embedding=embedding,
     )
 
-    _tick("meant+classify+save")
     # 6. Auto-title on first message
     msgs = get_session_messages(sid)
     if len(msgs) == 1:
-        threading.Thread(
-            target=lambda: update_session_title(sid, _generate_title(text, classified)),
-            daemon=True).start()
+        update_session_title(sid, _generate_title(text, classified))
 
     # 7. Update cache + decay
     update_cache(classified, session_id=sid, model=model)
     register_pillars(classified, session_id=sid, model=model)
     track_decay()
 
-    # 7b/8. Extraction and the old STM write run after the reply, not before
-    # it: Nancy's answer has the message itself, and these took model calls
-    # and writes she was made to wait for.
-    def _after(_t=text, _c=classified, _s=sid, _e=embedding):
-        try:
-            from memory.profile_enricher import enrich_profile_from_message
-            enrich_profile_from_message(_t, _c, user_id, _s)
-        except Exception as e:
-            print(f"[ProfileEnricher] {e}")
-        try:
-            _compress_cache_to_stm(_s, _e)
-        except Exception as e:
-            print(f"[Router] stm compress failed: {e}")
-    threading.Thread(target=_after, daemon=True).start()
-    _tick("cache")
+    # 7b. Enrich user profile from this message (pillar-driven, no extra API call)
+    try:
+        from memory.profile_enricher import enrich_profile_from_message
+        enrich_profile_from_message(text, classified, user_id, sid)
+    except Exception as e:
+        print(f"[ProfileEnricher] {e}")
+
+    # 8. Compress cache → STM with embedding
+    _compress_cache_to_stm(sid, embedding)
 
     # 9. Cross-session user memory
-    # Her message goes too, so the thread can be found by TAG rather than
-    # only by recency — she says "Rajesh" and the days about him are a lookup.
-    # What is due right now, folded into the reply rather than pushed.
-    #
-    # She may be mid-conversation when her lunch time passes, and a separate
-    # push arriving while she is already talking is absurd. Skipping it is
-    # worse: her thyronorm and amlodipine are taken with food, so the meal
-    # and the tablet are the same question.
-    #
-    # One line at the end of whatever she raised — not the whole reply, and
-    # not an offer. A song can wait for its own moment; a tablet cannot.
-    try:
-        from memory.context_builder import _due_now
-        _dn = _due_now(user_id)
-    except Exception as _de:
-        print(f"[Router] due-now failed: {_de}")
-        _dn = ""
-
-    user_memory = build_memory_prompt(user_id, current_embedding=embedding,
-                                      _query_text=text)
-    if _dn:
-        user_memory = (user_memory or '') + _dn
+    user_memory = build_memory_prompt(user_id, current_embedding=embedding)
 
     # 10. Within-session memory (EMBEDDING-BASED!)
-    # The text as well as the vector: events are matched on what she asked,
-    # and the date is the answer to "kab".
-    # Both her words and what we think she meant: if the correction is
-    # wrong ("zoo" read as "sunne"), her own word still finds the event.
-    session_memory = _retrieve_memory(
-        embedding, sid, user_id,
-        query_text=(f"{original}\n{text}" if corrected else text))
+    session_memory = _retrieve_memory(embedding, sid, user_id)
 
     # 11. Build context window
     context_messages = _build_context(sid, model)
-    # The model sees her words and, when they were garbled, what she meant —
-    # so it answers the meaning and can still check a word with her.
-    _turn = (f"{original}\n[what they meant: {text}]" if corrected else original)
-    if context_messages and context_messages[-1].get("role") == "user" \
-            and context_messages[-1].get("content") == original:
-        context_messages[-1] = {"role": "user", "content": _turn}
-    else:
-        context_messages.append({"role": "user", "content": _turn})
+    if not context_messages or context_messages[-1].get("content") != text:
+        context_messages.append({"role": "user", "content": text})
 
     # 12. Nancy system prompt
-    _tick("memory read")
     system_prompt = _build_system_prompt(classified, user_memory, session_memory, user_id)
-    _tick("prompt")
 
     # 13. Call AI
     reply, tool_results = _route(model, system_prompt, context_messages, user_id=user_id)
-    # Does her list match what was just said? On 15 Oct Nancy said "hata di"
-    # and "sab aa gaya" with no list tool run. Checked after the reply, in the
-    # background; fixes are logged "[Lists] claimed without action -> fixed".
-    try:
-        from memory.list_guard import check_after_reply
-        _prev = next((str(m.get("content") or "") for m in reversed(context_messages)
-                      if isinstance(m, dict) and m.get("role") == "assistant"), "")
-        threading.Thread(target=check_after_reply,
-                         args=(user_id, model, text, _prev, reply or "", tool_results or []),
-                         daemon=True).start()
-    except Exception as _lg:
-        print(f"[Lists] guard start failed: {_lg}")
-
-    # Did the reply ask about the health problem that was due? Then it is not
-    # asked again today.
-    def _asked(_r=reply):
-        try:
-            from memory.episodes import mark_asked_if
-            mark_asked_if(user_id, _r)
-        except Exception as _ae:
-            print(f"[Router] episode ask-check failed: {_ae}")
-    threading.Thread(target=_asked, daemon=True).start()
 
     # 14. Save assistant message with embedding
     save_message(
@@ -1112,8 +764,6 @@ async def process_input(text: str, model: str,
     except Exception as e:
         print(f"[Reminder] detect failed: {e}")
 
-    _tick("reply+save")
-    _tick_done(user_id)
     return {
         "reply":         reply,
         "session_id":    sid,
