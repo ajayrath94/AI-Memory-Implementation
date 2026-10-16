@@ -133,7 +133,7 @@ def add_event(ev: CalendarEvent):
     # reminder already exists at this moment — whichever path ran first wins.
     if ev.reminder_enabled and created:
         try:
-            dupe = (db.table("reminders").select("id")
+            dupe = (db.table("reminders").select("*")
                     .eq("user_id", ev.user_id)
                     .eq("fire_at", ev.event_at)
                     .eq("status", "pending")
@@ -142,10 +142,14 @@ def add_event(ev: CalendarEvent):
             dupe = []
         if dupe:
             print(f"[Calendar] reminder already pending at {ev.event_at} — not spawning")
-            return {"status": "created", "event": created}
+            return {"status": "created", "event": created, "reminder": dupe[0]}
 
+        # The reminder is returned with the event: the chat uses it as the
+        # reply's reminder, so the detector does not make a second one from
+        # the same sentence (16 Oct: "Durga Puja pandal darshan" at 13:00 here,
+        # "Plan (to be decided)" at 12:00 from the detector, six seconds apart).
         try:
-            db.table("reminders").insert({
+            res = db.table("reminders").insert({
                 "user_id": ev.user_id,
                 "what": ev.title,
                 "event_at": ev.event_at,
@@ -153,6 +157,8 @@ def add_event(ev: CalendarEvent):
                 "status": "pending",
                 "source": "calendar",
             }).execute()
+            return {"status": "created", "event": created,
+                    "reminder": (res.data or [None])[0]}
         except Exception as e:
             print(f"[Calendar] reminder spawn failed: {e}")
 

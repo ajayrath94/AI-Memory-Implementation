@@ -332,42 +332,9 @@ def fire_reminders_endpoint():
     """Fast, LLM-free: fire any due nudges. Each due nudge delivers its own
     pre-written message via the proactive channel; mark_nudge_fired advances the
     reminder and completes it when all nudges have fired."""
-    from memory.reminder_engine import get_due_reminders, mark_nudge_fired
-    from memory.proactive_log import log_decision
-    fired = []
-    for item in get_due_reminders():
-        rem = item["reminder"]
-        try:
-            log_decision({
-                "user_id": rem["user_id"],
-                "action":  "REMINDER",
-                "reason":  "scheduled reminder due",
-                "detail":  item.get("message") or rem.get("what"),
-                "priority": "HIGH",
-            })
-            mark_nudge_fired(rem["id"], item["nudge_index"])
-
-            # Actually deliver it. Without this the endpoint marks reminders
-            # fired and sends nothing — which is what was happening: the cron
-            # calls this route, reminders showed status=fired, and the only
-            # notifications arriving were the phone's own local ones. The
-            # scheduler's copy of this loop does push, but only when
-            # dry_run=False, and the cron only ever calls it with dry_run=true.
-            try:
-                from memory.push_sender import send_push
-                from memory.persona_names import get_companion_name
-                send_push(
-                    rem["user_id"],
-                    title=get_companion_name(rem["user_id"]),
-                    body=item.get("message") or rem.get("what") or "You have a reminder",
-                    data={"type": "reminder", "reminder_id": rem["id"]},
-                )
-            except Exception as _pe:
-                print(f"[FireReminders] push failed for {rem.get('id')}: {_pe}")
-
-            fired.append({"user_id": rem["user_id"], "what": rem.get("what"),
-                          "message": item.get("message")})
-        except Exception as e:
-            print(f"[FireReminders] failed for {rem.get('id')}: {e}")
+    # The same function the heartbeat uses — this was a second copy of the
+    # loop, and the two had already drifted once (this one did not push).
+    from memory.reminder_engine import fire_due
+    fired = fire_due("FireReminders")
     return {"fired": len(fired), "reminders": fired}
 

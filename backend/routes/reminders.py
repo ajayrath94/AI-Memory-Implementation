@@ -5,6 +5,7 @@ GET  /reminders/{user_id}          list upcoming + past reminders
 POST /reminders/{user_id}          create a reminder directly (manual add)
 POST /reminders/{reminder_id}/cancel   cancel a pending reminder
 POST /reminders/{reminder_id}/update   change the time / text (correction loop)
+POST /reminders/{reminder_id}/on-device   the phone has scheduled its alert; no push
 """
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -51,6 +52,12 @@ def list_reminders(user_id: str):
             "fire_at_utc": r.get("fire_at"),
             "status": r.get("status"),
             "source": r.get("source"),
+            # The nudges still to come, so the phone's sync schedules each one
+            # with its own words. Without them it scheduled one alert at
+            # fire_at, and a reminder with three nudges rang once.
+            "nudges": [{"at": n.get("at"), "message": n.get("message")}
+                       for n in (r.get("nudges") or []) if not n.get("fired")],
+            "on_device": bool(r.get("on_device_at")),
         }
         if r.get("status") == "pending" and fire and fire > now:
             upcoming.append(item)
@@ -105,5 +112,29 @@ def update_reminder(reminder_id: str, req: UpdateReminder):
         upd["status"] = "pending"   # re-arm if it was changed
     if not upd:
         return {"id": reminder_id, "updated": False}
+    if "fire_at" in upd:
+        # The phone's alert is for the old time now: the server delivers this
+        # one again until the phone has rescheduled it and said so.
+        try:
+            db.table("reminders").update({**upd, "on_device_at": None}).eq("id", reminder_id).execute()
+            return {"id": reminder_id, "updated": True, **upd}
+        except Exception:
+            pass   # on_device_at not added yet (reminders_on_device.sql)
     db.table("reminders").update(upd).eq("id", reminder_id).execute()
     return {"id": reminder_id, "updated": True, **upd}
+
+
+@router.post("/{reminder_id}/on-device")
+def on_device(reminder_id: str):
+    """The phone has scheduled this reminder's alert itself. From now on the
+    server marks it fired when due and does not push it as well — the push
+    and the phone's own alert arrived together, two for one reminder."""
+    from supabase_store import get_client
+    try:
+        get_client().table("reminders").update(
+            {"on_device_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", reminder_id).execute()
+        return {"id": reminder_id, "on_device": True}
+    except Exception as e:
+        print(f"[Reminders] on-device mark failed for {reminder_id}: {e}")
+        return {"id": reminder_id, "on_device": False}

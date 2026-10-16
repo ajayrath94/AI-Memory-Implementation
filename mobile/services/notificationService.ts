@@ -71,6 +71,25 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 interface Nudge { at: string; message: string }
 
 /**
+ * Tell the server these reminders' alerts are on this phone, so it does not
+ * push them as well. The phone's own alert and the server's push used to both
+ * arrive — two for one reminder. If this call fails, the server simply pushes
+ * too: a duplicate, never a missed reminder.
+ */
+async function markOnDevice(ids: string[]): Promise<void> {
+  for (const id of ids) {
+    try {
+      await fetch(`${API_BASE}/reminders/${id}/on-device`, {
+        method:  'POST',
+        headers: await getAuthHeaders(),
+      })
+    } catch (e) {
+      console.log('[notif] on-device mark failed', id, e)
+    }
+  }
+}
+
+/**
  * Schedule one local notification per nudge for a reminder. Each fires at its
  * absolute UTC time with Nancy's pre-written message — works offline, app-closed.
  * Skips nudge times already in the past.
@@ -109,6 +128,7 @@ export async function scheduleReminderNudges(
     }
   }
   console.log(`[notif] scheduled ${scheduled} nudge(s) for "${reminder.what}"`)
+  if (scheduled > 0) await markOnDevice([reminder.id])
   return scheduled
 }
 
@@ -144,8 +164,10 @@ export async function syncReminderNotifications(
     const upcoming = data?.upcoming || []
     const now = Date.now()
     let scheduled = 0
+    const onPhone: string[] = []
 
     for (const r of upcoming) {
+      const before = scheduled
       // prefer explicit nudges; else a single notification at fire_at
       const points: { at: string; message: string }[] =
         (r.nudges && r.nudges.length)
@@ -173,8 +195,10 @@ export async function syncReminderNotifications(
           console.error('[notif] schedule failed', e)
         }
       }
+      if (scheduled > before) onPhone.push(r.id)
     }
     console.log(`[notif] synced ${scheduled} notification(s) from ${upcoming.length} reminders`)
+    await markOnDevice(onPhone)
     return scheduled
   } catch (e) {
     console.error('[notif] sync failed', e)

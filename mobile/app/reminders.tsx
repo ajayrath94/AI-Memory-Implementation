@@ -10,6 +10,7 @@ import { useTheme } from '../hooks/useTheme'
 import { useT } from '../hooks/useT'
 import { Colors, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
+import { syncReminderNotifications } from '../services/notificationService'
 
 interface Reminder {
   id:             string
@@ -69,6 +70,11 @@ export default function RemindersScreen() {
               await fetch(`${API_BASE}/reminders/${r.id}/cancel`, {
                 method: 'POST', headers: { 'X-API-Key': API_KEY },
               })
+              // Take its alert off the phone now. Cancelling only told the
+              // server, and the phone still rang at the old time unless the
+              // app happened to be reopened first.
+              syncReminderNotifications(userId, API_BASE, API_KEY)
+                .catch(e => console.error('[notif] resync failed', e))
               fetchReminders()
             } catch (err) { console.error('Cancel failed:', err) }
           },

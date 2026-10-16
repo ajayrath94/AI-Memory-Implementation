@@ -97,29 +97,10 @@ def run_scheduler_pass(dry_run: bool = False) -> dict:
     # so this runs deterministically every heartbeat.
     if not dry_run:
         try:
-            from memory.reminder_engine import get_due_reminders, mark_nudge_fired
-            from memory.proactive_log import log_decision
-            for _item in get_due_reminders():
-                _rem = _item["reminder"]
-                log_decision({
-                    "user_id": _rem["user_id"], "action": "REMINDER",
-                    "reason": "scheduled reminder due",
-                    "detail": _item.get("message") or _rem.get("what"),
-                    "priority": "HIGH",
-                })
-                mark_nudge_fired(_rem["id"], _item["nudge_index"])
-                try:
-                    from memory.push_sender import send_push
-                    from memory.persona_names import get_companion_name
-                    send_push(
-                        _rem["user_id"],
-                        title=get_companion_name(_rem["user_id"]),
-                        body=_item.get("message") or _rem.get("what") or "You have a reminder",
-                        data={"type": "reminder", "reminder_id": _rem["id"]},
-                    )
-                except Exception as _pe:
-                    print(f"[Push] reminder push failed: {_pe}")
-                print(f"[Reminder] fired nudge for {_rem.get('what')} ({_rem['user_id']})")
+            # One firing function for both paths (see reminder_engine.fire_due):
+            # it skips the push when the phone already holds the alert.
+            from memory.reminder_engine import fire_due
+            fire_due("Reminder")
         except Exception as _e:
             print(f"[Scheduler] reminder firing failed: {_e}")
     # Refresh observed routines. Cheap — no model calls, just timestamps —

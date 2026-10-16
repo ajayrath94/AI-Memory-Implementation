@@ -308,6 +308,86 @@ def mark_nudge_fired(reminder_id: str, nudge_index: int):
         print(f"[Reminder] mark-nudge-fired failed: {e}")
 
 
+def set_this_turn(user_id: str, tool_results: list) -> dict | None:
+    """The reminder Nancy's calendar tool made while writing this reply, as
+    the app's confirmation card — or None.
+
+    One request reached two writers: the calendar tool, which has the whole
+    conversation ("Durga Puja pandal darshan (Palace Grounds)", 13:00), and
+    the detector after it, which reads only her sentence ("Plan (to be
+    decided)", 12:00 for "dophar"). Their duplicate check compared fire times
+    exactly, and 12:00 is not 13:00. When the tool set one, it is THE
+    reminder and the detector is not asked.
+    """
+    for tr in tool_results or []:
+        if not isinstance(tr, dict) or tr.get("tool") != "add_calendar_event":
+            continue
+        r = (tr.get("data") or {}).get("reminder") if isinstance(tr.get("data"), dict) else None
+        if not r or not r.get("id"):
+            continue
+        at = r.get("fire_at")
+        try:
+            from routes.reminders import _fmt_local
+            from memory.time_context import get_user_timezone
+            local = _fmt_local(at, get_user_timezone(user_id))
+        except Exception:
+            local = at
+        what = r.get("what") or ""
+        return {
+            "id": r["id"], "what": what,
+            "fire_at_local": local, "fire_at_utc": at,
+            "nudge_count": 1,
+            "nudges": [{"at": at, "message": f"Yaad dila rahi hoon: {what}"}],
+            "status": r.get("status") or "pending",
+        }
+    return None
+
+
+def fire_due(tag: str = "Reminder") -> list:
+    """Fire every due nudge, once. The ONE place reminders are delivered from.
+
+    Two copies of this loop existed — the heartbeat (scheduler) and
+    /debug/fire-reminders — so a change to one missed the other.
+
+    A reminder whose alert is already on her phone (the app scheduled it
+    locally and said so: on_device_at) is marked fired and NOT pushed. Both
+    went out before: the phone's own alert and the server's push, for one
+    reminder. A reminder the phone never scheduled — the app was not opened
+    since it was set — is still pushed, so nothing goes undelivered.
+    """
+    from memory.proactive_log import log_decision
+    fired = []
+    for item in get_due_reminders():
+        rem = item["reminder"]
+        msg = item.get("message") or rem.get("what") or "You have a reminder"
+        try:
+            log_decision({
+                "user_id": rem["user_id"], "action": "REMINDER",
+                "reason": "scheduled reminder due",
+                "detail": msg, "priority": "HIGH",
+            })
+            mark_nudge_fired(rem["id"], item["nudge_index"])
+            if rem.get("on_device_at"):
+                by = "phone"
+                print(f"[{tag}] {rem.get('what')!r}: on her phone since "
+                      f"{rem['on_device_at']} — no push")
+            else:
+                by = "push"
+                try:
+                    from memory.push_sender import send_push
+                    from memory.persona_names import get_companion_name
+                    send_push(rem["user_id"], title=get_companion_name(rem["user_id"]),
+                              body=msg, data={"type": "reminder", "reminder_id": rem["id"]})
+                except Exception as pe:
+                    print(f"[{tag}] push failed for {rem.get('id')}: {pe}")
+            print(f"[{tag}] fired nudge for {rem.get('what')} ({rem['user_id']}) by {by}")
+            fired.append({"user_id": rem["user_id"], "what": rem.get("what"),
+                          "message": msg, "delivered_by": by})
+        except Exception as e:
+            print(f"[{tag}] failed for {rem.get('id')}: {e}")
+    return fired
+
+
 # backward-compat: some callers may still import mark_fired
 def mark_fired(reminder_id: str):
     from supabase_store import get_client

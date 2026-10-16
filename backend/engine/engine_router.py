@@ -1244,8 +1244,15 @@ async def process_input(text: str, model: str,
     # renders as a confirmation card. None when no reminder is present.
     reminder_event = None
     try:
-        from memory.reminder_engine import detect_and_store_reminder
-        reminder_event = detect_and_store_reminder(user_id, text, sid)
+        from memory.reminder_engine import detect_and_store_reminder, set_this_turn
+        # One writer per request: when Nancy's calendar tool set a reminder in
+        # this reply, that is the reminder, and the detector is not asked.
+        reminder_event = set_this_turn(user_id, tool_results)
+        if reminder_event:
+            print(f"[Reminder] set by the calendar tool this turn "
+                  f"({reminder_event['what']!r}) — detector skipped")
+        else:
+            reminder_event = detect_and_store_reminder(user_id, text, sid)
     except Exception as e:
         print(f"[Reminder] detect failed: {e}")
 
