@@ -195,6 +195,8 @@ def _extract_in_background(text: str, classified, user_id: str, session_id: str)
     after the reply, so her reply isn't slowed.
     """
     import threading
+    print(f"[Enrich] gates skipped ({getattr(classified, 'core', '?')}/"
+          f"{getattr(classified, 'core_priority', '?')}) -> background check")
 
     def _run():
         try:

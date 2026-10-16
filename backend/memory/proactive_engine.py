@@ -426,4 +426,33 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
         r = dict(r, action="SILENCE", reason="waiting_for_her",
                  detail="waiting_for_her", priority="medium")
     _REOPENED.pop(user_id, None)
+    if override_hour is None and isinstance(r, dict):
+        _trace(user_id, r)
     return r
+
+
+# One TRACE row each time the engine's decision for her changes, so a day
+# can be read back: "held as SILENCE:waiting_for_her from 07:02 to 14:28".
+# On 16 Oct that hold left no trace at all. Its own action, so nothing that
+# counts sent messages, offers or boundaries ever sees these rows.
+_LAST_DECISION = {}
+
+
+def _trace(user_id: str, r: dict):
+    key = (r.get("action"), r.get("reason"), str(r.get("detail") or ""))
+    if _LAST_DECISION.get(user_id) == key:
+        return
+    _LAST_DECISION[user_id] = key
+    try:
+        from datetime import datetime, timezone
+        from supabase_store import get_client
+        now = datetime.now(timezone.utc)
+        get_client().table("proactive_events").insert({
+            "user_id": user_id, "action": "TRACE",
+            "reason": f"{key[0]}:{key[1]}"[:200], "detail": key[2][:200],
+            "priority": "low", "slot": r.get("slot"), "mode": r.get("mode"),
+            "away_from_home": bool(r.get("away_from_home")), "outcome": "trace",
+            "idempotency_key": f"{user_id}:{now.isoformat()}:TRACE",
+        }).execute()
+    except Exception as e:
+        print(f"[Proactive] trace write failed: {e}")

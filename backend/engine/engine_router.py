@@ -318,6 +318,32 @@ def _food_notes(user_id: str) -> str:
 
 # ── Nancy system prompt ────────────────────────────────────────────────────────
 
+# Where a reply's time goes. On 16 Oct replies took 26-43 s from her message
+# being saved to Nancy's, and the app gave up at 60 s ("not delivered"), so
+# she sent the same message six times. One line per message, by stage.
+import time as _time
+_TICKS = {}
+
+
+def _tick_start():
+    _TICKS[threading.get_ident()] = [_time.perf_counter(), []]
+
+
+def _tick(label: str):
+    t = _TICKS.get(threading.get_ident())
+    if not t:
+        return
+    now = _time.perf_counter()
+    t[1].append(f"{label} {now - t[0]:.1f}s")
+    t[0] = now
+
+
+def _tick_done(user_id: str):
+    t = _TICKS.pop(threading.get_ident(), None)
+    if t:
+        print(f"[Timing] {user_id}: " + " | ".join(t[1]))
+
+
 def _build_system_prompt(classified, user_memory: Optional[str],
                           session_memory: Optional[str],
                           user_id: str = "") -> str:
@@ -806,6 +832,7 @@ async def process_input(text: str, model: str,
     corrected = False
     if text and text.strip():
         try:
+            _tick_start()
             from memory.meant import what_she_meant
             text, corrected = what_she_meant(user_id, text)
         except Exception as _me:
@@ -960,25 +987,34 @@ async def process_input(text: str, model: str,
         embedding=embedding,
     )
 
+    _tick("meant+classify+save")
     # 6. Auto-title on first message
     msgs = get_session_messages(sid)
     if len(msgs) == 1:
-        update_session_title(sid, _generate_title(text, classified))
+        threading.Thread(
+            target=lambda: update_session_title(sid, _generate_title(text, classified)),
+            daemon=True).start()
 
     # 7. Update cache + decay
     update_cache(classified, session_id=sid, model=model)
     register_pillars(classified, session_id=sid, model=model)
     track_decay()
 
-    # 7b. Enrich user profile from this message (pillar-driven, no extra API call)
-    try:
-        from memory.profile_enricher import enrich_profile_from_message
-        enrich_profile_from_message(text, classified, user_id, sid)
-    except Exception as e:
-        print(f"[ProfileEnricher] {e}")
-
-    # 8. Compress cache → STM with embedding
-    _compress_cache_to_stm(sid, embedding)
+    # 7b/8. Extraction and the old STM write run after the reply, not before
+    # it: Nancy's answer has the message itself, and these took model calls
+    # and writes she was made to wait for.
+    def _after(_t=text, _c=classified, _s=sid, _e=embedding):
+        try:
+            from memory.profile_enricher import enrich_profile_from_message
+            enrich_profile_from_message(_t, _c, user_id, _s)
+        except Exception as e:
+            print(f"[ProfileEnricher] {e}")
+        try:
+            _compress_cache_to_stm(_s, _e)
+        except Exception as e:
+            print(f"[Router] stm compress failed: {e}")
+    threading.Thread(target=_after, daemon=True).start()
+    _tick("cache")
 
     # 9. Cross-session user memory
     # Her message goes too, so the thread can be found by TAG rather than
@@ -1025,7 +1061,9 @@ async def process_input(text: str, model: str,
         context_messages.append({"role": "user", "content": _turn})
 
     # 12. Nancy system prompt
+    _tick("memory read")
     system_prompt = _build_system_prompt(classified, user_memory, session_memory, user_id)
+    _tick("prompt")
 
     # 13. Call AI
     reply, tool_results = _route(model, system_prompt, context_messages, user_id=user_id)
@@ -1062,6 +1100,8 @@ async def process_input(text: str, model: str,
     except Exception as e:
         print(f"[Reminder] detect failed: {e}")
 
+    _tick("reply+save")
+    _tick_done(user_id)
     return {
         "reply":         reply,
         "session_id":    sid,

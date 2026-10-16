@@ -215,6 +215,7 @@ def todays_ledger(user_id: str, exclude_id: Optional[str] = None) -> Dict:
         rows = (_db().table("proactive_events")
                 .select("id,action,created_at,delivered_at,outcome")
                 .eq("user_id", user_id)
+                .neq("action", "TRACE")     # engine trace rows are not messages
                 # Not filtered on delivered_at. A user with no push token —
                 # Kamala — never had anything marked delivered, so her ledger
                 # was permanently empty and she got MORE messages, not fewer.
