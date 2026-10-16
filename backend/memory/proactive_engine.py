@@ -114,6 +114,33 @@ def _awake_minutes(user_id: str, gap: int, hour) -> "int | None":
 # Messages that wait for her. Medicine and safety are never held back.
 _WAITS = ("GREETING", "BOUNDARY", "RECOMMENDATION", "EXPLORE_OFFER", "CHECK_IN")
 UNANSWERED_LIMIT = 2
+# Waiting must not mean silent forever. On 16 October she missed the greeting
+# and the puja boundary, and nothing else went out all day: no lunch, no
+# dinner, and the silence check-in itself was held back by the silence.
+# After this long with nothing delivered, one boundary or check-in may go.
+REOPEN_AFTER_MIN = 240
+_HOLD_WHEN_REOPENED = ("RECOMMENDATION", "EXPLORE_OFFER", "GREETING")
+_REOPENED = {}
+
+
+def _since_last_wait(user_id: str):
+    """Minutes since a message of the waiting kind was last delivered."""
+    try:
+        from datetime import datetime, timezone
+        from supabase_store import get_client
+        rows = (get_client().table("proactive_events").select("delivered_at")
+                .eq("user_id", user_id).in_("action", list(_WAITS))
+                .not_.is_("delivered_at", "null")
+                .order("delivered_at", desc=True).limit(1).execute()).data or []
+        if not rows:
+            return None
+        d = datetime.fromisoformat(str(rows[0]["delivered_at"]).replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - d).total_seconds() / 60
+    except Exception as e:
+        print(f"[Proactive] last-wait read failed: {e}")
+        return None
 
 
 def _unanswered(user_id: str, minutes_since_last) -> int:
@@ -138,7 +165,7 @@ def _unanswered(user_id: str, minutes_since_last) -> int:
         return 0
 
 
-def proactive_check(user_id: str, override_hour: int = None) -> dict:
+def _proactive_check_inner(user_id: str, override_hour: int = None) -> dict:
     from memory.time_context import time_context, _slot, _mode
     from memory.care_reader import get_due_schedule_items
 
@@ -254,13 +281,17 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
                         "unfamiliar place, night", "high")
 
     # ── 2.4 Waiting for her ──
-    # Two messages she has not answered is enough. Until she writes, only a
-    # tablet or a safety note goes out — another opener on top of two unread
-    # ones is talking at her, not with her.
-    waiting = (override_hour is None
-               and _unanswered(user_id, raw_gap) >= UNANSWERED_LIMIT)
-    if waiting:
-        return decision("SILENCE", "waiting_for_her")
+    # Two messages she has not answered is enough for OFFERS. Boundaries
+    # (breakfast, lunch, dinner follow-ups) and check-ins are her day, not
+    # an offer, and still go: on 16 Oct holding them meant no breakfast, no
+    # lunch and no silence check-in after she missed two messages.
+    _REOPENED.pop(user_id, None)
+    unanswered = _unanswered(user_id, raw_gap) if override_hour is None else 0
+    if unanswered >= UNANSWERED_LIMIT:
+        # Mark only; the wrapper below holds offers and greetings.
+        _REOPENED[user_id] = unanswered
+        print(f"[Proactive] {user_id}: {unanswered} unanswered -> "
+              f"offers held, boundaries/check-ins still go")
 
     # ── 2.5 Morning greeting ──
     # Before the silence check-in on purpose. Someone quiet since yesterday
@@ -382,3 +413,17 @@ def proactive_check(user_id: str, override_hour: int = None) -> dict:
 
     # ── 6. Nothing worth interrupting ──
     return decision("SILENCE", "nothing_pressing")
+
+
+def proactive_check(user_id: str, override_hour: int = None) -> dict:
+    """The check, with one rule on top: while she hasn't answered two
+    messages, offers and greetings are held (logged as SILENCE with its own
+    key); boundaries, check-ins and medicine go as usual."""
+    r = _proactive_check_inner(user_id, override_hour)
+    if user_id in _REOPENED and isinstance(r, dict) \
+            and r.get("action") in _HOLD_WHEN_REOPENED:
+        print(f"[Proactive] {user_id}: waiting for her, holding {r.get('action')}")
+        r = dict(r, action="SILENCE", reason="waiting_for_her",
+                 detail="waiting_for_her", priority="medium")
+    _REOPENED.pop(user_id, None)
+    return r

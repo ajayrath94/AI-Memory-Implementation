@@ -11,7 +11,7 @@ escalating from informational to gently urgent.
 Reminders are EXACT and costly-if-wrong, so this is a focused single call.
 """
 import os, json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 _MODEL = __import__("llm").model("claude-haiku-4-5-20251001")
@@ -254,6 +254,25 @@ def get_due_reminders(limit: int = 50) -> list:
 
     for r in rows:
         nudges = r.get("nudges") or []
+        if not nudges and r.get("fire_at"):
+            # Calendar reminders carry fire_at but no nudges, so they were
+            # never due: "Kisi ko phone karna" (14 Oct, 10:00) was still
+            # pending two days later. Treat fire_at as the one nudge.
+            try:
+                at = datetime.fromisoformat(str(r["fire_at"]).replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if at <= now - timedelta(hours=6):
+                # Too late to be useful; say so instead of firing it now.
+                try:
+                    db.table("reminders").update({"status": "missed"}).eq("id", r["id"]).execute()
+                    print(f"[Reminder] {r.get('what')!r} was due {r['fire_at']}, marked missed")
+                except Exception as e:
+                    print(f"[Reminder] mark-missed failed: {e}")
+                continue
+            if at <= now:
+                out.append({"reminder": r, "nudge_index": 0, "message": r.get("what")})
+            continue
         for i, n in enumerate(nudges):
             if n.get("fired"):
                 continue

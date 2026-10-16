@@ -92,3 +92,31 @@ def get_care_facts(user_id: str) -> dict:
         if r.get("type") == "dietary":
             out["dietary"].append(fact)
     return out
+
+
+# A dose was "due" anywhere within +/-45 minutes, so Thyronorm (07:00) went
+# at 06:16 and the after-breakfast BP tablet (08:00) at 07:16, before
+# breakfast. Medicines may now go at most 15 minutes early, and not early at
+# all when the note says "after" (after breakfast, after dinner).
+_MED_LEAD_MIN = 15
+_get_due_all = get_due_schedule_items
+
+
+def get_due_schedule_items(user_id: str, hour: int = None,
+                           window_min: int = 45, weekday: int = None) -> list:
+    items = _get_due_all(user_id, hour, window_min, weekday)
+    ist = timezone(timedelta(hours=5, minutes=30))
+    now = datetime.now(ist)
+    h = now.hour if hour is None else hour
+    now_min = h * 60 + now.minute if h == now.hour else h * 60
+    keep = []
+    for r in items:
+        if isinstance(r, dict) and r.get("type") == "medication":
+            hh, mm = _parse_hhmm(r.get("time_of_day", ""))
+            if hh >= 0:
+                lead = 0 if "after" in str(r.get("notes") or "").lower() else _MED_LEAD_MIN
+                if now_min < hh * 60 + mm - lead:
+                    continue
+        keep.append(r)
+    return keep
+

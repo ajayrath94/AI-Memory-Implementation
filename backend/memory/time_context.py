@@ -41,14 +41,29 @@ def get_user_timezone(user_id: str) -> str:
 
 
 def _last_interaction(user_id: str):
-    """Most recent session activity — the silence signal. Returns aware dt or None."""
+    """When SHE last wrote — the silence signal. Returns aware dt or None.
+
+    Was the session's updated_at, which Nancy's own messages and chat-end
+    work also move. On 16 Oct she had not written since 18:07 the day
+    before, yet at 14:44 the gap read under 15 minutes: "chatting_now" held
+    every offer, the unanswered count stayed low, and the silence check-in
+    never came.
+    """
     try:
         from supabase_store import get_client
-        rows = (get_client().table("sessions").select("updated_at")
+        db = get_client()
+        sess = [r["id"] for r in (db.table("sessions").select("id")
                 .eq("user_id", user_id).order("updated_at", desc=True)
-                .limit(1).execute()).data or []
-        if rows and rows[0].get("updated_at"):
-            return datetime.fromisoformat(rows[0]["updated_at"].replace("Z", "+00:00"))
+                .limit(30).execute()).data or []]
+        if not sess:
+            return None
+        rows = (db.table("messages").select("timestamp")
+                .in_("session_id", sess).eq("role", "user")
+                .order("timestamp", desc=True).limit(1).execute()).data or []
+        if rows and rows[0].get("timestamp"):
+            d = datetime.fromisoformat(str(rows[0]["timestamp"]).replace("Z", "+00:00"))
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        return None
     except Exception as e:
         print(f"[TimeContext] last-interaction fetch failed: {e}")
     return None
