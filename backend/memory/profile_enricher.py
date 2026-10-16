@@ -183,6 +183,31 @@ Return ONLY the JSON."""
         return {}
 
 
+def _extract_in_background(text: str, classified, user_id: str, session_id: str):
+    """For messages the gates skip, let the extraction model judge them.
+
+    "R.D. Burman mujhe bahut pasand hain" (16 Oct, said three times) scored
+    ENTERTAINMENT 0.714 against a 0.73 cut-off, fell back to GENERAL/LOW, and
+    both gates dropped it, so no interest was made. The pillar and the
+    classifier's emotion (LOVE at LOW; OPTIMISM for "Aaj mere din mein kya
+    hai?") can't tell a stated liking from small talk. The extraction model
+    can: it returns likes/dislikes with their sentiment, or nothing. Run
+    after the reply, so her reply isn't slowed.
+    """
+    import threading
+
+    def _run():
+        try:
+            props = _extract_propositions(text, user_id)
+            if props:
+                record_propositions(props, classified, user_id, session_id)
+                print(f"[Propositions] background: {len(props)} from a gated message")
+        except Exception as e:
+            print(f"[Propositions] background extraction failed: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _should_run_haiku(classified) -> tuple:
     """
     Decide if Haiku extraction is worth running.
@@ -396,6 +421,7 @@ def enrich_profile_from_message(text: str, classified, user_id: str, session_id:
     _SELF_DISCLOSURE = {"FAMILY", "HEALTH_WELLNESS", "ENTERTAINMENT",
                         "CAREER_GOAL", "ASPIRATIONS", "FINANCE"}
     if priorities == {"LOW"} and classified.core not in _SELF_DISCLOSURE:
+        _extract_in_background(text, classified, user_id, session_id)
         return
 
     updates = {}
@@ -421,6 +447,8 @@ def enrich_profile_from_message(text: str, classified, user_id: str, session_id:
 
     # ── Path 2: Haiku micro-extraction ────────────────────────────────────────
     should_run, context_hint = _should_run_haiku(classified)
+    if not should_run:
+        _extract_in_background(text, classified, user_id, session_id)
     if should_run:
         # NEW: proposition-based extraction for clusters/events (subject-relation-
         # object with correction-detection, coreference, pillar-by-type). Replaces
