@@ -391,6 +391,12 @@ Update the memory profile by:
    no place in her family, and reading itself back as a relative is how a
    companion starts claiming to be one.
 
+10. LEAVING OUT WHERE THEY LIVE OR ARE STAYING — the city, the area, the
+   house. Their profile keeps that, current, from what they say ("main
+   Bengaluru mein hoon", "wapas aa gayi"); a copy here goes stale the day they
+   move. Remove it from the existing memory too. Being away from home and
+   missing it is a feeling and may stay; the address may not.
+
 Write a comprehensive but concise profile (5-8 sentences max).
 Write in third person. Be specific with names, preferences, and details.
 

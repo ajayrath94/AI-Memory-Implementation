@@ -568,7 +568,7 @@ Return ONLY the JSON, no explanation."""
             text = text.split("```")[1].split("```")[0].strip()
         extracted = json.loads(text)
         print(f"[Profile] Extracted profile data from session {session_id[:8]}")
-        return extracted
+        return _only_stated(extracted, convo_text, user_id)
     except json.JSONDecodeError as e:
         print(f"[Profile] JSON parse failed: {e}")
         return {}
@@ -576,6 +576,102 @@ Return ONLY the JSON, no explanation."""
         print(f"[Profile] Extraction failed: {e}")
         return {}
 
+
+
+# Not checked: how she writes is read from her messages by design, not stated.
+_NOT_CLAIMS = {"language_pref"}
+
+
+def _new_values(extracted, existing, path=""):
+    """(path, value) for each value the save would actually write: a scalar
+    where nothing is stored yet (the merge never overwrites one), a list item
+    not already in the stored list."""
+    out = []
+    if not isinstance(extracted, dict):
+        return out
+    for k, v in extracted.items():
+        if k in _NOT_CLAIMS or v in (None, "", [], {}):
+            continue
+        here = f"{path}.{k}" if path else k
+        old = (existing or {}).get(k) if isinstance(existing, dict) else None
+        if isinstance(v, dict):
+            out += _new_values(v, old if isinstance(old, dict) else {}, here)
+        elif isinstance(v, list):
+            have = {str(x).strip().lower() for x in (old if isinstance(old, list) else [])}
+            out += [(here, x) for x in v
+                    if str(x).strip() and str(x).strip().lower() not in have]
+        elif not old:
+            out.append((here, v))
+    return out
+
+
+def _drop_value(extracted: dict, path: str, value) -> None:
+    keys = path.split(".")
+    d = extracted
+    for k in keys[:-1]:
+        d = d.get(k) if isinstance(d, dict) else None
+        if not isinstance(d, dict):
+            return
+    last = keys[-1]
+    if isinstance(d.get(last), list):
+        d[last] = [x for x in d[last] if x != value]
+    elif d.get(last) == value:
+        d[last] = ""
+
+
+def _only_stated(extracted: dict, her_words: str, user_id: str) -> dict:
+    """Keep only what she actually said. One model call over the values this
+    save would add, checked against her statements in this chat.
+
+    The extractor is told never to hedge and to leave a field empty when she
+    did not say it, and still wrote "Occupation: likely retired or pensioner"
+    and "Lives with or near family (son Shubham)" — and a scalar, once stored,
+    is never overwritten, so a guess stayed in every prompt for good. What she
+    states ("main Shubham ke saath rehti hoon") passes and is saved as before.
+
+    If the check cannot be made, nothing new is saved this time: a missed fact
+    comes back the next time she says it, a guess would stay.
+    """
+    if not isinstance(extracted, dict) or not extracted:
+        return extracted or {}
+    try:
+        existing = get_user_profile(user_id) or {}
+    except Exception:
+        existing = {}
+    items = _new_values(extracted, existing)
+    if not items:
+        return extracted
+    listing = "\n".join(f"{i + 1}. {p}: {json.dumps(v, ensure_ascii=False)}"
+                         for i, (p, v) in enumerate(items))
+    try:
+        from llm import ask
+        ans = (ask(f"""An elderly woman said these things to her companion, in her own words:
+{her_words}
+
+Facts proposed for her profile:
+{listing}
+
+For each, did SHE state it — that value, or plainly the same thing in other
+words or another language? A guess is NO: "likely retired", "lives near
+family", a religion read from a greeting, a job read from her age, a relation
+read from a name. A fact about someone else is NO unless she said it.
+
+Answer with the numbers she stated, comma-separated, or NONE.""", max_tokens=60) or "").upper()
+    except Exception as e:
+        print(f"[Profile] stated-check failed, nothing new saved: {e}")
+        return {}
+    keep = set()
+    for tok in ans.replace(",", " ").split():
+        d = "".join(ch for ch in tok if ch.isdigit())
+        if d and 1 <= int(d) <= len(items):
+            keep.add(int(d) - 1)
+    dropped = [f"{p}={v}" for i, (p, v) in enumerate(items) if i not in keep]
+    for i, (p, v) in enumerate(items):
+        if i not in keep:
+            _drop_value(extracted, p, v)
+    if dropped:
+        print(f"[Profile] not stated by her, not saved: {dropped}")
+    return extracted
 
 
 # ── Update profile after session ───────────────────────────────────────────────
