@@ -19,6 +19,7 @@ The summary compounds with every session.
 Gets smarter and richer over time.
 """
 
+import json
 import os
 from typing import Optional, List
 from dotenv import load_dotenv
@@ -84,8 +85,12 @@ def summarize_session(messages: List[dict], user_id: str = "") -> str:
         return ""
 
     # Format messages for summarization
+    # Whose words are whose. Labelled USER/ASSISTANT with no rule about it,
+    # the companion's lines became facts about her: it said "aap Mayur Vihar
+    # mein..." once, and she "resided near Mayur Vihar" from then on.
     conversation = "\n".join(
-        f"{m['role'].upper()}: {m['content'][:300]}"  # truncate long messages
+        (f"SHE: {m['content'][:300]}" if m.get("role") == "user"
+         else f"COMPANION (context only): {m['content'][:300]}")
         for m in messages
         if not m.get("is_summary", False)
     )
@@ -126,6 +131,10 @@ waiting tomorrow, for an appointment that had already been cancelled.
   cannot be cancelled.
 - A standing pattern is fine ("often asks for medicine reminders"). A specific
   upcoming event is not.
+
+ONLY WHAT SHE SAID IS A FACT ABOUT HER. The companion's lines are there for
+context: a place, a plan, a guess or a detail the companion mentioned is not
+hers unless she said it or plainly agreed to it.
 
 Keep it to 3-5 sentences. Write in third person about the user.
 
@@ -353,10 +362,12 @@ NEW SESSION SUMMARY:
 {new_session_summary}
 
 Update the memory profile by:
-1. Keeping all important existing facts
+1. Keeping existing facts that still hold
 2. Adding new information from the latest session
 3. Updating any facts that have changed
-4. Noting patterns (e.g. "mentions knee pain frequently")
+4. Noting a pattern only when the new session shows it AGAIN. Never infer one:
+   asking the date of an outing is not "confusion about recent events", and
+   saying "thoda tension hai" once is not "occasional anxiety".
 5. Removing outdated or contradicted information
 6. STRIPPING relative time. Today is {today}. The existing memory was written on
    earlier days, so any "tomorrow", "kal", "next week", "in 5 minutes" in it is
@@ -389,8 +400,68 @@ Updated memory profile:"""
         return _call_haiku(prompt, max_tokens=400)
     except Exception as e:
         print(f"[Summarizer] Recursive summary failed: {e}")
-        # Fallback: append new to existing
-        return f"{existing_memory}\n\nLatest session: {new_session_summary}"
+        # Keep what was there. Gluing the new session onto the old text made
+        # a profile that only ever grew, with nothing reconciled.
+        return existing_memory
+
+
+# ── The check: every claim against what is actually stored ─────────────────
+
+def check_summary(summary: str, evidence: str) -> Optional[dict]:
+    """Keep only what the evidence supports. Returns {"summary", "dropped"},
+    or None when the check could not be made (the caller keeps the old one).
+
+    The rolling profile was rewritten after every conversation from the
+    previous profile and the new session, with nothing outside itself to
+    check against — so a wrong claim, once in, was copied forward forever:
+    "Mayur Vihar I", "connections to Mumbai and Delhi", "occasional confusion
+    about recent events". The evidence is her own words and what memory
+    holds about her; the previous profile is NOT evidence, because that is
+    how drift survives.
+    """
+    if not (summary or "").strip() or not (evidence or "").strip():
+        return None
+    prompt = f"""This is a memory profile of an elderly woman, written by an AI companion:
+
+PROFILE:
+{summary}
+
+EVIDENCE — her own words and what is stored about her:
+{evidence[:16000]}
+
+Check every claim in the profile against the evidence.
+- Keep a claim when the evidence supports it (her words, a stored concept,
+  her declared profile, a day note).
+- Drop a claim the evidence does not support: a place, a person, a condition
+  or a habit that appears nowhere in it.
+- Drop an inference that goes beyond what she said: "occasional confusion",
+  "anxiety", "loneliness" — unless she said it herself.
+- In a list, judge each item on its own: drop only the items nothing
+  supports, keep the rest ("Kishore Kumar, Pankaj Udhas" -> keep Kishore
+  Kumar if he is stored, even when Pankaj Udhas is not).
+- NEVER ADD anything that is not already in the profile, even if the
+  evidence shows it is true. This removes; it does not write.
+- Keep its style, third person, 5-8 sentences or fewer.
+
+Return JSON only:
+{{"summary": "the profile with only supported claims",
+  "dropped": ["each claim removed, a few words each"]}}"""
+    try:
+        raw = _call_haiku(prompt, max_tokens=900)
+        i, j = raw.find("{"), raw.rfind("}")
+        d = json.loads(raw[i:j + 1]) if i >= 0 else None
+    except Exception as e:
+        print(f"[Summarizer] check failed: {e}")
+        return None
+    if not d or not str(d.get("summary") or "").strip():
+        return None
+    out = str(d["summary"]).strip()
+    # A check that throws most of the profile away is more likely broken
+    # than right; keep the old one and say so.
+    if len(out) < 0.3 * len(summary):
+        print(f"[Summarizer] check kept too little ({len(out)} of {len(summary)} chars); not used")
+        return None
+    return {"summary": out, "dropped": [str(x) for x in (d.get("dropped") or [])][:30]}
 
 
 # ── Dominant pillars extractor ─────────────────────────────────────────────────

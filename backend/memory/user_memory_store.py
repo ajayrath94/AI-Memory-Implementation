@@ -424,6 +424,90 @@ def _her_days(user_id: str, messages: list) -> list:
     return [(k, groups[k]["said_on"], groups[k]["msgs"]) for k in order]
 
 
+def summary_evidence(user_id: str, days: int = 90) -> str:
+    """What the profile is checked against: her own words (what she meant,
+    never the companion's lines), the subjects she has talked about, her
+    concepts, her declared profile, and the day notes and month lines. NOT
+    the previous profile — checking a summary against itself is how a wrong
+    claim survives.
+
+    Each part has its own share. Assembled in one order and cut at a limit,
+    her own words came last and were cut off — and "Kishore Kumar" and
+    "sabudana", both hers, were dropped as unsupported.
+    """
+    from datetime import datetime, timedelta, timezone
+    db = get_client()
+    since_d = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+    since_t = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    parts = []
+
+    def _cap(t, n):
+        return t if len(t) <= n else t[:n] + " …"
+
+    # Her own words first, most recent first.
+    try:
+        sids = [s["id"] for s in (db.table("sessions").select("id").eq("user_id", user_id)
+                                  .gte("updated_at", since_t).execute()).data or []]
+        said = []
+        for i in range(0, len(sids), 50):
+            for m in (db.table("messages").select("content,meant,timestamp")
+                      .in_("session_id", sids[i:i + 50]).eq("role", "user")
+                      .execute()).data or []:
+                said.append((str(m.get("timestamp")), (m.get("meant") or m.get("content") or "")[:200]))
+        said.sort(reverse=True)
+        parts.append("HER OWN WORDS (most recent first): "
+                     + _cap(" | ".join(w for _t, w in said), 6000))
+    except Exception as e:
+        print(f"[Evidence] messages: {e}")
+    # Every subject she has talked about, with how many days.
+    try:
+        from collections import Counter
+        sm = (db.table("subject_mentions").select("subject,junk").eq("user_id", user_id)
+              .limit(3000).execute()).data or []
+        c = Counter(str(r["subject"]).strip() for r in sm if not r.get("junk") and r.get("subject"))
+        parts.append("SUBJECTS SHE TALKED ABOUT (days): "
+                     + _cap("; ".join(f"{k} ({n})" for k, n in c.most_common()), 2000))
+    except Exception as e:
+        print(f"[Evidence] subjects: {e}")
+    try:
+        cl = (db.table("interest_clusters").select("label,kind,status,attributes")
+              .eq("user_id", user_id).neq("kind", "event").limit(300).execute()).data or []
+        lines = []
+        for c in cl:
+            if c.get("status") == "merged":
+                continue
+            a = c.get("attributes") if isinstance(c.get("attributes"), dict) else {}
+            extra = ", ".join(x for x in (a.get("relation"), a.get("english")) if x)
+            lines.append(f"{c['label']} ({c.get('kind')}{', ' + extra if extra else ''})")
+        parts.append("STORED CONCEPTS: " + _cap("; ".join(lines), 2500))
+    except Exception as e:
+        print(f"[Evidence] concepts: {e}")
+    try:
+        from memory.profile_store import get_user_profile
+        p = get_user_profile(user_id) or {}
+        keep = {k: p.get(k) for k in ("name", "location", "current_location",
+                                       "home_location", "family", "health",
+                                       "food", "life_context", "cultural_context")
+                if p.get(k)}
+        parts.append("DECLARED PROFILE: " + _cap(json.dumps(keep, ensure_ascii=False), 2000))
+    except Exception as e:
+        print(f"[Evidence] profile: {e}")
+    try:
+        notes = (db.table("memory_stm").select("happened_on,text").eq("user_id", user_id)
+                 .gte("happened_on", since_d).order("happened_on", desc=True)
+                 .execute()).data or []
+        parts.append("DAY NOTES (most recent first): "
+                     + _cap(" | ".join(f"{r.get('happened_on')}: {r.get('text')}" for r in notes), 2500))
+        months = (db.table("memory_ltm").select("period,text").eq("user_id", user_id)
+                  .execute()).data or []
+        if months:
+            parts.append("MONTHS: " + _cap(" | ".join(f"{str(r.get('period'))[:7]}: {r.get('text')}"
+                                                     for r in months), 1000))
+    except Exception as e:
+        print(f"[Evidence] notes: {e}")
+    return "\n".join(parts)
+
+
 def process_session_end(session_id: str, user_id: str = "default"):
     """
     Called when a session ends:
@@ -675,7 +759,25 @@ def process_session_end(session_id: str, user_id: str = "default"):
         session_count=new_count,
     )
 
-    # 10. Extract key facts
+    # 9b. Checked before it is kept: every claim against what is stored about
+    # her (summary_evidence). Unsupported claims are dropped; if the check
+    # cannot be made, the old profile stays rather than an unchecked new one.
+    try:
+        from memory.summarizer import check_summary
+        _chk = check_summary(new_summary, summary_evidence(user_id))
+        if _chk:
+            if _chk["dropped"]:
+                print(f"[UserMemory] summary check dropped: {_chk['dropped']}")
+            new_summary = _chk["summary"]
+        elif existing_summary:
+            print("[UserMemory] summary check unavailable; keeping the previous profile")
+            new_summary = existing_summary
+    except Exception as e:
+        print(f"[UserMemory] summary check failed: {e}")
+        if existing_summary:
+            new_summary = existing_summary
+
+    # 10. Extract key facts — from the checked profile only
     key_facts = extract_key_facts(new_summary)
 
     # 11. Update personal centroids (cross-session personalization)
