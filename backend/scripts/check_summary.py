@@ -11,6 +11,7 @@ from the checked text.
     PYTHONPATH=. railway run python3 scripts/check_summary.py default          # preview
     PYTHONPATH=. railway run python3 scripts/check_summary.py default --go     # write THAT preview, with a backup
     PYTHONPATH=. railway run python3 scripts/check_summary.py --undo backups/summary_default_....json
+    PYTHONPATH=. railway run python3 scripts/check_summary.py --set default /tmp/profile.txt   # a profile a person wrote
 """
 import json
 import os
@@ -30,6 +31,25 @@ def main():
         db.table("user_memory").update({"summary": b["summary"], "key_facts": b["key_facts"]}) \
             .eq("user_id", b["user_id"]).execute()
         print(f"Restored the previous summary and key facts for {b['user_id']}.")
+        return
+
+    if "--set" in sys.argv:
+        # Write a profile written and approved by a person, from a text file.
+        uid = sys.argv[sys.argv.index("--set") + 1]
+        text = open(sys.argv[sys.argv.index("--set") + 2]).read().strip()
+        from memory.summarizer import extract_key_facts
+        row = (db.table("user_memory").select("summary,key_facts").eq("user_id", uid)
+               .limit(1).execute()).data or [{}]
+        os.makedirs("backups", exist_ok=True)
+        path = f"backups/summary_{uid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        json.dump({"user_id": uid, "summary": row[0].get("summary"),
+                   "key_facts": row[0].get("key_facts") or []}, open(path, "w"),
+                  ensure_ascii=False, indent=1)
+        facts = extract_key_facts(text)
+        db.table("user_memory").update({"summary": text, "key_facts": facts}).eq("user_id", uid).execute()
+        print("Written.\n  key facts: " + "; ".join(facts))
+        print(f"Backup: {os.path.abspath(path)}")
+        print(f"Undo: PYTHONPATH=. railway run python3 scripts/check_summary.py --undo {path}")
         return
 
     args = [a for a in sys.argv[1:] if not a.startswith("--")]

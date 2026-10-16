@@ -497,6 +497,71 @@ Use only the facts listed — add nothing, not even true things. Third person,
     return {"summary": out, "dropped": dropped[:40], "kept": kept[:60]}
 
 
+def check_new_claims(previous: str, new: str, evidence: str) -> Optional[dict]:
+    """At each chat's end: check only what the rewrite ADDED.
+
+    Re-checking the whole profile every time wore true facts away — one run
+    dropped her medicines, her home and her singers because the model's
+    quotes did not match exactly, and every run is another chance to drop
+    something. The previous profile has been checked already; what can bring
+    drift in is a claim that was not in it. So: list the claims the new
+    profile adds, and keep each only if the model can point to this chat's
+    words or what is stored; then rewrite without the ones it cannot.
+    Returns {"summary", "dropped", "kept"}, or None (caller keeps previous).
+    """
+    if not (new or "").strip():
+        return None
+    if not (previous or "").strip():
+        return {"summary": new, "dropped": [], "kept": []}
+    try:
+        raw = _call_haiku(f"""Two versions of a memory profile of an elderly woman.
+
+PREVIOUS (already checked):
+{previous}
+
+NEW (rewritten after her latest conversation):
+{new}
+
+EVIDENCE — her own words and what is stored about her:
+{(evidence or "")[:16000]}
+
+List every claim the NEW profile makes that the PREVIOUS one did not — one
+fact each, every list item separately. For each, is it supported by the
+evidence: something SHE said (not the companion), a stored concept, or her
+declared profile? An inference about her mind or mood ("confusion",
+"anxiety", "loneliness") is supported only if she said it herself.
+
+Return JSON only:
+[{{"claim": "...", "supported": true, "because": "what in the evidence, briefly"}}]
+An empty list if nothing was added.""", max_tokens=1200)
+        items = _first_json(raw)
+    except Exception as e:
+        print(f"[Summarizer] new-claim check failed: {e}")
+        return None
+    if not isinstance(items, list):
+        return None
+    dropped = [str(x.get("claim")) for x in items
+               if isinstance(x, dict) and x.get("claim") and not x.get("supported")]
+    kept = [str(x.get("claim")) for x in items
+            if isinstance(x, dict) and x.get("claim") and x.get("supported")]
+    if not dropped:
+        return {"summary": new, "dropped": [], "kept": kept}
+    try:
+        out = _call_haiku(f"""Remove these claims from the profile below, and change nothing else:
+{chr(10).join("- " + d for d in dropped)}
+
+PROFILE:
+{new}
+
+Just the profile.""", max_tokens=600).strip()
+    except Exception as e:
+        print(f"[Summarizer] removal failed: {e}")
+        return None
+    if not out or len(out) < 0.5 * len(new):
+        return None
+    return {"summary": out, "dropped": dropped, "kept": kept}
+
+
 # ── Dominant pillars extractor ─────────────────────────────────────────────────
 
 def extract_dominant_pillars(messages: List[dict]) -> List[str]:

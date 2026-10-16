@@ -763,11 +763,14 @@ def process_session_end(session_id: str, user_id: str = "default"):
     # her (summary_evidence). Unsupported claims are dropped; if the check
     # cannot be made, the old profile stays rather than an unchecked new one.
     try:
-        from memory.summarizer import check_summary
-        _chk = check_summary(new_summary, summary_evidence(user_id))
+        # Only what this rewrite ADDED is checked (check_new_claims): the
+        # previous profile was checked already, and re-checking it every
+        # chat wore true facts away.
+        from memory.summarizer import check_new_claims
+        _chk = check_new_claims(existing_summary or "", new_summary, summary_evidence(user_id))
         if _chk:
             if _chk["dropped"]:
-                print(f"[UserMemory] summary check dropped: {_chk['dropped']}")
+                print(f"[UserMemory] summary check dropped new claims: {_chk['dropped']}")
             new_summary = _chk["summary"]
         elif existing_summary:
             print("[UserMemory] summary check unavailable; keeping the previous profile")
