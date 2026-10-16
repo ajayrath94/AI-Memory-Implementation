@@ -1248,9 +1248,15 @@ async def process_input(text: str, model: str,
         # One writer per request: when Nancy's calendar tool set a reminder in
         # this reply, that is the reminder, and the detector is not asked.
         reminder_event = set_this_turn(user_id, tool_results)
+        _cal = {tr.get("tool") for tr in (tool_results or []) if isinstance(tr, dict)} \
+            & {"add_calendar_event", "change_calendar_event"}
         if reminder_event:
             print(f"[Reminder] set by the calendar tool this turn "
                   f"({reminder_event['what']!r}) — detector skipped")
+        elif _cal:
+            # The calendar handled this message (a plan saved, called off or
+            # moved); "woh reminder hata do" is not a request for a new one.
+            print(f"[Reminder] calendar changed this turn ({', '.join(sorted(_cal))}) — detector skipped")
         else:
             reminder_event = detect_and_store_reminder(user_id, text, sid)
     except Exception as e:

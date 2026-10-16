@@ -21,6 +21,7 @@ interface CalItem {
   notes?:    string | null
   dose?:     string | null
   status?:   string | null
+  reminder?: boolean          // an event that will ring (its reminder is pending)
 }
 interface CalResponse {
   user_id: string
@@ -123,20 +124,56 @@ export default function CalendarScreen() {
 
   const onRefresh = () => { setRefreshing(true); fetchCalendar() }
 
-  // group items by day
-  const groups: { label: string; key: string; items: CalItem[] }[] = []
+  // Group by day. Her routine (only today's comes from the server) is kept
+  // apart from what is planned, so a day reads as its few real things first.
+  const groups: { label: string; key: string; planned: CalItem[]; routine: CalItem[] }[] = []
   if (data?.items) {
     const byDay = new Map<string, CalItem[]>()
     for (const it of data.items) {
+      if (isNaN(istDate(it.at).getTime())) continue   // unreadable time: never a "NaN" heading
       const k = dayKey(it.at)
       if (!byDay.has(k)) byDay.set(k, [])
       byDay.get(k)!.push(it)
     }
-    const sortedKeys = [...byDay.keys()].sort()
-    for (const k of sortedKeys) {
+    for (const k of [...byDay.keys()].sort()) {
       const items = byDay.get(k)!.sort((a, b) => a.at.localeCompare(b.at))
-      groups.push({ key: k, label: dayLabel(items[0].at), items })
+      groups.push({
+        key: k, label: dayLabel(items[0].at),
+        planned: items.filter(i => i.kind !== 'routine'),
+        routine: items.filter(i => i.kind === 'routine'),
+      })
     }
+  }
+
+  const card = (it: CalItem) => {
+    const cs = catStyle(it)
+    const rings = it.kind === 'reminder' || it.reminder
+    return (
+      <View
+        key={`${it.kind}-${it.id}-${it.at}`}
+        style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}
+      >
+        <View style={[styles.stripe, { backgroundColor: cs.color }]} />
+        <View style={styles.timeCol}>
+          <Text style={[styles.timeText, { color: cs.color }]}>{istTime(it.at)}</Text>
+          <Ionicons name={cs.icon as any} size={18} color={cs.color} style={{ marginTop: 6 }} />
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>{it.title}</Text>
+          {it.location ? (
+            <Text style={[styles.cardMeta, { color: theme.textMuted }]}>📍 {it.location}</Text>
+          ) : null}
+          {rings ? (
+            <View style={styles.bellRow}>
+              <Ionicons name="notifications-outline" size={15} color={CATEGORY.reminder.color} />
+              <Text style={[styles.cardMeta, { color: CATEGORY.reminder.color, marginTop: 0, marginLeft: 4 }]}>
+                Yaad dilaungi
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    )
   }
 
   return (
@@ -178,34 +215,20 @@ export default function CalendarScreen() {
             groups.map((g) => (
               <View key={g.key} style={styles.dayGroup}>
                 <Text style={[styles.dayLabel, { color: theme.textSecond }]}>{g.label}</Text>
-                {g.items.map((it) => {
-                  const cs = catStyle(it)
-                  return (
-                    <View
-                      key={`${it.kind}-${it.id}-${it.at}`}
-                      style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}
-                    >
-                      <View style={[styles.stripe, { backgroundColor: cs.color }]} />
-                      <View style={[styles.cardIcon, { backgroundColor: cs.color + '22' }]}>
-                        <Ionicons name={cs.icon as any} size={22} color={cs.color} />
+                {g.planned.map(card)}
+                {g.routine.length ? (
+                  <View style={[styles.routineBox, { borderColor: theme.border }]}>
+                    <Text style={[styles.routineHead, { color: theme.textMuted }]}>Roz ka din</Text>
+                    {g.routine.map((it) => (
+                      <View key={`r-${it.id}-${it.at}`} style={styles.routineRow}>
+                        <Text style={[styles.routineTime, { color: catStyle(it).color }]}>{istTime(it.at)}</Text>
+                        <Text style={[styles.routineTitle, { color: theme.text }]}>
+                          {it.title}{it.dose ? <Text style={{ color: theme.textMuted }}>{`  ·  ${it.dose}`}</Text> : null}
+                        </Text>
                       </View>
-                      <View style={styles.cardBody}>
-                        <Text style={[styles.cardTitle, { color: theme.text }]}>{it.title}</Text>
-                        {it.location ? (
-                          <Text style={[styles.cardMeta, { color: theme.textMuted }]}>
-                            📍 {it.location}
-                          </Text>
-                        ) : null}
-                        {it.dose ? (
-                          <Text style={[styles.cardMeta, { color: theme.textMuted }]}>
-                            {it.dose}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <Text style={[styles.cardTime, { color: cs.color }]}>{istTime(it.at)}</Text>
-                    </View>
-                  )
-                })}
+                    ))}
+                  </View>
+                ) : null}
               </View>
             ))
           )}
@@ -236,23 +259,31 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   card: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'flex-start',
     borderRadius: Radius.lg, borderWidth: 1,
-    padding: Spacing.lg, marginBottom: Spacing.md,
+    paddingVertical: Spacing.lg, paddingRight: Spacing.lg, paddingLeft: Spacing.md,
+    marginBottom: Spacing.md,
     overflow: 'hidden',
   },
   stripe: {
     position: 'absolute', left: 0, top: 0, bottom: 0, width: 5,
   },
-  cardIcon: {
-    width: 44, height: 44, borderRadius: Radius.md,
-    alignItems: 'center', justifyContent: 'center', marginRight: Spacing.md,
-    marginLeft: Spacing.xs,
+  // The time first and large: it is what she looks for. It sat at the right
+  // edge and squeezed the title into a column five words wide.
+  timeCol:   { width: 84, marginLeft: Spacing.xs, alignItems: 'flex-start' },
+  timeText:  { ...Typography.heading, fontWeight: '700' },
+  cardBody:  { flex: 1, marginLeft: Spacing.sm },
+  cardTitle: { ...Typography.bodyLg, fontWeight: '600', lineHeight: 26 },
+  cardMeta:  { ...Typography.label, marginTop: 4 },
+  bellRow:   { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  routineBox: {
+    borderWidth: 1, borderRadius: Radius.lg, borderStyle: 'dashed',
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg, marginTop: Spacing.xs,
   },
-  cardBody:  { flex: 1 },
-  cardTitle: { ...Typography.bodyLg, fontWeight: '600' },
-  cardMeta:  { ...Typography.label, marginTop: 3 },
-  cardTime:  { ...Typography.heading, marginLeft: Spacing.sm },
+  routineHead:  { ...Typography.label, marginBottom: Spacing.xs, textTransform: 'uppercase', letterSpacing: 1 },
+  routineRow:   { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 6 },
+  routineTime:  { ...Typography.body, fontWeight: '600', width: 84 },
+  routineTitle: { ...Typography.body, flex: 1, marginLeft: Spacing.sm },
   emptyWrap: { alignItems: 'center', paddingTop: 80, paddingHorizontal: Spacing.xl },
   emptyEmoji:{ fontSize: 48, marginBottom: Spacing.lg },
   emptyText: { ...Typography.bodyLg, textAlign: 'center', lineHeight: 28 },

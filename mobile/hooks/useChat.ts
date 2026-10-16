@@ -1,8 +1,27 @@
 import { useCallback } from 'react'
 import { useAppStore } from '../store/appStore'
 import { sendMessage } from '../services/api'
-import { scheduleReminderNudges } from '../services/notificationService'
+import { scheduleReminderNudges, syncReminderNotifications } from '../services/notificationService'
 import { API_BASE, API_KEY, DEFAULT_MODEL } from '../constants'
+
+/**
+ * What a reply did to her reminders, brought onto the phone. One step for
+ * both ways a message is sent: the edit-and-resend path never scheduled a
+ * reminder at all.
+ *
+ * When Nancy's calendar tools ran (a plan saved, moved or called off), the
+ * phone resyncs every alert from the server: a moved or cancelled plan's old
+ * alert has to go, which scheduling only the new one never did. Otherwise a
+ * reminder from the chat is scheduled as before.
+ */
+function afterReply(data: any, userId: string) {
+  const tools: string[] = (data?.tool_results || []).map((t: any) => t?.tool)
+  if (tools.includes('add_calendar_event') || tools.includes('change_calendar_event')) {
+    syncReminderNotifications(userId, API_BASE, API_KEY).catch(e => console.error('[notif]', e))
+  } else if (data?.reminder && data.reminder.nudges) {
+    scheduleReminderNudges(data.reminder).catch(e => console.error('[notif]', e))
+  }
+}
 
 export function useChat() {
   const {
@@ -31,11 +50,9 @@ export function useChat() {
         setSessionId(data.session_id)
       }
 
-      // If Nancy set a reminder, schedule local notifications for each nudge so
-      // the phone actually alerts the user at the right times (offline, app-closed).
-      if (data.reminder && data.reminder.nudges) {
-        scheduleReminderNudges(data.reminder).catch(e => console.error('[notif]', e))
-      }
+      // Her reminders onto the phone, so it alerts at the right times
+      // (offline, app closed) — see afterReply.
+      afterReply(data, userId)
 
       addMessage({
         id:          data.message_id || (Date.now() + 1).toString(),
@@ -121,6 +138,7 @@ export function useChat() {
       if (data.session_id && !sessionId) {
         setSessionId(data.session_id)
       }
+      afterReply(data, userId)
 
     } catch (err) {
       console.error('Resend error:', err)

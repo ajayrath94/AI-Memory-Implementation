@@ -280,6 +280,12 @@ def get_due_reminders(limit: int = 50) -> list:
                 at = datetime.fromisoformat(str(n.get("at")).replace("Z", "+00:00"))
             except Exception:
                 continue
+            if at <= now - timedelta(hours=6):
+                # The same rule as a reminder without nudges: a morning
+                # heads-up delivered at night is not a reminder. Passed over.
+                print(f"[Reminder] {r.get('what')!r} nudge at {n.get('at')} is too late, passed over")
+                mark_nudge_fired(r["id"], i)
+                continue
             if at <= now:
                 out.append({"reminder": r, "nudge_index": i, "message": n.get("message")})
                 break   # one due nudge per reminder per pass
@@ -308,6 +314,69 @@ def mark_nudge_fired(reminder_id: str, nudge_index: int):
         print(f"[Reminder] mark-nudge-fired failed: {e}")
 
 
+def design_nudges(user_id: str, what: str, event_at: datetime) -> list:
+    """The lead-up for something with a time: a heads-up that morning, one
+    about an hour before, one just before — or one at the time, for a quick
+    thing. The detector designed this; a reminder made by Nancy's calendar
+    tool rang only at the event itself, so "Durga Puja pandal darshan, 1 PM"
+    gave her no warning to get ready.
+
+    Returns [{"at", "message", "fired"}], in the future and not after the
+    event. If the model cannot be asked, one nudge at the event time.
+    Empty only when the event has already passed.
+    """
+    now = datetime.now(timezone.utc)
+    if not event_at or event_at <= now:
+        return []
+    try:
+        from memory.time_context import get_user_timezone
+        tz = ZoneInfo(get_user_timezone(user_id) or "Asia/Kolkata")
+    except Exception:
+        tz = ZoneInfo("Asia/Kolkata")
+    fallback = [{"at": event_at.isoformat(), "message": f"Yaad dila rahi hoon: {what}", "fired": False}]
+    try:
+        from memory.persona_names import get_companion_name
+        bot = get_companion_name(user_id)
+    except Exception:
+        bot = "Nancy"
+    fmt = "%Y-%m-%d %H:%M"
+    try:
+        from llm import ask
+        raw = (ask(f"""Now it is {now.astimezone(tz).strftime(fmt + " (%A)")} for an elderly woman in India.
+She has this coming up: "{what}" at {event_at.astimezone(tz).strftime(fmt + " (%A)")}.
+
+Plan when {bot}, her companion, reminds her:
+- an appointment or outing (doctor, temple, pandal, travel, a visit): a heads-up
+  the morning of the day (if that is still ahead), one about an hour before to
+  get ready, and one just before;
+- medicine or a quick task: one, at the time;
+- something casual: one gentle one.
+Every time must be after now and not after the event. At most {_MAX_NUDGES}.
+
+For each, what {bot} says to her: short, warm, in the Hinglish she writes,
+naming the thing; gently more pressing as it nears. Speak to her directly;
+never start with "{bot},".
+
+Return ONLY JSON: [{{"at_local": "YYYY-MM-DD HH:MM", "message": "..."}}]""",
+                   max_tokens=600) or "")
+        i, j = raw.find("["), raw.rfind("]")
+        items = json.loads(raw[i:j + 1]) if i >= 0 else []
+    except Exception as e:
+        print(f"[Reminder] nudge design failed, one at the time: {e}")
+        return fallback
+    out = []
+    for n in items if isinstance(items, list) else []:
+        try:
+            at = datetime.strptime(str(n.get("at_local") or "").strip(), fmt).replace(tzinfo=tz).astimezone(timezone.utc)
+        except Exception:
+            continue
+        msg = str(n.get("message") or "").strip()
+        if msg and now < at <= event_at:
+            out.append({"at": at.isoformat(), "message": msg, "fired": False})
+    out.sort(key=lambda n: n["at"])
+    return out[:_MAX_NUDGES] or fallback
+
+
 def set_this_turn(user_id: str, tool_results: list) -> dict | None:
     """The reminder Nancy's calendar tool made while writing this reply, as
     the app's confirmation card — or None.
@@ -320,7 +389,7 @@ def set_this_turn(user_id: str, tool_results: list) -> dict | None:
     reminder and the detector is not asked.
     """
     for tr in tool_results or []:
-        if not isinstance(tr, dict) or tr.get("tool") != "add_calendar_event":
+        if not isinstance(tr, dict) or tr.get("tool") not in ("add_calendar_event", "change_calendar_event"):
             continue
         r = (tr.get("data") or {}).get("reminder") if isinstance(tr.get("data"), dict) else None
         if not r or not r.get("id"):
@@ -333,11 +402,14 @@ def set_this_turn(user_id: str, tool_results: list) -> dict | None:
         except Exception:
             local = at
         what = r.get("what") or ""
+        nudges = [{"at": n.get("at"), "message": n.get("message")}
+                  for n in (r.get("nudges") or []) if not n.get("fired")] \
+            or [{"at": at, "message": f"Yaad dila rahi hoon: {what}"}]
         return {
             "id": r["id"], "what": what,
-            "fire_at_local": local, "fire_at_utc": at,
-            "nudge_count": 1,
-            "nudges": [{"at": at, "message": f"Yaad dila rahi hoon: {what}"}],
+            "fire_at_local": local, "fire_at_utc": r.get("event_at") or at,
+            "nudge_count": len(nudges),
+            "nudges": nudges,
             "status": r.get("status") or "pending",
         }
     return None

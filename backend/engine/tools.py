@@ -211,16 +211,45 @@ CALENDAR_ADD_SCHEMA = {
             "actually saves it — saying you'll remember without calling it saves "
             "nothing. For event_at, compute the FULL ISO datetime in the user's "
             "local timezone (India, +05:30) — e.g. 11am Tuesday = that date "
-            "T11:00:00+05:30. Call the tool, THEN confirm warmly."
+            "T11:00:00+05:30. Call the tool, THEN confirm warmly. Telling you the "
+            "same plan again is safe: the calendar keeps one (status 'already "
+            "there'), and a new time for it moves it (status 'moved'). To call "
+            "something off or move it, use change_calendar_event."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "title":    {"type": "string", "description": "What the event is, e.g. 'Doctor appointment'."},
+                "title":    {"type": "string", "description": "The thing itself, as she would name it: 'Doctor appointment', 'Durga Puja pandal darshan (Palace Grounds)'. Not the asking: no 'yaad dilana', 'reminder' or 'plan' in it — the calendar already shows it will remind her."},
                 "event_at": {"type": "string", "description": "ISO 8601 datetime, e.g. '2026-08-19T16:00:00'. Infer from what the user said relative to now."},
                 "category": {"type": "string", "description": "One of: medical, social, festival, personal. Best guess."},
             },
             "required": ["title", "event_at"],
+        },
+    },
+}
+
+CALENDAR_CHANGE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "change_calendar_event",
+        "description": (
+            "Call off or move something on her calendar, or a reminder, when she "
+            "says so: 'pandal nahi jaenge', 'doctor ab 4 baje hai', 'woh reminder "
+            "hata do', 'Arjun Sunday nahi, Monday aayega'. Its reminder goes or "
+            "moves with it. You do not need to look the calendar up first; say in "
+            "'about' which thing she means, in her words. If the result is 'not "
+            "sure which', ask her which one, naming the options. For a move, "
+            "compute new_event_at as a FULL ISO datetime in her timezone "
+            "(India, +05:30). Then confirm in a few words what changed."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "about":        {"type": "string", "description": "Which plan or reminder, in her words, e.g. 'pandal darshan'."},
+                "action":       {"type": "string", "enum": ["cancel", "move"]},
+                "new_event_at": {"type": "string", "description": "For move: the new ISO datetime, e.g. '2026-10-17T16:00:00+05:30'."},
+            },
+            "required": ["about", "action"],
         },
     },
 }
@@ -615,6 +644,11 @@ TOOL_REGISTRY = {
     "add_calendar_event": {
         "schema":  CALENDAR_ADD_SCHEMA,
         "handler": _handle_add_calendar,
+    },
+    "change_calendar_event": {
+        "schema":  CALENDAR_CHANGE_SCHEMA,
+        "handler": lambda args, user_id: __import__("routes.calendar", fromlist=["change_event"]).change_event(
+            user_id, args.get("about") or "", args.get("action") or "cancel", args.get("new_event_at") or ""),
     },
     "get_calendar": {
         "schema":  CALENDAR_VIEW_SCHEMA,
