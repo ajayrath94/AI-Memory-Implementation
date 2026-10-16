@@ -157,9 +157,10 @@ def main():
                 db.table("interest_clusters").update({"parent_id": pid}).eq("id", e["id"]).execute()
 
     # One trip told as three events ("Delhi Trip", "Sightseeing", "Outing" on
-    # 26-27 Sep) is one occurrence: the same rule new events follow — same
-    # concept, within three days — applied to what was attached above. Soft:
-    # the later ones forward to the first.
+    # 26-27 Sep) is one occurrence: the same rule new events follow
+    # (events._same_occurrence — the same day, or a few days apart and the
+    # model reads it as the same occasion; the mandir on Monday and Wednesday
+    # is two visits). Soft: the later ones forward to the first.
     print("\n== SAME OCCURRENCE")
     groups = {}
     for p in plan:
@@ -170,13 +171,13 @@ def main():
         if p.get("meal") or not p.get("about") or p.get("about_kind") == "health":
             continue
         groups.setdefault(str(p["about"]).strip().lower(), []).append(e)
-    from datetime import date as _date
+    from memory.events import _same_occurrence
     for about, es in groups.items():
         es = sorted(es, key=lambda e: str(e.get("happened_on")))
         keep = None
         for e in es:
-            d = _date.fromisoformat(str(e["happened_on"])[:10])
-            if keep and (d - _date.fromisoformat(str(keep["happened_on"])[:10])).days <= 3:
+            heard = str((e.get("attributes") or {}).get("said") or e["label"])
+            if keep and _same_occurrence(uid, keep, e["label"], str(e["happened_on"])[:10], heard):
                 print(f"  {e['happened_on']} {e['label']:22} -> same occurrence as "
                       f"{keep['label']!r} ({keep['happened_on']})")
                 if go:

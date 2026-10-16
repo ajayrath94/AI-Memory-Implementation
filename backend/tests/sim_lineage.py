@@ -15,6 +15,8 @@ Nancy would be given is printed and checked.
     two knee flare-ups, and a knee mention that is not one
     five zoo visits, one of them told twice, in two languages for "zoo"
     Arjun visiting twice
+    the mandir on three days two apart (three visits, not one)
+    a Delhi trip told over two days (one occasion)
 
 Deleted at the end unless --keep. Never touches "default".
 """
@@ -67,6 +69,13 @@ HAPPENED = [  # (days ago, what she says)
     (30, "Arjun aaj phir aaya, khana saath khaya"),
     (20, "Aaj phir zoo gaye"),
     (5, "Kal chidiyaghar gaye the Shubham ke saath"),
+    # Three real visits two days apart: three, not one (16 Oct fix).
+    (12, "Aaj mandir gayi thi, bahut shanti mili"),
+    (10, "Aaj phir mandir gayi"),
+    (8, "Aaj subah mandir gayi, prasad liya"),
+    # One trip over two days: one occasion, not two.
+    (40, "Kal Delhi pahunche Shubham ke saath"),
+    (39, "Aaj Delhi mein Qutub Minar dekha"),
 ]
 QUESTIONS = [
     ("Hum zoo pichli baar kab gaye the?", "Zoo"),
@@ -74,6 +83,7 @@ QUESTIONS = [
     ("Is saal kitni baar sardi hui mujhe?", "cold"),
     ("Ghutne ka dard kab se hai?", "since"),
     ("Arjun pichli baar kab aaya tha?", "Arjun"),
+    ("Main mandir kitni baar gayi?", "3 times"),
 ]
 
 TABLES = ("health_episodes", "interest_clusters", "subject_mentions",
@@ -196,6 +206,19 @@ def checks():
     av = timeline(UID, arjun["id"])["occurrences"] if arjun else []
     check(len(av) == 2, "Arjun's two visits under Arjun (no 'Arjun's visit' concept)",
           f"{[(v['label'], str(v.get('happened_on'))[:10]) for v in av]}")
+
+    def visits_to(word):
+        c = next((c for c in cl if c.get("kind") != "event" and word in
+                  (c["label"] + " " + str((c.get("attributes") or {}).get("english"))).lower()), None)
+        return c, (timeline(UID, c["id"])["occurrences"] if c else [])
+    mandir, mv = visits_to("mandir")
+    if not mandir:
+        mandir, mv = visits_to("temple")
+    check(len(mv) == 3, "mandir on three days two apart: three visits, not one",
+          f"{[(v['label'], str(v.get('happened_on'))[:10]) for v in mv]}")
+    delhi, dv = visits_to("delhi")
+    check(len(dv) == 1, "the Delhi trip over two days: one occasion",
+          f"{[(v['label'], str(v.get('happened_on'))[:10]) for v in dv]}")
 
     print("\n== THE QUESTIONS — what Nancy is given to answer from")
     from engine.engine_router import _retrieve_memory

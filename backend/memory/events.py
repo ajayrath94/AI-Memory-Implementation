@@ -197,6 +197,44 @@ def _again(user_id: str, r: Dict, said_on: datetime) -> str:
     return r["id"]
 
 
+def _same_occurrence(user_id: str, r: Dict, label: str, when: str, heard: str = "") -> bool:
+    """Is this telling the occasion already recorded in r, or a new one?
+
+    The rule was "the same place within three days is the same visit". It
+    kept a visit told twice as one — and folded real visits together: the
+    mandir on Monday, Wednesday and Friday was one visit, and for somewhere
+    she goes every other day it stayed one visit for good, each new one
+    being within three days of the last.
+
+    Now: the same day is the same occasion; more than three days apart is a
+    new one; between, the model reads both tellings — a visit told again
+    ("parso jo zoo gaye the") or one trip over several days (the Delhi trip's
+    sightseeing) is the same occasion, a second trip to the mandir is not.
+    If it cannot be asked, the old answer (same) stands: a missed visit costs
+    less than one counted twice.
+    """
+    g = _gap(r.get("happened_on"), when)
+    if g is None or g > 3:
+        return False
+    if g == 0:
+        return True
+    a = r.get("attributes") if isinstance(r.get("attributes"), dict) else {}
+    before = str(a.get("said") or r.get("label") or "")[:200]
+    try:
+        from memory.judge import yes_no
+        return yes_no(
+            f"An elderly woman told her companion about things that happened.\n"
+            f'Earlier: "{before}" — recorded as "{r.get("label")}", on {str(r.get("happened_on"))[:10]}.\n'
+            f'Now: "{(heard or label)[:200]}" — "{label}", on {when}.\n'
+            f"Is the new one the SAME occasion as the earlier one — the same visit "
+            f"told again, or one trip lasting several days — rather than a "
+            f"separate, new time she went or it happened?",
+            key=f"ev_same:{r.get('id')}:{when}:{label.lower()}")
+    except Exception as e:
+        print(f"[Events] same-occasion check failed, kept as one: {e}")
+        return True
+
+
 def _gap(a, when: str) -> Optional[int]:
     try:
         return abs((datetime.fromisoformat(str(a)[:10]).date()
@@ -208,7 +246,8 @@ def _gap(a, when: str) -> Optional[int]:
 def record_event(user_id: str, what: str, said_on: datetime = None,
                  text: str = "", kind: str = "", people: List[str] = None,
                  feeling: str = "", happened_on: str = None,
-                 about: str = "", about_kind: str = "") -> Optional[str]:
+                 about: str = "", about_kind: str = "",
+                 heard: str = "") -> Optional[str]:
     """Store something that happened. Returns the row id.
 
     happened_on is resolved from the phrasing when not given — "kal beta aaya
@@ -244,8 +283,7 @@ def record_event(user_id: str, what: str, said_on: datetime = None,
         for r in sibs:
             if (r.get("status") or "active") in ("merged", "archived", "dropped"):
                 continue
-            g = _gap(r.get("happened_on"), when)
-            if g is not None and g <= 3:
+            if _same_occurrence(user_id, r, label, when, heard):
                 print(f"[Events] {label!r} on {when} is {r.get('label')!r} again")
                 return _again(user_id, r, said_on)
 
@@ -270,8 +308,7 @@ def record_event(user_id: str, what: str, said_on: datetime = None,
                     r = follow(r) or r
                 except Exception:
                     continue
-            g = _gap(r.get("happened_on"), when)
-            if g is not None and g <= 3:
+            if _same_occurrence(user_id, r, label, when, heard):
                 print(f"[Events] {label!r} on {when} is {r.get('label')!r} again")
                 return _again(user_id, r, said_on)
     if named:
@@ -305,7 +342,8 @@ def record_event(user_id: str, what: str, said_on: datetime = None,
             "event_kind": kind or "",
             "people": people or [],
             "feeling": feeling or "",
-            "said": (text or "")[:300],
+            # Her words, so a later telling can be compared with this one.
+            "said": (heard or text or "")[:300],
         },
     }
     try:
@@ -456,7 +494,8 @@ Empty list if nothing happened. That is the common answer."""
             feeling=e.get("feeling") or "",
             happened_on=e.get("happened_on") or None,
             about=str(e.get("about") or "").strip()[:60],
-            about_kind=str(e.get("about_kind") or ""))
+            about_kind=str(e.get("about_kind") or ""),
+            heard=hers[:300])
         if rid:
             ids.append(rid)
     return ids

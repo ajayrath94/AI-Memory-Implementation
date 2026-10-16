@@ -139,7 +139,13 @@ def clean_clusters(user_id: str, dry_run: bool = False) -> dict:
         # it was reading merged and archived rows too — so a clean-up's
         # forwarding addresses and set-aside groups could be deleted on any
         # heartbeat, and the backup's undo would then have nothing to restore.
-        .eq("user_id", user_id).eq("status", "active").execute()).data or []
+        .eq("user_id", user_id).eq("status", "active")
+        # Not the dated rows (kind=event). "Mandir visit" and "Mandir visit ·
+        # 18-Oct-26" are two visits, and to this pass they read as one group
+        # named twice — it would fold them back together on every heartbeat.
+        # They settle their own repeats when written (events._same_occurrence).
+        .or_("kind.is.null,kind.neq.event")
+        .execute()).data or []
     if len(clusters) < 2:
         return {"skipped": "fewer than 2 clusters", "clusters": len(clusters)}
 
