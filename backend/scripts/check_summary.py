@@ -9,7 +9,7 @@ from the checked text.
 
     cd backend
     PYTHONPATH=. railway run python3 scripts/check_summary.py default          # preview
-    PYTHONPATH=. railway run python3 scripts/check_summary.py default --go     # write, with a backup
+    PYTHONPATH=. railway run python3 scripts/check_summary.py default --go     # write THAT preview, with a backup
     PYTHONPATH=. railway run python3 scripts/check_summary.py --undo backups/summary_default_....json
 """
 import json
@@ -35,8 +35,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     uid = args[0] if args else "default"
     go = "--go" in sys.argv
-    from memory.user_memory_store import summary_evidence
-    from memory.summarizer import check_summary, extract_key_facts
+    preview_path = f"backups/summary_preview_{uid}.json"
 
     row = (db.table("user_memory").select("summary,key_facts").eq("user_id", uid)
            .limit(1).execute()).data
@@ -44,6 +43,30 @@ def main():
         print(f"{uid}: no summary to check.")
         return
     old, old_facts = row[0]["summary"], row[0].get("key_facts") or []
+
+    if go:
+        # Writes exactly what the preview showed — no second model reading,
+        # which came out differently from the one reviewed.
+        if not os.path.exists(preview_path):
+            print("No preview to write. Run without --go first and read it.")
+            return
+        pv = json.load(open(preview_path))
+        if pv.get("old") != old:
+            print("Her summary has changed since the preview (a chat ended). Preview again.")
+            return
+        os.makedirs("backups", exist_ok=True)
+        path = f"backups/summary_{uid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        json.dump({"user_id": uid, "summary": old, "key_facts": old_facts}, open(path, "w"),
+                  ensure_ascii=False, indent=1)
+        db.table("user_memory").update({"summary": pv["new"], "key_facts": pv["facts"]}) \
+            .eq("user_id", uid).execute()
+        os.remove(preview_path)
+        print(f"Written: the reviewed preview. Backup: {os.path.abspath(path)}")
+        print(f"Undo: PYTHONPATH=. railway run python3 scripts/check_summary.py --undo {path}")
+        return
+
+    from memory.user_memory_store import summary_evidence
+    from memory.summarizer import check_summary, extract_key_facts
     ev = summary_evidence(uid)
     print(f"\n{uid}: evidence {len(ev)} characters\n")
     res = check_summary(old, ev)
@@ -54,23 +77,19 @@ def main():
     w = lambda t: textwrap.fill(t, 100, initial_indent="  ", subsequent_indent="  ")
     print("== NOW\n" + w(old))
     print("\n== CHECKED\n" + w(res["summary"]))
-    print("\n== DROPPED (nothing stored supports these)")
+    print("\n== KEPT (each with words found in the evidence)")
+    for k in res.get("kept") or []:
+        print("  +", k)
+    print("\n== DROPPED (no supporting words in the evidence)")
     for d in res["dropped"] or ["(nothing)"]:
         print("  -", d)
     print("\n== KEY FACTS, now -> checked")
     print("  now:     " + "; ".join(map(str, old_facts)))
     print("  checked: " + "; ".join(facts))
-    if not go:
-        print("\nNothing changed. Add --go to write.")
-        return
     os.makedirs("backups", exist_ok=True)
-    path = f"backups/summary_{uid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    json.dump({"user_id": uid, "summary": old, "key_facts": old_facts}, open(path, "w"),
+    json.dump({"old": old, "new": res["summary"], "facts": facts}, open(preview_path, "w"),
               ensure_ascii=False, indent=1)
-    db.table("user_memory").update({"summary": res["summary"], "key_facts": facts}) \
-        .eq("user_id", uid).execute()
-    print(f"\nWritten. Backup: {os.path.abspath(path)}")
-    print(f"Undo: PYTHONPATH=. railway run python3 scripts/check_summary.py --undo {path}")
+    print(f"\nNothing changed. This preview is saved; --go writes exactly it.")
 
 
 if __name__ == "__main__":

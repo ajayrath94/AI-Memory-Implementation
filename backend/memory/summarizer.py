@@ -407,61 +407,94 @@ Updated memory profile:"""
 
 # ── The check: every claim against what is actually stored ─────────────────
 
+def _first_json(raw: str):
+    """The first JSON value in a reply, ignoring anything after it — the
+    model sometimes adds a second object or a note ("Extra data")."""
+    starts = [k for k in (raw.find("{"), raw.find("[")) if k >= 0]
+    if not starts:
+        return None
+    return json.JSONDecoder().raw_decode(raw[min(starts):])[0]
+
+
+def _norm(t: str) -> str:
+    return " ".join(str(t or "").lower().replace('"', " ").replace("'", " ").split())
+
+
 def check_summary(summary: str, evidence: str) -> Optional[dict]:
-    """Keep only what the evidence supports. Returns {"summary", "dropped"},
-    or None when the check could not be made (the caller keeps the old one).
+    """Keep only what the evidence supports. Returns {"summary", "dropped",
+    "kept"}, or None when the check could not be made (the caller keeps the
+    old profile).
 
     The rolling profile was rewritten after every conversation from the
     previous profile and the new session, with nothing outside itself to
     check against — so a wrong claim, once in, was copied forward forever:
     "Mayur Vihar I", "connections to Mumbai and Delhi", "occasional confusion
-    about recent events". The evidence is her own words and what memory
-    holds about her; the previous profile is NOT evidence, because that is
-    how drift survives.
+    about recent events". The previous profile is not evidence.
+
+    A yes/no from the model was not enough: one run dropped Kumar Sanu, a
+    stored concept, and kept Lata Mangeshkar and "phalahari tea and makhana",
+    which nothing supports. So each kept claim must come with the words that
+    support it, copied from the evidence, and the copy is checked here: a
+    quote that is not in the evidence does not keep a claim.
     """
     if not (summary or "").strip() or not (evidence or "").strip():
         return None
-    prompt = f"""This is a memory profile of an elderly woman, written by an AI companion:
+    ev = (evidence or "")[:16000]
+    try:
+        raw = _call_haiku(f"""This is a memory profile of an elderly woman, written by an AI companion:
 
 PROFILE:
 {summary}
 
 EVIDENCE — her own words and what is stored about her:
-{evidence[:16000]}
+{ev}
 
-Check every claim in the profile against the evidence.
-- Keep a claim when the evidence supports it (her words, a stored concept,
-  her declared profile, a day note).
-- Drop a claim the evidence does not support: a place, a person, a condition
-  or a habit that appears nowhere in it.
-- Drop an inference that goes beyond what she said: "occasional confusion",
-  "anxiety", "loneliness" — unless she said it herself.
-- In a list, judge each item on its own: drop only the items nothing
-  supports, keep the rest ("Kishore Kumar, Pankaj Udhas" -> keep Kishore
-  Kumar if he is stored, even when Pankaj Udhas is not).
-- NEVER ADD anything that is not already in the profile, even if the
-  evidence shows it is true. This removes; it does not write.
-- Keep its style, third person, 5-8 sentences or fewer.
+Split the profile into its separate claims — one fact each; every item of
+a list is its own claim ("Kishore Kumar", "Kumar Sanu", "Lata Mangeshkar"
+are three). For each, find support in the EVIDENCE and copy the supporting
+words EXACTLY as they appear there (a few words).
+
+- No support in the evidence: quote "" — whatever the profile says.
+- An inference beyond what she said ("occasional confusion", "anxiety",
+  "loneliness", a personality description) needs her own words saying it.
 
 Return JSON only:
-{{"summary": "the profile with only supported claims",
-  "dropped": ["each claim removed, a few words each"]}}"""
-    try:
-        raw = _call_haiku(prompt, max_tokens=900)
-        i, j = raw.find("{"), raw.rfind("}")
-        d = json.loads(raw[i:j + 1]) if i >= 0 else None
+[{{"claim": "...", "quote": "exact words from the evidence, or empty"}}]""", max_tokens=1800)
+        items = _first_json(raw)
     except Exception as e:
         print(f"[Summarizer] check failed: {e}")
         return None
-    if not d or not str(d.get("summary") or "").strip():
+    if not isinstance(items, list) or not items:
         return None
-    out = str(d["summary"]).strip()
-    # A check that throws most of the profile away is more likely broken
-    # than right; keep the old one and say so.
-    if len(out) < 0.3 * len(summary):
+    evn = _norm(ev)
+    kept, dropped = [], []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        claim = str(it.get("claim") or "").strip()
+        q = _norm(it.get("quote"))
+        if not claim:
+            continue
+        (kept if len(q) >= 3 and q in evn else dropped).append(claim)
+    if not kept:
+        return None
+    try:
+        out = _call_haiku(f"""Rewrite this profile of an elderly woman keeping ONLY these facts:
+{chr(10).join("- " + k for k in kept)}
+
+The original, for its style:
+{summary}
+
+Use only the facts listed — add nothing, not even true things. Third person,
+5-8 sentences or fewer, the same plain warm style. Just the profile.""",
+                          max_tokens=500).strip()
+    except Exception as e:
+        print(f"[Summarizer] check rewrite failed: {e}")
+        return None
+    if not out or len(out) < 0.25 * len(summary):
         print(f"[Summarizer] check kept too little ({len(out)} of {len(summary)} chars); not used")
         return None
-    return {"summary": out, "dropped": [str(x) for x in (d.get("dropped") or [])][:30]}
+    return {"summary": out, "dropped": dropped[:40], "kept": kept[:60]}
 
 
 # ── Dominant pillars extractor ─────────────────────────────────────────────────
