@@ -50,6 +50,22 @@ REACTION_WEIGHT = {
     "declined_timing":     0.0,
     "declined_preference": -0.4,
     "no_response":         -0.1,
+    # "Not this way": "bahar ka khana nahi khati". About how it was offered,
+    # never about the thing, so it moves nothing; it becomes a rule instead.
+    "declined_way":        0.0,
+}
+
+# An offer from the offer path is a NEW thing, reached from one of her
+# interests (cluster_id is that interest: Sholay for Mehbooba Mehbooba). Her
+# answer is about the new thing, so the interest it came from only gets a
+# small share. On 16 Oct "Haan yei ganna bhaut acha hai" raised Sholay and
+# R.D. Burman got nothing.
+OFFER_SEED_WEIGHT = {
+    "accepted":            0.1,
+    "declined_timing":     0.0,
+    "declined_preference": -0.1,
+    "no_response":         -0.05,
+    "declined_way":        0.0,
 }
 
 
@@ -454,11 +470,18 @@ def pending_suggestion(user_id: str) -> Optional[dict]:
         from supabase_store import get_client
         since = (datetime.now(timezone.utc)
                  - timedelta(minutes=FIRST_REPLY_MINUTES)).isoformat()
-        rows = (get_client().table("suggestions")
-                .select("id,cluster_id,label,intent,created_at")
-                .eq("user_id", user_id).is_("reaction", "null")
-                .gte("created_at", since)
-                .order("created_at", desc=True).limit(1).execute()).data or []
+        def _q(cols):
+            return (get_client().table("suggestions").select(cols)
+                    .eq("user_id", user_id).is_("reaction", "null")
+                    .gte("created_at", since)
+                    .order("created_at", desc=True).limit(1).execute()).data or []
+        try:
+            rows = _q("id,cluster_id,label,intent,created_at,source,because,kind,way")
+        except Exception:
+            try:
+                rows = _q("id,cluster_id,label,intent,created_at,source,because")
+            except Exception:
+                rows = _q("id,cluster_id,label,intent,created_at")
         if not rows:
             return None
         r = rows[0]
@@ -562,9 +585,156 @@ One word, nothing else."""
     return None
 
 
+_READ_PROMPT = """The companion offered an older person: "{offer}"{how}{later}
+The person replied: "{reply}"
+
+Read the reply. JSON only, with these keys:
+
+"reaction": one of
+   "accepted"            yes, or asked for it, or will do it (even another way:
+                         "ghar pe hi bana lenge" to a dish from outside is a yes)
+   "declined_timing"     not now: busy, tired, later, not today, "dekhenge",
+                         a reason about today ("pet kharab hai", "puja karni hai")
+   "declined_preference" no to the THING itself: does not like it, does not want it
+   "declined_way"        no to the WAY it was offered, as a standing habit, while
+                         the thing itself could be fine: "bahar ka khana nahi
+                         khati", "main bahar se nahi mangwati"
+   "unrelated"           the reply is about something else, or answers the later
+                         message rather than the offer
+"way_she_wants": "home" or "outside" if she says how she would rather have it
+                 (food: made at home, or from outside / a place); else null
+"never": true only if she says she NEVER does it or never wants it ("kabhi nahi",
+         "bilkul nahi", "main ye nahi karti"); else false
+"condition": a standing condition she gives for NOT doing it, else null:
+             {{"weekday": "Tue"}} for "Mangalvar ko nahi", {{"fast_day": true}} for
+             "ekadashi/vrat ke din nahi". Only a repeating rule, not "aaj nahi".
+"ability": something she says she can or cannot do, else null, as
+           {{"key": "uses_phone" | "cooks" | "orders_herself" | "goes_out_alone",
+             "value": true or false}}. "phone chalana nahi aata" = uses_phone false.
+
+When the reply could be "not now" or "not this", choose "declined_timing": a
+tired evening must not become a dislike. A reply that simply changes the
+subject is "unrelated", not a decline."""
+
+
+def read_reply(offer_label: str, user_text: str, said_since: str = "",
+               kind: str = "", way: str = "") -> Optional[dict]:
+    """The reply read whole: what kind of answer, and what part of the offer
+    it was about. None when the model could not be asked."""
+    import json as _j
+    later = ""
+    if said_since:
+        later = (f'\nAFTER the offer, the companion also said: "{said_since}"\n'
+                 "A reply usually answers the LATEST thing said; if it answers "
+                 "that, the reaction is unrelated.")
+    how = ""
+    if way == "outside":
+        how = "\nIt was offered from outside: a place near them to eat it or order it."
+    elif way == "home":
+        how = "\nIt was offered as something to make at home."
+    prompt = _READ_PROMPT.format(offer=offer_label, how=how, later=later,
+                                 reply=user_text)
+    for attempt in (1, 2):
+        try:
+            from llm import ask
+            raw = (ask(prompt, max_tokens=150) or "").replace("```json", "").replace("```", "")
+            got = _j.loads(raw[raw.find("{"):raw.rfind("}") + 1])
+            rx = str(got.get("reaction") or "").strip().lower()
+            if rx in REACTION_WEIGHT or rx == "unrelated":
+                got["reaction"] = rx
+                print(f"[Suggest] {offer_label[:40]!r} + {user_text[:40]!r} -> "
+                      f"{_j.dumps(got, ensure_ascii=False)}")
+                return got
+            print(f"[Suggest] unrecognised reading {raw[:80]!r} (try {attempt})")
+        except Exception as e:
+            print(f"[Suggest] read failed (try {attempt}): {e}")
+    return None
+
+
+def _thing_of(label: str, kind: str):
+    """What a yes is a yes TO, as something to remember: the singer or
+    composer of a song, the film, the dish."""
+    label = (label or "").strip()
+    low = label.lower()
+    # Rows from before the kind was stored: a "Song by Singer" is music.
+    if not kind and " by " in low:
+        kind = "sangeet"
+    if kind in ("sangeet", "bhakti") and " by " in low:
+        i = low.rfind(" by ")
+        artist = label[i + 4:].strip()
+        if artist:
+            return artist, "artist"
+    return label, {"sangeet": "music", "bhakti": "music", "dekhna": "media",
+                   "khana": "food", "shauk": "hobby"}.get(kind, "other")
+
+
+class _Plain:
+    """Enough of a classified message for record_propositions."""
+    core = "GENERAL"
+    core_score = 0.6
+    def __getattr__(self, _):
+        return None
+
+
+def credit_offered(user_id: str, label: str, kind: str, liked: bool,
+                   session_id: Optional[str] = None) -> bool:
+    """Her yes goes to what was offered. Filed through the same path as a
+    liking she states in chat, so it lands on the same concept: a yes to
+    Mehbooba Mehbooba strengthens (or makes) R.D. Burman."""
+    if not liked:
+        return False
+    thing, etype = _thing_of(label, kind)
+    if not thing:
+        return False
+    try:
+        from memory.profile_enricher import record_propositions
+        record_propositions([{
+            "subject": thing, "subject_ref": "proper_name", "relation": "likes",
+            "object": label, "entity_type": etype, "kind": "durable_fact",
+            "sentiment": "positive", "salience": 0.6, "is_correction": False,
+            "replaces": None, "attributes": {}, "when": None,
+        }], _Plain(), user_id, session_id or "")
+        print(f"[Suggest] credited {thing!r} ({etype}) for a yes to {label!r}")
+        return True
+    except Exception as e:
+        print(f"[Suggest] credit failed: {e}")
+        return False
+
+
+def _follow_through(user_id: str, suggestion: dict, reaction: str,
+                    details: dict, reply_text: str):
+    """Rules and facts from her answer. Never touches how much she likes
+    anything."""
+    from memory import offer_rules as R
+    kind = suggestion.get("kind") or ""
+    way = suggestion.get("way") or ""
+    if not kind and suggestion.get("cluster_id"):
+        try:
+            from memory.offers import hers
+            kind = next((v.get("category") or "" for v in hers(user_id).values()
+                         if v.get("id") == suggestion["cluster_id"]), "")
+        except Exception:
+            pass
+    sid = suggestion.get("id")
+    cond = details.get("condition")
+    cond = cond if isinstance(cond, dict) and cond else None
+    if reaction == "declined_way" and kind:
+        # The way it was offered; for food without a place that is "home".
+        # With a condition it holds only then: "Mangalvar ko bahar ka nahi"
+        # is not-from-outside on Tuesdays, not never.
+        bad = way or ("outside" if kind == "khana" else "")
+        R.add_rule(user_id, kind, bad or None, "never", cond, reply_text, sid)
+    elif cond and kind:
+        R.add_rule(user_id, kind, None, "never", cond, reply_text, sid)
+    ab = details.get("ability")
+    if isinstance(ab, dict) and ab.get("key") in R.ABILITIES and \
+            isinstance(ab.get("value"), bool):
+        R.set_ability(user_id, ab["key"], ab["value"], reply_text)
+
+
 def apply_reaction(user_id: str, suggestion: dict, reaction: str,
                    session_id: Optional[str] = None,
-                   reply_text: str = "") -> bool:
+                   reply_text: str = "", details: Optional[dict] = None) -> bool:
     """Close the suggestion and let the reaction move the cluster's sentiment.
 
     The weight becomes an ordinary event, so derive_trajectory folds it into
@@ -574,6 +744,10 @@ def apply_reaction(user_id: str, suggestion: dict, reaction: str,
     weight = REACTION_WEIGHT.get(reaction)
     if weight is None:
         return False
+    from_offer = (suggestion.get("source") == "offer")
+    if from_offer:
+        weight = OFFER_SEED_WEIGHT.get(reaction, weight)
+    details = details or {}
 
     try:
         from supabase_store import get_client
@@ -591,9 +765,27 @@ def apply_reaction(user_id: str, suggestion: dict, reaction: str,
                 pass                      # column not there yet
         if upd:
             db.table("suggestions").update(upd).eq("id", suggestion["id"]).execute()
+        # What part of the offer it was about, best effort (offers.sql).
+        extra = {k: v for k, v in (("way_she_wants", details.get("way_she_wants")),
+                                   ("never", details.get("never") or None),
+                                   ("condition", details.get("condition") or None))
+                 if v not in (None, "", {})}
+        if extra:
+            try:
+                db.table("suggestions").update(extra).eq("id", suggestion["id"]).execute()
+            except Exception:
+                pass                      # columns not there yet
+
+        if from_offer and reaction == "accepted":
+            credit_offered(user_id, suggestion.get("label", ""),
+                           suggestion.get("kind") or "", True, session_id)
+        try:
+            _follow_through(user_id, suggestion, reaction, details, reply_text)
+        except Exception as e:
+            print(f"[Suggest] rules/abilities failed: {e}")
 
         cid = suggestion.get("cluster_id")
-        if cid:
+        if cid and weight != 0:
             db.table("user_behavioral_events").insert({
                 "user_id": user_id, "cluster_id": cid,
                 "session_id": session_id or None,
@@ -626,13 +818,21 @@ def handle_reply(user_id: str, user_text: str,
     if not pending:
         return None
 
-    reaction = classify_reaction(pending.get("label", ""), user_text,
-                                 _said_after(user_id, pending.get("created_at")))
+    details = read_reply(pending.get("label", ""), user_text,
+                         _said_after(user_id, pending.get("created_at")),
+                         kind=pending.get("kind") or "", way=pending.get("way") or "")
+    if details is None:
+        # The fuller reading failed: the one-word reading, as before.
+        rx = classify_reaction(pending.get("label", ""), user_text,
+                               _said_after(user_id, pending.get("created_at")))
+        details = {"reaction": rx} if rx else None
+    reaction = (details or {}).get("reaction")
     if not reaction or reaction == "unrelated":
         # Leave it open — they may still answer. The expiry sweep will close it.
         return None
 
-    apply_reaction(user_id, pending, reaction, session_id, reply_text=user_text)
+    apply_reaction(user_id, pending, reaction, session_id, reply_text=user_text,
+                   details=details)
     return reaction
 
 

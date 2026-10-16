@@ -71,6 +71,7 @@ class Offer:
     cluster_id: Optional[str] = None
     artefact: Optional[Dict] = None
     why_now: str = ""            # why this one suits this moment
+    way: str = ""                # khana: "outside" (a place) or "home"
 
     def __str__(self) -> str:
         s = self.what
@@ -111,6 +112,51 @@ def hers(user_id: str) -> Dict[str, Dict]:
     except Exception as e:
         print(f"[Offers] clusters read failed: {e}")
     return out
+
+
+# Songs struck today because no recording of them was found. Only inside one
+# choose() call before, so the next hourly pass picked the same one again:
+# "Khaike Paan Banaras Wala by Mohammad Rafi" six times on 16 Oct, each a
+# model call, and nothing offered all afternoon.
+_STRUCK: Dict[tuple, set] = {}
+
+
+def _struck_today(user_id: str) -> set:
+    key = (user_id, date.today().isoformat())
+    if len(_STRUCK) > 500:
+        _STRUCK.clear()
+    return _STRUCK.setdefault(key, set())
+
+
+def _rules_now(user_id: str):
+    try:
+        from memory import offer_rules as R
+        return R.rules(user_id), R.moment_now(user_id)
+    except Exception as e:
+        print(f"[Offers] rules read failed: {e}")
+        return [], {}
+
+
+def way_lean(user_id: str, kind: str = "khana") -> Optional[str]:
+    """Which way she takes this kind, from her answers: "home" when she has
+    said she would make it herself more than she has taken it from outside.
+    "Ghar pe hi bana lenge" (15 Oct) to fruit chaat from a place was a yes to
+    the dish and a no to the place."""
+    try:
+        rows = (_db().table("suggestions").select("way,way_she_wants,reaction")
+                .eq("user_id", user_id).eq("kind", kind)
+                .not_.is_("reaction", "null").limit(100).execute()).data or []
+    except Exception:
+        return None
+    home = sum(1 for r in rows if r.get("way_she_wants") == "home"
+               or (r.get("reaction") == "accepted" and r.get("way") == "home"))
+    out = sum(1 for r in rows if r.get("way_she_wants") == "outside"
+              or (r.get("reaction") == "accepted" and r.get("way") == "outside"))
+    if home > out:
+        return "home"
+    if out > home:
+        return "outside"
+    return None
 
 
 def _refused(user_id: str) -> set:
@@ -340,7 +386,10 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
     everything within reach is already hers — which is a good problem.
     """
     mine = hers(user_id)
-    skip = set(mine.keys()) | _refused(user_id) | _recently_offered(user_id)
+    skip = (set(mine.keys()) | _refused(user_id) | _recently_offered(user_id)
+            | {s.lower() for s in _struck_today(user_id)})
+    from memory import offer_rules as _R
+    _rules, _moment = _rules_now(user_id)
     routine = _on_her_schedule(user_id)
     # The same song reaches her under three spellings otherwise.
     skip_titles = {_title(s) for s in skip if _title(s)}
@@ -427,6 +476,14 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
                 # Its own kind where the generator gave one, the interest's
                 # where it did not (older cached rings).
                 kind = item.get("kind") or seed["category"]
+
+                # Her own standing rules: "Mangalvar ko nahi", "vrat ke din
+                # nahi". A rule about a WAY ("not from outside") is applied
+                # when the offer is made, so the dish can still come as
+                # something to cook.
+                if _R.blocked([r for r in _rules if not r.get("way")], kind,
+                              None, _moment):
+                    continue
 
                 # During a fast she keeps, food comes only from the fasting
                 # question, which is asked of her food interests. Two rings
@@ -563,6 +620,53 @@ def _title_matches(what: str, found: str) -> bool:
                   key="title:" + what.lower() + "|" + found.lower())
 
 
+_MATCH_CACHE: Dict[str, tuple] = {}
+
+
+def _match_recording(what: str, found: str):
+    """Is the video found the song offered? -> (ok, corrected_what or None)
+
+    The yes/no check was too strict and too loose at once on 16 Oct. It
+    turned down "Mehbooba Oh Mehbooba - Lyrical" for Mehbooba Mehbooba and
+    "Tujhe Dekha Toh" for Tujhe Dekha To, which are the same songs, and
+    rightly turned down "Khaike Paan Banaras Wala" by Kishore Kumar when the
+    model had called it Mohammad Rafi's, and then offered nothing all
+    afternoon. Now: the same song in any spelling or version (lyrical, video,
+    audio) is a match; when the video names a different singer, the offer
+    is corrected to that singer rather than thrown away. Raises when the
+    model cannot answer.
+    """
+    import json as _j
+    k = what.lower() + "|" + found.lower()
+    if k in _MATCH_CACHE:
+        return _MATCH_CACHE[k]
+    from llm import ask
+    raw = ask(f'We want to offer the song: "{what}".\n'
+              f'A video was found titled: "{found}".\n\n'
+              'JSON only: {"same_song": true/false, "singer_in_title": "<the '
+              'main singer the video title names, or null>", '
+              '"same_singer": true/false/null}\n'
+              '- same_song: the same song, allowing any spelling, '
+              'transliteration, "Oh"/"To"/"Toh" and versions like Lyrical, '
+              'Video Song, Audio, Full Song. A different song with similar '
+              'words is false. A compilation or jukebox is false.\n'
+              '- same_singer: does the singer we named match the video\'s '
+              'singer (null if either names no singer).', max_tokens=80) or ""
+    raw = raw.replace("```json", "").replace("```", "")
+    got = _j.loads(raw[raw.find("{"):raw.rfind("}") + 1])
+    if not got.get("same_song"):
+        out = (False, None)
+    elif got.get("same_singer") is False and got.get("singer_in_title"):
+        title = what.split(" by ")[0].split(" By ")[0].strip()
+        out = (True, f"{title} by {str(got['singer_in_title']).strip()}")
+    else:
+        out = (True, None)
+    if len(_MATCH_CACHE) > 2000:
+        _MATCH_CACHE.clear()
+    _MATCH_CACHE[k] = out
+    return out
+
+
 def _hm(m: int) -> str:
     return f"{m // 60:02d}:{m % 60:02d}"
 
@@ -612,7 +716,20 @@ def user_context(user_id: str, window=None, now_min: Optional[int] = None) -> Di
                 ctx["person"][k] = v
     except Exception as e:
         print(f"[Offers] profile read failed: {e}")
-    ctx["person"] = {k: v for k, v in ctx["person"].items() if v}
+    # What she has said she can and cannot do, and her own standing rules
+    # about offers, in plain words. Only what she or her caregiver said.
+    try:
+        from memory import offer_rules as _R
+        can = {k: v.get("value") for k, v in (_R.abilities(user_id) or {}).items()
+               if isinstance(v, dict) and v.get("source") in ("she_said", "caregiver")}
+        if can:
+            ctx["person"]["can_do"] = can
+        said = [_R.describe(r) for r in _R.rules(user_id)]
+        if said:
+            ctx["her_rules"] = said
+    except Exception as e:
+        print(f"[Offers] rules for context failed: {e}")
+    ctx["person"] = {k: v for k, v in ctx["person"].items() if v not in (None, "", [], {})}
 
     # ── what they love ──
     try:
@@ -867,6 +984,9 @@ Choose the option that best suits THIS person at THIS moment:
   the temple, with family or guests, resting — answer 0. Someone already
   absorbed in something does not want to be offered something else.
 
+- Her rules ("her_rules") are her own words and always hold. What she
+  cannot do ("can_do" false) rules out anything that needs it.
+
 If none truly suits, answer 0. An offer that does not fit is worse than none.
 
 JSON only: {{"pick": <n or 0>, "why": "<one short reason, in English>"}}"""
@@ -1013,11 +1133,23 @@ def choose(user_id: str, window=None, now_min: Optional[int] = None) -> Optional
             # The link is added to the message whatever it is, so it has to
             # be the thing offered, by the singer named. No link is better
             # than the wrong song.
-            if art and art.get("kind") != "tip" and not _title_matches(
-                    offer.what, str(art.get("title") or "")):
-                print(f"[Offers] dropped link for {offer.what!r}: found "
-                      f"{str(art.get('title'))[:60]!r}")
-                art = None
+            if art and art.get("kind") != "tip":
+                ok, fixed = _match_recording(offer.what, str(art.get("title") or ""))
+                if not ok:
+                    print(f"[Offers] dropped link for {offer.what!r}: found "
+                          f"{str(art.get('title'))[:60]!r}")
+                    art = None
+                elif fixed and fixed != offer.what:
+                    mine_now = set(hers(user_id).keys())
+                    if any(a in mine_now for a in _artists(fixed)):
+                        # Corrected to a singer she already loves: that is a
+                        # reminder, not an offer, and belongs to the cluster path.
+                        print(f"[Offers] {offer.what!r} is really {fixed!r}, "
+                              f"already hers: not offering it")
+                        art = None
+                    else:
+                        print(f"[Offers] singer corrected: {offer.what!r} -> {fixed!r}")
+                        offer.what = fixed
         except Exception as e:
             print(f"[Offers] artefact failed: {e}")
             # A search that failed says nothing about whether the song
@@ -1029,16 +1161,33 @@ def choose(user_id: str, window=None, now_min: Optional[int] = None) -> Optional
             print(f"[Offers] {user_id}: no recording found for "
                   f"{offer.what!r}, not offering it")
             struck.add(offer.what)
+            _struck_today(user_id).add(offer.what)
             continue
 
         # A dish: where she can actually get it, near where she is. The map
         # link goes under the message in place of a recipe, which is what
         # someone who loves eating out would act on. No place nearby, and
         # the recipe (or nothing) stays.
+        # Not from outside when she has a rule against it, or has shown she
+        # makes things herself: then it is offered as a dish to cook.
         if offer.category == "khana":
-            place = _place_for(user_id, offer.what)
+            rules_, moment_ = _rules_now(user_id)
+            try:
+                from memory import offer_rules as _R
+                no_outside = _R.blocked(rules_, "khana", "outside", moment_)
+            except Exception:
+                no_outside = None
+            lean = way_lean(user_id, "khana")
+            place = None
+            if not no_outside and lean != "home":
+                place = _place_for(user_id, offer.what)
+            elif no_outside:
+                print(f"[Offers] {user_id}: not from outside ({_R.describe(no_outside)})")
             if place:
                 art = place
+                offer.way = "outside"
+            else:
+                offer.way = "home"
 
         offer.artefact = art
         return offer
@@ -1098,6 +1247,8 @@ def record(user_id: str, offer: Offer, window=None,
     except Exception as e:
         print(f"[Offers] log stamp failed: {e}")
         extra = {}
+    if getattr(offer, "way", ""):
+        extra["way"] = offer.way
     try:
         _db().table("suggestions").insert({**row, **extra}).execute()
         print(f"[Offers] {user_id}: offered {offer}")
@@ -1152,6 +1303,12 @@ def hint(offer: Offer) -> str:
         # English, never a sentence to reuse.
         line += (f"\nWhy it suits this moment: {offer.why_now}. Let that "
                  f"shape what you say, in your own words.")
+
+    # A dish she would make herself, or not have from outside: say so.
+    if offer.category == "khana" and getattr(offer, "way", "") == "home":
+        line += ("\nOffer it as something to make at home. Do not suggest "
+                 "ordering it or going out for it, and do not name a shop "
+                 "or restaurant.")
 
     if offer.artefact and offer.artefact.get("kind") == "tip":
         # A tip is a paragraph of search-answer text with no link, and it

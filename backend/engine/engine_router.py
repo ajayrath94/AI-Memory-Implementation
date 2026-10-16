@@ -390,7 +390,8 @@ def _prompt_parts(user_id: str, timings=None) -> dict:
 
     def episode():
         from memory.episodes import prompt_note
-        return prompt_note(user_id)
+        # lasting=True: the one place her health reaches a reply.
+        return prompt_note(user_id, lasting=True)
 
     jobs = {"persona": persona, "profile": profile, "weights": weights,
             "time": now, "lists": lists, "food": lambda: _food_notes(user_id),
@@ -850,6 +851,60 @@ def _route(model, system, messages, user_id="default"):
 
 # ── Main pipeline ──────────────────────────────────────────────────────────────
 
+REPEAT_MINUTES = 5          # the same words again within this = a resend
+REPEAT_WAIT_SECONDS = 50    # how long to wait for the first one's answer
+
+
+def _norm_msg(s) -> str:
+    return " ".join(str(s or "").lower().split())
+
+
+async def _answer_for_repeat(sid: str, text: str):
+    """If she has just sent these same words, the answer to the first one.
+
+    On 16 Oct replies took 30-40 s, the app gave up and showed "not
+    delivered", and she sent "Rd Burman mujhe bhaut pasand hai" six times.
+    Each one was answered as new and filed as new. A resend now gets the
+    answer already given, waiting for it if it is still being written, and
+    nothing is processed twice.
+    """
+    import asyncio
+    from datetime import datetime, timezone
+    from supabase_store import get_recent_messages
+    want = _norm_msg(text)
+    if not want:
+        return None
+    msgs = get_recent_messages(sid, n=6) or []
+    last_user = next((m for m in reversed(msgs) if m.get("role") == "user"), None)
+    if not last_user or _norm_msg(last_user.get("content")) != want:
+        return None
+    try:
+        at = datetime.fromisoformat(str(last_user["timestamp"]).replace("Z", "+00:00"))
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+    if (datetime.now(timezone.utc) - at).total_seconds() > REPEAT_MINUTES * 60:
+        return None
+    waited = 0
+    while True:
+        after = [m for m in (get_recent_messages(sid, n=6) or [])
+                 if m.get("role") == "assistant"
+                 and str(m.get("timestamp") or "") > str(last_user["timestamp"])]
+        if after:
+            # A short "haan" or "ok" again is usually a new answer to the
+            # next question, not a resend: only longer words count, once
+            # they have been answered.
+            if len(want.split()) < 3:
+                return None
+            print(f"[Router] repeat of {text[:40]!r}: answered with the reply already given")
+            return after[0].get("content") or ""
+        if waited >= REPEAT_WAIT_SECONDS:
+            return None              # the first never got an answer: handle this one
+        await asyncio.sleep(2)
+        waited += 2
+
+
 async def process_input(text: str, model: str,
                         session_id: Optional[str],
                         user_id: str = "default") -> dict:
@@ -874,6 +929,19 @@ async def process_input(text: str, model: str,
         is_new  = True
     sid = session["id"]
     update_session_weight(sid)
+
+    # The same words again, sent because the app gave up waiting: answer
+    # with the reply already given (see _answer_for_repeat).
+    try:
+        _again = await _answer_for_repeat(sid, text)
+    except Exception as _re:
+        print(f"[Router] repeat check failed: {_re}")
+        _again = None
+    if _again is not None:
+        return {"reply": _again, "session_id": sid, "classified": {},
+                "memory_used": False, "model": model, "api_triggers": {},
+                "language": None, "tool_results": [], "reminder": None,
+                "repeat": True}
 
     # What she meant, for understanding; what she wrote, for the record.
     # The keyboard and the transcriber both change her words — "carbon" for
@@ -1096,7 +1164,8 @@ async def process_input(text: str, model: str,
         _f_due = _ex.submit(_timed_call, "due_now", _due, _parts_t)
         _f_mem = _ex.submit(_timed_call, "memory",
                             lambda: build_memory_prompt(user_id, current_embedding=embedding,
-                                                        _query_text=text), _parts_t)
+                                                        _query_text=_q, in_chat=True),
+                            _parts_t)
         _f_ses = _ex.submit(_timed_call, "events",
                             lambda: _retrieve_memory(embedding, sid, user_id, query_text=_q),
                             _parts_t)

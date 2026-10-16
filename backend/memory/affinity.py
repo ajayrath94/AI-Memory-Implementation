@@ -68,6 +68,23 @@ PRIOR_WEIGHT = 4.0
 LOOKBACK_DAYS = 60
 
 
+# How fast an answer fades, in days. A yes holds longest; a "not now" is
+# about that hour on that day and says less each week; silence least of all.
+HALF_LIFE = {"accepted": 45.0, "declined_timing": 21.0, "no_response": 7.0}
+
+# A Sunday answer says less about a Tuesday. Same kind of day counts fully.
+OTHER_KIND_OF_DAY = 0.6
+
+
+def _fade(reaction: str, age_days: float) -> float:
+    h = HALF_LIFE.get(reaction)
+    return 0.5 ** (max(0.0, age_days) / h) if h else 0.0
+
+
+def _weekend(d) -> bool:
+    return d.weekday() >= 5
+
+
 def slot_of(now_min: int) -> str:
     h = (now_min // 60) % 24
     name = "night"                       # before five is still the night
@@ -99,9 +116,9 @@ def _evidence(user_id: str) -> Dict[tuple, Dict[str, float]]:
                     .not_.is_("offered_hour", "null")
                     .gte("created_at", since).limit(500).execute()).data or []
         try:
-            rows = _q("cluster_id,offered_hour,reaction,kind")
+            rows = _q("cluster_id,offered_hour,reaction,kind,created_at")
         except Exception:
-            rows = _q("cluster_id,offered_hour,reaction")    # before the column
+            rows = _q("cluster_id,offered_hour,reaction,created_at")    # before the column
         if not rows:
             return out
         from memory.offers import hers
@@ -111,7 +128,20 @@ def _evidence(user_id: str) -> Dict[tuple, Dict[str, float]]:
         print(f"[Affinity] evidence read failed: {e}")
         return out
 
+    now = datetime.now(timezone.utc)
+    today_weekend = _weekend(now + timedelta(hours=5, minutes=30))
     for r in rows:
+        # Older answers count less (by time, not by position), and answers
+        # from the other kind of day (weekend / weekday) count less.
+        try:
+            made = datetime.fromisoformat(str(r.get("created_at")).replace("Z", "+00:00"))
+            if made.tzinfo is None:
+                made = made.replace(tzinfo=timezone.utc)
+            age = (now - made).total_seconds() / 86400
+            same_day_kind = _weekend(made + timedelta(hours=5, minutes=30)) == today_weekend
+        except Exception:
+            age, same_day_kind = 0.0, True
+        w = _fade(r.get("reaction") or "", age) * (1.0 if same_day_kind else OTHER_KIND_OF_DAY)
         # What was OFFERED, not what it came from. Lag Ja Gale came "because
         # of movie", and her yes to a song counted as a yes to films at two
         # in the afternoon. Rows from before the kind was stored fall back to
@@ -123,11 +153,11 @@ def _evidence(user_id: str) -> Dict[tuple, Dict[str, float]]:
         e = out.setdefault(key, {"yes": 0.0, "no": 0.0})
         rx = r.get("reaction")
         if rx == "accepted":
-            e["yes"] += 1
+            e["yes"] += w
         elif rx == "declined_timing":
-            e["no"] += 1
+            e["no"] += w
         elif rx == "no_response":
-            e["no"] += 0.5
+            e["no"] += 0.5 * w
     return out
 
 
