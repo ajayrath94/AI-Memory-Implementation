@@ -16,8 +16,9 @@ import { SHEETS, Choice, pick } from './shortcuts'
 // have said — so Nancy answers exactly as if she had typed them — or, for
 // lists, opens the screen where they are.
 //
-// Khabar, Paas mein and Aaj ka din have kinds, so they open a sheet of big
-// tiles first (shortcuts.ts) and the tile sends the sentence.
+// Listein, Khabar, Paas mein and Aaj ka din have kinds, so they open a sheet
+// of big tiles first (shortcuts.ts): a tile sends the sentence, or opens a
+// screen (her lists; her shopping list with the shops showing).
 
 type Tool = {
   id: string
@@ -31,7 +32,7 @@ type Tool = {
 }
 
 const TOOLS: Tool[] = [
-  { id: 'lists',   icon: 'list-outline',          label: 'tools.lists',   fallback: 'Listein',   open: '/lists' },
+  { id: 'lists',   icon: 'list-outline',          label: 'tools.lists',   fallback: 'Listein',   sheet: 'lists' },
   { id: 'weather', icon: 'partly-sunny-outline',  label: 'tools.weather', fallback: 'Mausam',
     say: 'tools.weather.say', sayFallback: 'Aaj mausam kaisa hai?' },
   { id: 'music',   icon: 'musical-notes-outline', label: 'tools.music',   fallback: 'Gaane',

@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, SafeAreaView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Alert, TextInput, Linking,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
+import { useLocalSearchParams } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../hooks/useTheme'
 import { useT } from '../hooks/useT'
@@ -62,6 +63,11 @@ const W = {
   oneStop: { en: 'Everything in one place', hl: 'Ek hi jagah sab', hi: 'एक ही जगह सब' },
   except:  { en: 'except', hl: 'chhodkar', hi: 'छोड़कर' },
   people:  { en: 'ratings', hl: 'log', hi: 'लोग' },
+  noShop:  { en: 'None of your open lists has things to buy.',
+             hl: 'Abhi kisi list mein khareedne ki cheezein nahi hain.',
+             hi: 'अभी किसी सूची में ख़रीदने की चीज़ें नहीं हैं।' },
+  finding: { en: 'Finding your shopping list…', hl: 'Aapki khareedne ki list dhoondh rahi hoon…',
+             hi: 'आपकी ख़रीदने की सूची ढूँढ रही हूँ…' },
 }
 
 function shopMeta(sh: Shop, lang: string, withRating: boolean): string {
@@ -193,6 +199,42 @@ export default function ListsScreen() {
     return () => { live = false }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planKey, userId])
+
+  // "Kahan milega?" from the Listein sheet (?shops=1): her latest open list
+  // that has things to buy, opened with the shops already showing.
+  const { shops: wantShops } = useLocalSearchParams<{ shops?: string }>()
+  const askedShops = useRef(false)
+  const pendingShops = useRef<string | null>(null)
+  const [notice, setNotice] = useState('')
+  useEffect(() => {
+    if (wantShops !== '1' || askedShops.current || loading) return
+    askedShops.current = true
+    ;(async () => {
+      setNotice(pick(W.finding, lang))
+      for (const l of openLists) {
+        try {
+          const r = await fetch(`${API_BASE}/lists/${userId}/${l.id}/shops`, { headers: H })
+          const j: ShopPlan = await r.json()
+          if (j?.buying) {
+            setNotice('')
+            pendingShops.current = l.id
+            fetchOne(l.id)
+            return
+          }
+        } catch (err) { console.error('Shop plan failed:', err) }
+      }
+      setNotice(pick(W.noShop, lang))
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantShops, loading, openLists])
+
+  useEffect(() => {
+    if (!current || pendingShops.current !== current.id || !plan?.buying) return
+    pendingShops.current = null
+    setShopsOpen(true)
+    loadShops(current.id, mode)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan, current?.id])
 
   const toggleShops = () => {
     if (!current) return
@@ -528,6 +570,11 @@ export default function ListsScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />}
       >
+        {!!notice && (
+          <View style={[styles.shopsBox, { borderColor: Colors.accent + '55', marginBottom: 14 }]}>
+            <Text style={[styles.shopName, { textAlign: 'center' }]}>🛍️ {notice}</Text>
+          </View>
+        )}
         {openLists.length === 0 && keptLists.length === 0 && (
           <View style={styles.empty}>
             <Ionicons name="list-outline" size={48} color={Colors.textMuted} />

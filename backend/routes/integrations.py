@@ -112,6 +112,7 @@ NEWS_KINDS = {
     "sports":        "SPORTS",
     "entertainment": "ENTERTAINMENT",
     "world":         "WORLD",
+    # "all" is the front page: India's top stories of every kind.
     # "local" is her city's page, worked out from where she is.
 }
 # What each kind is called, so Nancy says "khel ki khabar", not "India".
@@ -120,6 +121,7 @@ NEWS_LABELS = {
     "sports":        "Sports",
     "entertainment": "Entertainment (films, TV, music)",
     "world":         "World",
+    "all":           "Top stories",
 }
 _CITY: dict = {}        # "lat,lng" -> city, so the lookup is made once
 
@@ -188,6 +190,9 @@ def news_of_kind(user_id: str, kind: str) -> dict:
         url = ("https://news.google.com/rss/headlines/section/geo/"
                f"{urllib.parse.quote(city)}?{tail}")
         where = city
+    elif kind == "all":
+        url = f"https://news.google.com/rss?{tail}"
+        where = NEWS_LABELS["all"]
     elif kind in NEWS_KINDS:
         url = f"https://news.google.com/rss/headlines/section/topic/{NEWS_KINDS[kind]}?{tail}"
         where = NEWS_LABELS[kind]

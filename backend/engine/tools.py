@@ -103,9 +103,10 @@ NEWS_SCHEMA = {
                 },
                 "kind": {
                     "type": "string",
-                    "enum": ["local", "india", "sports", "entertainment", "world"],
+                    "enum": ["all", "local", "india", "sports", "entertainment", "world"],
                     "description": (
-                        "A kind of news rather than a topic: local (her own "
+                        "A kind of news rather than a topic: all (the day's "
+                        "top stories of every kind), local (her own "
                         "city's news), india, sports, entertainment (films, TV, "
                         "music), world. Use when she asks for a kind of news "
                         "('aas-paas ki khabar', 'khel ki khabar', 'duniya ki "

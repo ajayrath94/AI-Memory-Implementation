@@ -4,6 +4,7 @@ import {
   TouchableOpacity, Switch, Alert, ActivityIndicator,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import * as Updates from 'expo-updates'
 import { router } from 'expo-router'
 import { useTheme } from '../hooks/useTheme'
 import { isLocationEnabled, setLocationEnabled, requestLocationPermission, syncLocation } from '../services/locationService'
@@ -378,6 +379,16 @@ export default function SettingsScreen() {
         <View style={styles.appInfo}>
           <Text style={[styles.appInfoText, { color: theme.textHint }]}>Nancy AI · Built with ❤️</Text>
           <Text style={[styles.appInfoText, { color: theme.textHint }]}>Memory never forgets</Text>
+          {/* Which app update is running, so "is the new version on her
+              phone?" can be answered by looking. The id matches the EAS
+              "Android update ID" (first 8 characters). */}
+          <Text style={[styles.appInfoText, { color: theme.textHint }]}>
+            {Updates.updateId
+              ? `Update ${Updates.updateId.slice(0, 8)}${Updates.createdAt
+                  ? ' · ' + new Date(Updates.createdAt.getTime() + 330 * 60000).toISOString().slice(0, 16).replace('T', ' ')
+                  : ''}`
+              : 'Built-in version (no update yet)'}
+          </Text>
         </View>
 
       </ScrollView>
