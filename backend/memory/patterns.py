@@ -32,8 +32,13 @@ from zoneinfo import ZoneInfo
 MIN_DAYS = 4
 
 # How far back to look. Long enough to be stable, short enough to follow a real
-# change in their life.
+# change in their life. Counted per place: a place's last 21 days with her
+# messages, not the last 21 calendar days.
 WINDOW_DAYS = 21
+
+# How far back to read at all. A place she left a month ago still has its
+# routine; when she goes back, that is the starting point.
+LOOKBACK_DAYS = 90
 
 # A drift smaller than someone's own variability is not a drift.
 MIN_DRIFT_MIN = 45
@@ -157,16 +162,83 @@ def _time_to_mins(t) -> Optional[int]:
         return None
 
 
-def observe(user_id: str) -> list:
-    """Derive wake, sleep and active-window patterns. Returns what it wrote."""
-    tz     = _tz(user_id)
-    stamps = _user_messages(user_id)
-    days   = _by_local_day(stamps, tz)
-    if len(days) < MIN_DAYS:
-        print(f"[Patterns] {user_id}: only {len(days)} day(s) of data, "
-              f"need {MIN_DAYS}")
-        return []
+# ── where she was, day by day ────────────────────────────────────────────────
+#
+# A routine belongs to a place. Her mornings in Surat and at her son's in
+# Bengaluru are two routines, and mixing them gave one that was true of
+# neither; the old answer to that was to stop judging change while she was
+# away, which on 16 Oct had been the case for five weeks. Now each day is
+# labelled with where she was, each place learns its own routine, and change
+# is only ever judged against the same place.
+#
+# The profile holds only the stay in progress (current_location, arrived_at),
+# so stays are kept in life_context.stays as they are seen, and closed when
+# she is home again. Days before the first recorded stay count as home.
 
+
+def _day(s) -> Optional[str]:
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00")).date().isoformat()
+    except Exception:
+        return None
+
+
+def _stays(user_id: str):
+    """(home, current place or None, [stays]) — and the stays log brought up
+    to date with what the profile says now."""
+    try:
+        from supabase_store import get_client
+        db = get_client()
+        rows = (db.table("user_profile")
+                .select("home_location,location,current_location,arrived_at,life_context")
+                .eq("user_id", user_id).limit(1).execute()).data or []
+    except Exception as e:
+        print(f"[Patterns] stays read failed: {e}")
+        return None, None, []
+    if not rows:
+        return None, None, []
+    p = rows[0]
+    home = p.get("home_location") or p.get("location")
+    cur = p.get("current_location")
+    away = bool(cur and cur != home)
+    lc = p.get("life_context") if isinstance(p.get("life_context"), dict) else {}
+    stays = [s for s in (lc.get("stays") or []) if isinstance(s, dict) and s.get("place")]
+    today = datetime.now(timezone.utc).date().isoformat()
+    changed = False
+
+    open_ = [s for s in stays if not s.get("to")]
+    if away:
+        start = _day(p.get("arrived_at")) or today
+        if not any(s["place"] == cur and s.get("from") == start for s in stays):
+            for s in open_:                      # a new place closes the last
+                s["to"] = start
+            stays.append({"place": cur, "from": start, "to": None})
+            changed = True
+    else:
+        for s in open_:                          # home again
+            s["to"] = today
+            changed = True
+    if changed:
+        lc["stays"] = stays[-20:]
+        try:
+            db.table("user_profile").update({"life_context": lc}) \
+                .eq("user_id", user_id).execute()
+            print(f"[Patterns] {user_id}: stays now {lc['stays']}")
+        except Exception as e:
+            print(f"[Patterns] stays write failed: {e}")
+    return home, (cur if away else None), stays
+
+
+def _place_on(day, home, stays) -> str:
+    d = day.isoformat() if hasattr(day, "isoformat") else str(day)
+    for s in stays:
+        if s.get("from") and d >= s["from"] and (not s.get("to") or d < s["to"]):
+            return s["place"]
+    return home or "home"
+
+
+def _derive(days: dict) -> list:
+    """Wake, sleep and active window from one set of days."""
     firsts = [min(v) for v in days.values() if v]
 
     # A day's last message is only a sleep signal if it is plausibly evening.
@@ -177,6 +249,8 @@ def observe(user_id: str) -> list:
     lasts = [max(v) for v in days.values() if v and max(v) >= EVENING_FROM]
 
     derived = []
+    if len(days) < MIN_DAYS:
+        return derived
     for kind, values in (("wake", firsts), ("sleep", lasts)):
         centre, spread = _centre_and_spread(values)
         if centre is None:
@@ -201,20 +275,52 @@ def observe(user_id: str) -> list:
             "observations": len(days),
             "confidence":   _confidence(len(days), 0),
         })
-
-    # Travel breaks a routine without anything being wrong, and this is read
-    # once rather than per pattern.
-    away = False
-    try:
-        from memory.declared import get_declared
-        away = get_declared(user_id).place.away
-    except Exception as e:
-        print(f"[Patterns] away check failed: {e}")
-
-    return [_upsert(user_id, d, away) for d in derived]
+    return derived
 
 
-def _upsert(user_id: str, d: dict, away: bool = False) -> dict:
+def observe(user_id: str) -> list:
+    """Derive wake, sleep and active-window patterns, per place. The main row
+    of each kind holds the routine of where she is now (or home's, while the
+    place she is in has too few days); every place's own is kept beside it in
+    by_place. Returns what it wrote."""
+    tz     = _tz(user_id)
+    stamps = _user_messages(user_id, days=LOOKBACK_DAYS)
+    days   = _by_local_day(stamps, tz)
+    home, now_place, stays = _stays(user_id)
+    home = home or "home"
+
+    by_place: dict = defaultdict(dict)
+    for d, v in days.items():
+        by_place[_place_on(d, home, stays)][d] = v
+    # Each place's own recent days, not the calendar's last three weeks.
+    by_place = {pl: dict(sorted(ds.items())[-WINDOW_DAYS:]) for pl, ds in by_place.items()}
+
+    derived_by_place = {pl: {r["kind"]: r for r in _derive(ds)} for pl, ds in by_place.items()}
+    print(f"[Patterns] {user_id}: days by place "
+          + ", ".join(f"{pl}: {len(ds)}" for pl, ds in by_place.items())
+          + f"; now in {now_place or home}")
+
+    here = now_place or home
+    use = derived_by_place.get(here) or {}
+    if not use and here != home:
+        use = derived_by_place.get(home) or {}     # too few days there yet
+    if not use:
+        n = len(by_place.get(here, {}))
+        print(f"[Patterns] {user_id}: only {n} day(s) of data in {here}, need {MIN_DAYS}")
+        return []
+
+    out = []
+    for kind, d in use.items():
+        places = {pl: {k: v for k, v in dv[kind].items() if k in
+                       ("observed_at", "spread_min", "observations", "confidence")}
+                  for pl, dv in derived_by_place.items() if kind in dv}
+        out.append(_upsert(user_id, d, here=here, home=home, places=places,
+                           here_has_own=(here in derived_by_place)))
+    return out
+
+
+def _upsert(user_id: str, d: dict, here: str = "", home: str = "",
+            places: Optional[dict] = None, here_has_own: bool = True) -> dict:
     """Write the observation WITHOUT touching what they declared.
 
     declared_at and observed_at are separate columns on purpose: recording what
@@ -245,8 +351,29 @@ def _upsert(user_id: str, d: dict, away: bool = False) -> dict:
     }
 
     prev = existing[0] if existing else None
-    declared = _time_to_mins(prev.get("declared_at")) if prev else None
     observed = _time_to_mins(d["observed_at"])
+    at_home = (here == home) or not here
+
+    # Each place keeps its own observation, and its own baseline: the first
+    # confident routine seen there. Change away from home is judged against
+    # that, never against home's declared times.
+    old_places = (prev or {}).get("by_place") if isinstance((prev or {}).get("by_place"), dict) else {}
+    new_places = {}
+    for pl, obs in (places or {}).items():
+        base = (old_places.get(pl) or {}).get("baseline_at")
+        if not base and obs.get("confidence", 0) >= MIN_DRIFT_CONFIDENCE:
+            base = obs.get("observed_at")
+        new_places[pl] = {**obs, "baseline_at": base, "home": pl == home}
+    for pl, obs in old_places.items():
+        new_places.setdefault(pl, obs)            # a place not seen lately keeps its routine
+    row["by_place"] = new_places
+    row["place"] = here or home
+
+    if at_home:
+        declared = _time_to_mins(prev.get("declared_at")) if prev else None
+    else:
+        declared = (_time_to_mins((new_places.get(here) or {}).get("baseline_at"))
+                    if here_has_own else None)
 
     if declared is not None and observed is not None:
         drift = observed - declared
@@ -259,17 +386,12 @@ def _upsert(user_id: str, d: dict, away: bool = False) -> dict:
         # nearly enough to tell someone their routine has changed.
         confident = d["confidence"] >= MIN_DRIFT_CONFIDENCE
 
-        # Not while they are away from home. Her puja does not happen at 6:30
-        # at her daughter's house, and reading a fortnight's visit as decline
-        # would have told a caregiver her mother was deteriorating while she
-        # was having a nice time. Existing drift is left standing rather than
-        # cleared — if her routine had genuinely shifted before she travelled,
-        # that is still true.
-        if away:
-            print(f"[Patterns] {user_id} is away — holding drift for {d['kind']}")
-            row.pop("drift_min", None)
-            row.pop("drift_since", None)
-        elif confident and abs(drift) >= max(MIN_DRIFT_MIN, d["spread_min"]):
+        # Within the same place only. Her puja does not happen at 6:30 at
+        # her son's house, and judging a visit against home would have told
+        # a caregiver she was deteriorating while she was having a nice time.
+        # Away, the comparison is with her own routine THERE (its baseline);
+        # until that place has one, existing drift is left standing.
+        if confident and abs(drift) >= max(MIN_DRIFT_MIN, d["spread_min"]):
             row["drift_min"] = drift
             if not (prev and prev.get("drift_since")):
                 row["drift_since"] = datetime.now(timezone.utc).isoformat()
@@ -277,17 +399,36 @@ def _upsert(user_id: str, d: dict, away: bool = False) -> dict:
             row["drift_min"]   = None
             row["drift_since"] = None
 
-    if prev:
-        # Never downgrade a declared or corrected row to "observed".
-        if (prev.get("source") or "declared") == "observed":
-            row["source"] = "observed"
-        db.table("user_patterns").update(row).eq("id", prev["id"]).execute()
-        row["id"] = prev["id"]
-    else:
-        row["source"] = "observed"
-        created = db.table("user_patterns").insert(row).execute().data
-        row["id"] = created[0]["id"] if created else None
+    elif not at_home and not here_has_own:
+        # Away, and too few days there for a routine of its own: nothing to
+        # judge change against yet. Not frozen — it starts as soon as there is.
+        row["drift_min"] = None
+        row["drift_since"] = None
 
+    def _write(r):
+        if prev:
+            # Never downgrade a declared or corrected row to "observed".
+            if (prev.get("source") or "declared") == "observed":
+                r["source"] = "observed"
+            db.table("user_patterns").update(r).eq("id", prev["id"]).execute()
+            r["id"] = prev["id"]
+        else:
+            r["source"] = "observed"
+            created = db.table("user_patterns").insert(r).execute().data
+            r["id"] = created[0]["id"] if created else None
+
+    try:
+        _write(row)
+    except Exception as e:
+        if "by_place" in str(e) or "place" in str(e):
+            # Before the columns exist (patterns_by_place.sql): the main row
+            # still updates.
+            print(f"[Patterns] place columns missing, writing without: {str(e)[:80]}")
+            row.pop("by_place", None)
+            row.pop("place", None)
+            _write(row)
+        else:
+            raise
     return row
 
 
