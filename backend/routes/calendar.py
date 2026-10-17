@@ -380,22 +380,91 @@ Which one does she mean? Answer with its number, or NONE if it is not clearly on
 
 @router.put("/{event_id}")
 def update_event(event_id: str, upd: CalendarUpdate):
+    """Change a plan from the app or the caregiver dashboard. Its reminder
+    goes with it: a new time or a new name cancels the old alerts and plans
+    new ones (the same helpers as Nancy's change_calendar_event). This used to
+    move the event and leave the alerts ringing at the old time."""
     db = _db()
     patch = {k: v for k, v in upd.model_dump().items() if v is not None}
     if not patch:
         return {"status": "no changes"}
     try:
-        res = db.table("calendar_events").update(patch).eq("id", event_id).execute()
-        return {"status": "updated", "event": res.data[0] if res.data else None}
+        old = (db.table("calendar_events").select("*").eq("id", event_id)
+               .limit(1).execute()).data or []
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)[:100])
+    if not old:
+        raise HTTPException(status_code=404, detail="no such event")
+    old = old[0]
+    if "event_at" in patch:
+        at = _ts(patch["event_at"])
+        if not at:
+            raise HTTPException(status_code=400, detail="event_at is not a time")
+        patch["event_at"] = at.isoformat()
+    try:
+        res = db.table("calendar_events").update(patch).eq("id", event_id).execute()
+        ev = res.data[0] if res.data else {**old, **patch}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)[:100])
+    rem = None
+    moved = "event_at" in patch and _ts(patch["event_at"]) != _ts(old.get("event_at"))
+    renamed = "title" in patch and patch["title"] != old.get("title")
+    rings = patch.get("reminder_enabled", old.get("reminder_enabled", True)) is not False
+    if moved or renamed or "reminder_enabled" in patch:
+        _cancel_reminders(db, old["user_id"], old.get("event_at"))
+        if rings:
+            rem = _spawn_reminder(db, old["user_id"], ev.get("title") or old.get("title"), ev.get("event_at"))
+        print(f"[Calendar] {ev.get('title')!r} changed; its alerts re-planned")
+    else:
+        rem = (_pending_for(db, old["user_id"], old.get("event_at")) or [None])[0]
+    return {"status": "updated", "event": ev, "reminder": rem}
 
 
 @router.delete("/{event_id}")
 def delete_event(event_id: str):
+    """Remove a plan, and its alerts with it — they kept ringing for a plan
+    that was gone."""
     db = _db()
     try:
+        old = (db.table("calendar_events").select("*").eq("id", event_id)
+               .limit(1).execute()).data or []
         db.table("calendar_events").delete().eq("id", event_id).execute()
-        return {"status": "deleted", "id": event_id}
+        n = _cancel_reminders(db, old[0]["user_id"], old[0].get("event_at")) if old else 0
+        return {"status": "deleted", "id": event_id, "alerts_cancelled": n}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)[:100])
+
+
+@router.get("/{user_id}/days")
+def days_with_plans(user_id: str, start: str, days: int = 42) -> dict:
+    """Which days have something planned, for the month view's dots. Her
+    days (her time zone), counted; no routine, no detail. One small read per
+    month as she scrolls through the year."""
+    db = _db()
+    tz = _tz(user_id)
+    try:
+        from datetime import time as _time
+        first = datetime.fromisoformat(start[:10]).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="start is YYYY-MM-DD")
+    frm = datetime.combine(first, _time(0, 0), tz).astimezone(timezone.utc)
+    to = frm + timedelta(days=max(1, min(days, 120)))
+    out = {}
+
+    def _count(at):
+        if at and frm <= at < to:
+            k = at.astimezone(tz).date().isoformat()
+            out[k] = out.get(k, 0) + 1
+    try:
+        for e in (db.table("calendar_events").select("event_at").eq("user_id", user_id)
+                  .gte("event_at", frm.isoformat()).lt("event_at", to.isoformat())
+                  .execute()).data or []:
+            _count(_ts(e.get("event_at")))
+        for r in (db.table("reminders").select("event_at,fire_at,status,source")
+                  .eq("user_id", user_id).execute()).data or []:
+            if r.get("status") == "cancelled" or r.get("source") == "calendar":
+                continue   # an event's own reminder is the event, counted above
+            _count(_ts(r.get("event_at")) or _ts(r.get("fire_at")))
+    except Exception as e:
+        print(f"[Calendar] days read failed: {e}")
+    return {"user_id": user_id, "start": first.isoformat(), "days": out}
