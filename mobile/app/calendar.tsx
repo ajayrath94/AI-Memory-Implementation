@@ -35,6 +35,10 @@ import { useT } from '../hooks/useT'
 import { Colors, Typography, Spacing, Radius, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
 import { syncReminderNotifications } from '../services/notificationService'
+import { CAL, pick, pickList, codeOf, WEEKDAY_SHORT, WEEKDAY_FULL, WEEKDAY_HEAD, MONTH_NAMES } from '../i18n/words'
+
+// Every label here follows her language (i18n/words.ts).
+const BOT = 'Nancy'
 
 interface CalItem {
   kind:      string          // event | reminder | routine
@@ -59,10 +63,10 @@ const CATEGORY: Record<string, { color: string; icon: string }> = {
   personal:  { color: '#888888', icon: 'calendar-outline' },
 }
 const KINDS = [
-  { key: 'medical',  label: '🩺 Doctor' },
-  { key: 'social',   label: '👥 Milna' },
-  { key: 'festival', label: '🪔 Tyohar / Puja' },
-  { key: 'personal', label: '📅 Apna' },
+  { key: 'medical',  emoji: '🩺', word: CAL.kDoctor },
+  { key: 'social',   emoji: '👥', word: CAL.kSocial },
+  { key: 'festival', emoji: '🪔', word: CAL.kFestival },
+  { key: 'personal', emoji: '📅', word: CAL.kPersonal },
 ]
 function catStyle(item: CalItem) {
   const key = (item.kind === 'reminder' ? 'reminder'
@@ -74,10 +78,14 @@ function catStyle(item: CalItem) {
 // ── India time, by a fixed offset ────────────────────────────────────────
 const IST = 5.5 * 60 * 60 * 1000
 const DAY = 86400000
-const WEEKDAY = ['Ravi', 'Som', 'Mangal', 'Budh', 'Guru', 'Shukra', 'Shani']
-const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
-const SHORT_M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+// Hinglish keeps English day and month names in headings, as before.
+const days = (lang: string) => pickList(WEEKDAY_FULL, codeOf(lang) === 'hl' ? 'english' : lang)
+const monthsOf = (lang: string) => pickList(MONTH_NAMES, codeOf(lang) === 'hl' ? 'english' : lang)
+/** A short month: three letters in English and Hinglish, the whole name otherwise. */
+const shortMonth = (lang: string, m: number) => {
+  const name = monthsOf(lang)[m]
+  return ['en', 'hl'].includes(codeOf(lang)) ? name.slice(0, 3) : name
+}
 
 /** A Date whose UTC getters read as India time. */
 function ist(iso: string | number): Date {
@@ -102,20 +110,20 @@ function timeText(iso: string): string {
   const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12
   return `${h}:${pad(m)} ${ap}`
 }
-function dayTitle(key: string): string {
+function dayTitle(key: string, lang: string): string {
   const d = keyDate(key)
-  const s = `${DAYS[d.getUTCDay()]}, ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`
-  if (key === todayKey()) return `Aaj · ${s}`
-  if (key === addDays(todayKey(), 1)) return `Kal · ${s}`
+  const s = `${days(lang)[d.getUTCDay()]}, ${d.getUTCDate()} ${monthsOf(lang)[d.getUTCMonth()]}`
+  if (key === todayKey()) return `${pick(CAL.today, lang)} · ${s}`
+  if (key === addDays(todayKey(), 1)) return `${pick(CAL.tomorrow, lang)} · ${s}`
   return s
 }
 
 // The four parts of her day, and the time a "+ jodo" in each starts at.
 const PARTS = [
-  { key: 'subah',   label: 'Subah',   from: 0,  to: 12, start: 9 },
-  { key: 'dopahar', label: 'Dopahar', from: 12, to: 16, start: 14 },
-  { key: 'shaam',   label: 'Shaam',   from: 16, to: 20, start: 17 },
-  { key: 'raat',    label: 'Raat',    from: 20, to: 24, start: 20 },
+  { key: 'subah',   word: CAL.morning,   from: 0,  to: 12, start: 9 },
+  { key: 'dopahar', word: CAL.afternoon, from: 12, to: 16, start: 14 },
+  { key: 'shaam',   word: CAL.evening,   from: 16, to: 20, start: 17 },
+  { key: 'raat',    word: CAL.night,     from: 20, to: 24, start: 20 },
 ]
 
 // ── the sheet's draft ────────────────────────────────────────────────────
@@ -134,6 +142,7 @@ export default function CalendarScreen() {
   const theme = useTheme()
   const t = useT()
   const { userId } = useAppStore()
+  const lang = useAppStore(s => s.language)
 
   const [items, setItems]       = useState<Record<string, CalItem[]>>({})   // by day
   const [loading, setLoading]   = useState(true)
@@ -155,7 +164,7 @@ export default function CalendarScreen() {
     const h = Math.min(23, new Date(Date.now() + 330 * 60000).getUTCHours() + 1)
     setDraft({
       kind: 'event', title: '', dayKey: todayKey(), hour: h, minute: 0,
-      category: 'personal', heading: 'Kya jodna hai?',
+      category: 'personal', heading: pick(CAL.addHead, lang),
     })
   }, [add])
 
@@ -203,7 +212,7 @@ export default function CalendarScreen() {
   // ── sheet ──────────────────────────────────────────────────────────────
   const newIn = (part: typeof PARTS[number]) => setDraft({
     kind: 'event', title: '', dayKey: selected, hour: part.start, minute: 0,
-    category: 'personal', heading: `${part.label} mein kya hai?`,
+    category: 'personal', heading: pick(CAL.partHead, lang, { part: pick(part.word, lang) }),
   })
   const edit = (it: CalItem) => {
     const d = ist(it.at)
@@ -211,7 +220,7 @@ export default function CalendarScreen() {
       id: it.id, kind: it.kind, title: it.title || '', dayKey: keyOf(d),
       hour: d.getUTCHours(), minute: d.getUTCMinutes(),
       category: it.category && CATEGORY[it.category] ? it.category : 'personal',
-      heading: it.kind === 'reminder' ? 'Nancy ka reminder' : 'Badlo',
+      heading: it.kind === 'reminder' ? pick(CAL.reminderHead, lang, { bot: BOT }) : pick(CAL.changeHead, lang),
     })
   }
 
@@ -226,10 +235,10 @@ export default function CalendarScreen() {
   const save = async () => {
     if (!draft) return
     const title = draft.title.trim()
-    if (!title) { Alert.alert('Kya hai?', 'Thoda likh dijiye — kya hai.'); return }
+    if (!title) { Alert.alert(pick(CAL.whatQ, lang), pick(CAL.whatBody, lang)); return }
     const at = `${draft.dayKey}T${pad(draft.hour)}:${pad(draft.minute)}:00+05:30`
     if (Date.parse(at) < Date.now() - 60000) {
-      Alert.alert('Yeh samay nikal gaya', 'Aage ka koi samay chuniye.'); return
+      Alert.alert(pick(CAL.pastQ, lang), pick(CAL.pastBody, lang)); return
     }
     setSaving(true)
     try {
@@ -248,11 +257,11 @@ export default function CalendarScreen() {
       const json = await res.json()
       if (!res.ok) throw new Error(json?.detail || 'save failed')
       if (json?.status === 'already there') {
-        Alert.alert('Pehle se hai', `"${json?.event?.title || title}" us din pehle se calendar mein hai.`)
+        Alert.alert(pick(CAL.thereQ, lang), pick(CAL.thereBody, lang, { title: json?.event?.title || title }))
       }
       await after(draft.dayKey)
     } catch (e: any) {
-      Alert.alert('Nahi ho paaya', 'Thodi der baad phir koshish kijiye.')
+      Alert.alert(pick(CAL.failQ, lang), pick(CAL.failBody, lang))
       console.error('[calendar] save', e)
     } finally {
       setSaving(false)
@@ -261,9 +270,9 @@ export default function CalendarScreen() {
 
   const remove = () => {
     if (!draft?.id) return
-    Alert.alert('Hata dein?', `"${draft.title}" — iski yaad bhi band ho jayegi.`, [
-      { text: 'Rehne do', style: 'cancel' },
-      { text: 'Hata do', style: 'destructive', onPress: async () => {
+    Alert.alert(pick(CAL.removeQ, lang), pick(CAL.removeBody, lang, { title: draft.title }), [
+      { text: pick(CAL.keep, lang), style: 'cancel' },
+      { text: pick(CAL.remove, lang), style: 'destructive', onPress: async () => {
           try {
             const url = draft.kind === 'reminder'
               ? `${API_BASE}/reminders/${draft.id}/cancel`
@@ -289,7 +298,7 @@ export default function CalendarScreen() {
         }).sort((a, b) => a.at.localeCompare(b.at))
         return (
           <View key={part.key} style={styles.part}>
-            <Text style={[styles.partLabel, { color: theme.textMuted }]}>{part.label}</Text>
+            <Text style={[styles.partLabel, { color: theme.textMuted }]}>{pick(part.word, lang)}</Text>
             {inPart.map(it => it.kind === 'routine' ? (
               <View key={`r-${it.id}-${it.at}`} style={styles.routineRow}>
                 <Text style={[styles.routineTime, { color: catStyle(it).color }]}>{timeText(it.at)}</Text>
@@ -308,7 +317,7 @@ export default function CalendarScreen() {
                   <View style={styles.bellRow}>
                     <Ionicons name="notifications-outline" size={14} color={CATEGORY.reminder.color} />
                     <Text style={[styles.meta, { color: CATEGORY.reminder.color, marginTop: 0, marginLeft: 4 }]}>
-                      Yaad dilaungi
+                      {pick(CAL.remindTag, lang)}
                     </Text>
                   </View>
                 </View>
@@ -317,7 +326,7 @@ export default function CalendarScreen() {
             ))}
             <TouchableOpacity activeOpacity={0.7} onPress={() => newIn(part)}
               style={[styles.addRow, { borderColor: Colors.accent + '55' }]}>
-              <Text style={styles.addText}>+ {part.label} mein kuch jodo</Text>
+              <Text style={styles.addText}>{pick(CAL.addRow, lang, { part: pick(part.word, lang) })}</Text>
             </TouchableOpacity>
           </View>
         )
@@ -332,7 +341,7 @@ export default function CalendarScreen() {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, { color: theme.text }]}>{t('calendar.title')}</Text>
-          <Text style={[styles.subtitle, { color: theme.textMuted }]}>{dayTitle(selected)}</Text>
+          <Text style={[styles.subtitle, { color: theme.textMuted }]}>{dayTitle(selected, lang)}</Text>
         </View>
         <TouchableOpacity onPress={() => setMonths(true)} activeOpacity={0.7}
           style={[styles.headerIcon, { backgroundColor: Colors.accent + '22', borderColor: Colors.accent }]}>
@@ -345,7 +354,8 @@ export default function CalendarScreen() {
         {strip.map((k, i) => {
           const on = k === selected
           const d = keyDate(k)
-          const label = i === 0 ? 'Aaj' : i === 1 ? 'Kal' : WEEKDAY[d.getUTCDay()]
+          const label = i === 0 ? pick(CAL.today, lang) : i === 1 ? pick(CAL.tomorrow, lang)
+                      : pickList(WEEKDAY_SHORT, lang)[d.getUTCDay()]
           return (
             <TouchableOpacity key={k} activeOpacity={0.7} onPress={() => openDay(k)}
               style={[styles.chip, { backgroundColor: on ? Colors.accent : theme.bgCard,
@@ -383,6 +393,7 @@ function PlanSheet({ draft, setDraft, onSave, onDelete, saving, theme }: {
   draft: Draft | null; setDraft: (d: Draft | null) => void
   onSave: () => void; onDelete: () => void; saving: boolean; theme: any
 }) {
+  const lang = useAppStore(s => s.language)
   const [picker, setPicker] = useState<'date' | 'time' | null>(null)
   if (!draft) return null
   const fromReminder = draft.kind === 'reminder'
@@ -398,19 +409,19 @@ function PlanSheet({ draft, setDraft, onSave, onDelete, saving, theme }: {
           <View style={styles.grab} />
           <Text style={[styles.sheetTitle, { color: theme.text }]}>{draft.heading}</Text>
 
-          <Text style={[styles.lbl, { color: theme.textMuted }]}>Kya hai</Text>
+          <Text style={[styles.lbl, { color: theme.textMuted }]}>{pick(CAL.whatLbl, lang)}</Text>
           <TextInput value={draft.title} editable={!fromReminder}
             onChangeText={v => setDraft({ ...draft, title: v })}
-            placeholder="Jaise: Doctor, mandir, beta aayega"
+            placeholder={pick(CAL.example, lang)}
             placeholderTextColor={theme.textHint}
             style={[styles.input, { color: theme.text, backgroundColor: theme.bgInput, borderColor: theme.border }]} />
 
-          <Text style={[styles.lbl, { color: theme.textMuted }]}>Kab</Text>
+          <Text style={[styles.lbl, { color: theme.textMuted }]}>{pick(CAL.whenLbl, lang)}</Text>
           <View style={styles.row}>
             <TouchableOpacity disabled={fromReminder} onPress={() => setPicker('date')}
               style={[styles.big, { backgroundColor: theme.bgInput, borderColor: theme.border }]}>
               <Text style={[styles.bigText, { color: theme.text }]}>
-                {`${DAYS[d.getUTCDay()].slice(0, 3)}, ${d.getUTCDate()} ${SHORT_M[d.getUTCMonth()]}`}
+                {`${pickList(WEEKDAY_SHORT, codeOf(lang) === 'hl' ? 'english' : lang)[d.getUTCDay()]}, ${d.getUTCDate()} ${shortMonth(lang, d.getUTCMonth())}`}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity disabled={fromReminder} onPress={() => setPicker('time')}
@@ -423,7 +434,7 @@ function PlanSheet({ draft, setDraft, onSave, onDelete, saving, theme }: {
 
           {!fromReminder ? (
             <>
-              <Text style={[styles.lbl, { color: theme.textMuted }]}>Kis tarah ka</Text>
+              <Text style={[styles.lbl, { color: theme.textMuted }]}>{pick(CAL.kindLbl, lang)}</Text>
               <View style={styles.kinds}>
                 {KINDS.map(k => {
                   const on = draft.category === k.key
@@ -431,27 +442,27 @@ function PlanSheet({ draft, setDraft, onSave, onDelete, saving, theme }: {
                     <TouchableOpacity key={k.key} onPress={() => setDraft({ ...draft, category: k.key })}
                       style={[styles.kind, { borderColor: on ? Colors.accent : theme.border,
                                              backgroundColor: on ? Colors.accent + '22' : 'transparent' }]}>
-                      <Text style={{ color: on ? theme.text : theme.textSecond, fontSize: 15 }}>{k.label}</Text>
+                      <Text style={{ color: on ? theme.text : theme.textSecond, fontSize: 15 }}>{`${k.emoji} ${pick(k.word, lang)}`}</Text>
                     </TouchableOpacity>
                   )
                 })}
               </View>
               <Text style={[styles.note, { color: theme.textMuted }]}>
-                🔔 Nancy yaad dilayegi — subah, ek ghanta pehle, aur thik pehle.
+                {pick(CAL.note, lang, { bot: BOT })}
               </Text>
               <TouchableOpacity onPress={onSave} disabled={saving} activeOpacity={0.8} style={styles.save}>
                 {saving ? <ActivityIndicator color="#fff" />
-                        : <Text style={styles.saveText}>{draft.id ? 'Badal do' : 'Rakh lo'}</Text>}
+                        : <Text style={styles.saveText}>{pick(draft.id ? CAL.saveChange : CAL.saveNew, lang)}</Text>}
               </TouchableOpacity>
             </>
           ) : (
             <Text style={[styles.note, { color: theme.textMuted }]}>
-              Yeh Nancy se baat karke laga tha. Badalna ho toh Nancy ko bata dijiye.
+              {pick(CAL.fromChat, lang, { bot: BOT })}
             </Text>
           )}
           {draft.id ? (
             <TouchableOpacity onPress={onDelete} style={styles.del}>
-              <Text style={styles.delText}>Hata do</Text>
+              <Text style={styles.delText}>{pick(CAL.remove, lang)}</Text>
             </TouchableOpacity>
           ) : null}
 
@@ -478,6 +489,7 @@ function MonthView({ visible, onClose, onPick, userId, selected, theme }: {
   visible: boolean; onClose: () => void; onPick: (k: string) => void
   userId: string; selected: string; theme: any
 }) {
+  const lang = useAppStore(s => s.language)
   const now = keyDate(todayKey())
   const list = useMemo(() => {
     const out: { y: number; m: number }[] = []
@@ -493,10 +505,10 @@ function MonthView({ visible, onClose, onPick, userId, selected, theme }: {
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <View style={styles.monthHeader}>
-          <Text style={[styles.title, { color: theme.text, fontSize: 24 }]}>Mahine</Text>
+          <Text style={[styles.title, { color: theme.text, fontSize: 24 }]}>{pick(CAL.months, lang)}</Text>
           <View style={{ flexDirection: 'row', gap: 18, alignItems: 'center' }}>
             <TouchableOpacity onPress={() => onPick(todayKey())}>
-              <Text style={styles.link}>Aaj par jao</Text>
+              <Text style={styles.link}>{pick(CAL.goToday, lang)}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={onClose}>
               <Ionicons name="close" size={28} color={theme.text} />
@@ -519,6 +531,7 @@ function MonthGrid({ y, m, userId, selected, onPick, theme, height }: {
   y: number; m: number; userId: string; selected: string
   onPick: (k: string) => void; theme: any; height: number
 }) {
+  const lang = useAppStore(s => s.language)
   const [dots, setDots] = useState<Record<string, number>>({})
   const first = `${y}-${pad(m + 1)}-01`
   const daysIn = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
@@ -541,9 +554,9 @@ function MonthGrid({ y, m, userId, selected, onPick, theme, height }: {
 
   return (
     <View style={{ height, paddingHorizontal: Spacing.lg }}>
-      <Text style={[styles.monthName, { color: theme.textSecond }]}>{`${MONTHS[m]} ${y}`}</Text>
+      <Text style={[styles.monthName, { color: theme.textSecond }]}>{`${monthsOf(lang)[m]} ${y}`}</Text>
       <View style={styles.weekRow}>
-        {['R', 'S', 'M', 'B', 'G', 'Sh', 'Sa'].map((w, i) => (
+        {pickList(WEEKDAY_HEAD, lang).map((w, i) => (
           <Text key={i} style={[styles.weekDay, { color: theme.textMuted }]}>{w}</Text>
         ))}
       </View>

@@ -8,6 +8,8 @@ import Markdown from 'react-native-markdown-display'
 import { Ionicons } from '@expo/vector-icons'
 import { Colors, Typography, Spacing, Radius } from '../../constants'
 import { YouTubePlayer } from '../media/YouTubePlayer'
+import { useAppStore } from '../../store/appStore'
+import { LINK, pick } from '../../i18n/words'
 
 interface Message {
   id:          string
@@ -79,27 +81,30 @@ function withoutLinks(text: string, btns: Btn[]): string {
   return t.replace(/\n{3,}/g, '\n\n')
 }
 
-function linkLabel(b: Btn): string {
+// The button's words in her language (i18n/words.ts LINK).
+function linkLabel(b: Btn, lang: string): string {
   const url = b.url
   const name = (b.name || '').replace(/^📞\s*/, '').trim()
   if (url.startsWith('tel:')) {
-    return `📞  ${name || url.slice(4)} — phone karo`
+    return `📞  ${pick(LINK.call, lang, { name: name || url.slice(4) })}`
   }
   const isMap = /google\.[^/]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)
   if (isMap) {
-    if (name) return `📍  ${name} — naksha kholo`
+    if (name) return `📍  ${pick(LINK.map, lang, { name })}`
     const q = url.match(/[?&]query=([^&]+)/)
     let place = ''
     try { place = q ? decodeURIComponent(q[1].replace(/\+/g, ' ')) : '' } catch {}
-    return place && !/^[-\d.,\s]+$/.test(place) ? `📍  ${place} — naksha kholo` : '📍  Naksha kholo'
+    return place && !/^[-\d.,\s]+$/.test(place)
+      ? `📍  ${pick(LINK.map, lang, { name: place })}` : `📍  ${pick(LINK.mapBare, lang)}`
   }
-  if (/news\.google\./.test(url)) return `📰  ${name || 'Khabar'} — poori khabar padho`
+  if (/news\.google\./.test(url)) return `📰  ${pick(LINK.news, lang, { name: name || pick(LINK.newsName, lang) })}`
   const host = (url.match(/^https?:\/\/(?:www\.)?([^/?#]+)/) || [])[1] || 'link'
-  return `🔗  ${name || host} kholo`
+  return `🔗  ${pick(LINK.open, lang, { name: name || host })}`
 }
 
 export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
   const isUser = message.role === 'user'
+  const lang   = useAppStore(s => s.language)
   const time   = new Date(message.timestamp).toLocaleTimeString([], {
     hour: '2-digit', minute: '2-digit'
   })
@@ -140,7 +145,7 @@ export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
               <TouchableOpacity key={b.url} activeOpacity={0.75}
                 onPress={() => Linking.openURL(b.url).catch(() => {})}
                 style={styles.linkBtn}>
-                <Text style={styles.linkText} numberOfLines={2}>{linkLabel(b)}</Text>
+                <Text style={styles.linkText} numberOfLines={2}>{linkLabel(b, lang)}</Text>
                 <Ionicons name={b.url.startsWith('tel:') ? 'call-outline' : 'open-outline'}
                   size={18} color={Colors.accent} />
               </TouchableOpacity>

@@ -175,6 +175,62 @@ def _google(text: str, lang: str) -> Optional[bytes]:
         return None
 
 
+# What the voice says about the buttons under a message, by the voice's
+# language (hi-IN carries both Hinglish and Hindi, and says it in Hinglish,
+# which is what the hi-IN voices read naturally). Only English and Hinglish
+# are checked by a native speaker; the rest should be read by one.
+_BELOW = {
+    "hi": {"map": "Neeche naksha hai, dabaakar dekh lijiye.",
+           "video": "Neeche video hai, dabaakar chala lijiye.",
+           "link": "Neeche link hai, dabaakar dekh lijiye.",
+           "news": "Har khabar ka link neeche hai, dabaakar poori khabar padh lijiye.",
+           "call": "Neeche phone ka button hai, dabaakar phone kar lijiye.",
+           "map+call": "Neeche naksha aur phone ke button hain, dabaakar dekh lijiye."},
+    "en": {"map": "The map is just below. Tap it to open.",
+           "video": "The video is just below. Tap it to play.",
+           "link": "The link is just below. Tap it to open.",
+           "news": "Each story's link is just below. Tap one to read it in full.",
+           "call": "The call button is just below. Tap it to ring.",
+           "map+call": "The map and call buttons are just below. Tap one to open it."},
+    "pa": {"map": "ਹੇਠਾਂ ਨਕਸ਼ਾ ਹੈ, ਦਬਾ ਕੇ ਵੇਖ ਲਓ।",
+           "video": "ਹੇਠਾਂ ਵੀਡੀਓ ਹੈ, ਦਬਾ ਕੇ ਚਲਾ ਲਓ।",
+           "link": "ਹੇਠਾਂ ਲਿੰਕ ਹੈ, ਦਬਾ ਕੇ ਵੇਖ ਲਓ।",
+           "news": "ਹਰ ਖ਼ਬਰ ਦਾ ਲਿੰਕ ਹੇਠਾਂ ਹੈ, ਦਬਾ ਕੇ ਪੂਰੀ ਖ਼ਬਰ ਪੜ੍ਹ ਲਓ।",
+           "call": "ਹੇਠਾਂ ਫ਼ੋਨ ਦਾ ਬਟਨ ਹੈ, ਦਬਾ ਕੇ ਫ਼ੋਨ ਕਰ ਲਓ।",
+           "map+call": "ਹੇਠਾਂ ਨਕਸ਼ਾ ਤੇ ਫ਼ੋਨ ਦੇ ਬਟਨ ਹਨ, ਦਬਾ ਕੇ ਵੇਖ ਲਓ।"},
+    "gu": {"map": "નીચે નકશો છે, દબાવીને જોઈ લો.",
+           "video": "નીચે વીડિયો છે, દબાવીને ચલાવો.",
+           "link": "નીચે લિંક છે, દબાવીને જોઈ લો.",
+           "news": "દરેક સમાચારની લિંક નીચે છે, દબાવીને આખા સમાચાર વાંચો.",
+           "call": "નીચે ફોનનું બટન છે, દબાવીને ફોન કરો.",
+           "map+call": "નીચે નકશો અને ફોનનાં બટન છે, દબાવીને જોઈ લો."},
+    "mr": {"map": "खाली नकाशा आहे, दाबून पाहा.",
+           "video": "खाली व्हिडिओ आहे, दाबून सुरू करा.",
+           "link": "खाली लिंक आहे, दाबून पाहा.",
+           "news": "प्रत्येक बातमीची लिंक खाली आहे, दाबून पूर्ण बातमी वाचा.",
+           "call": "खाली फोनचं बटण आहे, दाबून फोन करा.",
+           "map+call": "खाली नकाशा आणि फोनची बटणं आहेत, दाबून पाहा."},
+    "bn": {"map": "নিচে ম্যাপ আছে, চাপ দিয়ে দেখে নিন।",
+           "video": "নিচে ভিডিও আছে, চাপ দিয়ে চালিয়ে নিন।",
+           "link": "নিচে লিঙ্ক আছে, চাপ দিয়ে দেখে নিন।",
+           "news": "প্রতিটা খবরের লিঙ্ক নিচে আছে, চাপ দিয়ে পুরো খবর পড়ে নিন।",
+           "call": "নিচে ফোনের বোতাম আছে, চাপ দিয়ে ফোন করে নিন।",
+           "map+call": "নিচে ম্যাপ আর ফোনের বোতাম আছে, চাপ দিয়ে দেখে নিন।"},
+    "ta": {"map": "கீழே வரைபடம் உள்ளது, தொட்டுப் பாருங்கள்.",
+           "video": "கீழே வீடியோ உள்ளது, தொட்டு இயக்குங்கள்.",
+           "link": "கீழே இணைப்பு உள்ளது, தொட்டுப் பாருங்கள்.",
+           "news": "ஒவ்வொரு செய்தியின் இணைப்பும் கீழே உள்ளது, தொட்டு முழுச் செய்தியைப் படியுங்கள்.",
+           "call": "கீழே அழைப்புப் பொத்தான் உள்ளது, தொட்டு அழையுங்கள்.",
+           "map+call": "கீழே வரைபடமும் அழைப்புப் பொத்தானும் உள்ளன, தொட்டுப் பாருங்கள்."},
+    "te": {"map": "కింద మ్యాప్ ఉంది, నొక్కి చూడండి.",
+           "video": "కింద వీడియో ఉంది, నొక్కి ప్లే చేయండి.",
+           "link": "కింద లింక్ ఉంది, నొక్కి చూడండి.",
+           "news": "ప్రతి వార్త లింక్ కింద ఉంది, నొక్కి పూర్తి వార్త చదవండి.",
+           "call": "కింద ఫోన్ బటన్ ఉంది, నొక్కి ఫోన్ చేయండి.",
+           "map+call": "కింద మ్యాప్, ఫోన్ బటన్లు ఉన్నాయి, నొక్కి చూడండి."},
+}
+
+
 def _speakable(text: str, lang: str = "") -> str:
     """The message as it should be heard.
 
@@ -213,21 +269,7 @@ def _speakable(text: str, lang: str = "") -> str:
                 else "video" if any("youtube.com" in l or "youtu.be" in l for l in links)
                 else "news" if all("news.google." in l for l in links)
                 else "link")
-        english = (lang or "").lower().startswith("en")
-        say = {
-            ("map", False): "Neeche naksha hai, dabaakar dekh lijiye.",
-            ("video", False): "Neeche video hai, dabaakar chala lijiye.",
-            ("link", False): "Neeche link hai, dabaakar dekh lijiye.",
-            ("map", True): "The map is just below. Tap it to open.",
-            ("video", True): "The video is just below. Tap it to play.",
-            ("link", True): "The link is just below. Tap it to open.",
-            ("news", False): "Har khabar ka link neeche hai, dabaakar poori khabar padh lijiye.",
-            ("news", True): "Each story's link is just below. Tap one to read it in full.",
-            ("call", False): "Neeche phone ka button hai, dabaakar phone kar lijiye.",
-            ("map+call", False): "Neeche naksha aur phone ke button hain, dabaakar dekh lijiye.",
-            ("call", True): "The call button is just below. Tap it to ring.",
-            ("map+call", True): "The map and call buttons are just below. Tap one to open it.",
-        }[(kind, english)]
+        say = _BELOW.get((lang or "").lower().split("-")[0], _BELOW["hi"])[kind]
         t = re.sub(r"\s*[:\-\u2013\u2014]+\s*$", ".", t)   # "…pee sakti hain:" ends the sentence
         if t and t[-1] not in ".!?\u0964":
             t += "."

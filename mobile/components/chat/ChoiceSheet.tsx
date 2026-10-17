@@ -8,7 +8,8 @@ import { Sheet, Choice, pick } from './shortcuts'
 // picture and two words, so it can be read without glasses and tapped with a
 // thumb. Tapping outside, or "Band karo", closes it.
 
-const CLOSE = { en: 'Close', hl: 'Band karo', hi: 'बंद करो' }
+const CLOSE = { en: 'Close', hl: 'Band karo', hi: 'बंद करो', pa: 'ਬੰਦ ਕਰੋ', gu: 'બંધ કરો', mr: 'बंद करा',
+                bn: 'বন্ধ করুন', ta: 'மூடு', te: 'మూసేయండి' }
 
 export function ChoiceSheet({ sheet, lang, onPick, onClose, busy }: {
   sheet: Sheet | null
