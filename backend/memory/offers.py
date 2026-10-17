@@ -66,6 +66,7 @@ RINGS = 2
 class Offer:
     what: str                    # "Lag Ja Gale by Lata Mangeshkar"
     because: str = ""            # "Kishore Kumar"
+    because_kind: str = ""       # the category of that interest: "sangeet"
     when: str = "anytime"
     category: str = ""
     cluster_id: Optional[str] = None
@@ -526,6 +527,7 @@ def candidates(user_id: str, window=None, now_min: Optional[int] = None,
                 out.append(Offer(
                     what=what,
                     because=seed["label"],
+                    because_kind=str(seed.get("category") or ""),
                     when=item.get("when") or "anytime",
                     category=kind,
                     cluster_id=seed.get("id"),
@@ -1276,7 +1278,9 @@ def hint(offer: Offer) -> str:
     # This used to forbid naming "any other artist" and then ask for the
     # reason, which IS another artist: told both, the composer said neither
     # and wrote "Ismail, Ranjish Hi Sahi suniye." and nothing more.
-    allowed = f" apart from {offer.because}, which is the reason" if offer.because else ""
+    allowed = (f" apart from {offer.because}, which is the reason"
+               if offer.because and not (offer.because_kind and offer.category
+                                         and offer.because_kind != offer.category) else "")
     line = (f"\n\nOffer {offer.what}. That one thing only: name no other "
             f"artist, film or dish{allowed}, whatever else you know they "
             f"like, and do not credit it to anyone else."
@@ -1286,9 +1290,21 @@ def hint(offer: Offer) -> str:
             f"cannot know that."
             f"\nDo not tie it to something else in their day that is not "
             f"happening now: no 'your walk' in the morning when the walk is in "
-            f"the evening.")
+            f"the evening."
+            f"\nSpeak about them, never about a kind of person: no 'people "
+            f"who like X enjoy Y'.")
 
-    if offer.because:
+    cross = bool(offer.because and offer.because_kind and offer.category
+                 and offer.because_kind != offer.category)
+    if cross:
+        # Reached from a different kind of thing: masala chai from Carrom.
+        # Told "this is the same kind of thing, say why it reminded you", the
+        # writer invented a reason — "Carrom ke shaukeen logon ko aise waqt
+        # mein chai ka maza lena khoob aata hai, isliye mujhe aapka khayal
+        # aaya" (17 Oct). There is no such link to explain.
+        line += (f"\nOffer it on its own, for this moment. Do not mention "
+                 f"{offer.because}, and do not explain why you thought of it.")
+    elif offer.because:
         # Describe the RELATION, not the geometry. "Sits next to it" is how
         # this is drawn on a whiteboard and it does not survive translation.
         line += (f"\nThey already love {offer.because}, and this is the same "

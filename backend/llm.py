@@ -42,8 +42,21 @@ class _Block:
 
 
 class _Response:
-    def __init__(self, text: str):
+    def __init__(self, text: str, stop_reason: str = ""):
         self.content = [_Block(text)]
+        # As Anthropic's client reports it: "max_tokens" when the text was
+        # cut off. Without it a clipped offer went out mid-word ("Aap ise
+        # Chanuk", 17 Oct) with nothing to say it had been clipped.
+        self.stop_reason = stop_reason
+
+
+def _stop(r) -> str:
+    try:
+        fr = r.candidates[0].finish_reason
+        name = str(getattr(fr, "name", fr) or "")
+        return "max_tokens" if "MAX_TOKENS" in name.upper() else (name.lower() or "")
+    except Exception:
+        return ""
 
 
 class _Messages:
@@ -94,7 +107,7 @@ class _Messages:
             )
             gc = genai_client()
             r = gc.models.generate_content(model=use, contents=prompt, config=cfg)
-            return _Response(getattr(r, "text", "") or "")
+            return _Response(getattr(r, "text", "") or "", _stop(r))
 
         cfg = types.GenerateContentConfig(
             # And Devanagari costs more tokens per character than English,
@@ -114,7 +127,7 @@ class _Messages:
         gc = genai_client()
         r = gc.models.generate_content(
             model=use, contents=prompt, config=cfg)
-        return _Response(getattr(r, "text", "") or "")
+        return _Response(getattr(r, "text", "") or "", _stop(r))
 
 
 class _GeminiClient:

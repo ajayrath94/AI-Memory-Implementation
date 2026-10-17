@@ -728,10 +728,23 @@ Write only the message. No preamble, no quotation marks."""
         _use = (__import__("llm").model(__import__("llm").SONNET)
                 if intent == "recommendation" else _MODEL)
         resp = client.messages.create(
-            model=_use, max_tokens=200,
+            # An offer with a place says what, why now, where and how far:
+            # 200 ran out mid-word ("Aap ise Chanuk", 17 Oct).
+            model=_use, max_tokens=(320 if intent == "recommendation" else 200),
             messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip().strip('"')
+        if getattr(resp, "stop_reason", "") == "max_tokens":
+            # Cut off. Keep what ends a sentence; never send half a word
+            # with a link stuck to it.
+            import re as _re
+            ends = [m.end() for m in _re.finditer(r"[.!?\u0964]+(?=\s|$)", text)]
+            kept = text[:ends[-1]].strip() if ends else ""
+            print(f"[Context] compose clipped for {user_id} ({intent}): "
+                  f"{'kept ' + str(len(kept)) + ' of ' + str(len(text)) + ' chars' if len(kept) >= 40 else 'too little left, sending nothing'}")
+            if len(kept) < 40:
+                return ""
+            text = kept
     except Exception as e:
         print(f"[Context] compose failed for {user_id}: {e}")
         return ""
