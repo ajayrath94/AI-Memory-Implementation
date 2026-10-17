@@ -42,6 +42,7 @@ let turn = 0
 // after the other, never on top of each other.
 const queue: { text: string; opts: SpeakOpts }[] = []
 let draining = false
+let inFlight: string | null = null      // the words being fetched or played now
 
 // What was spoken lately, so the same words are not read twice — a reminder
 // spoken on her tap, then again when the same reminder appears in the chat.
@@ -197,6 +198,13 @@ export async function pruneVoices(keep: string[]): Promise<void> {
  * Kept voice first (works offline), else downloaded now.
  */
 async function play(text: string, opts: SpeakOpts, mine: number): Promise<boolean> {
+  inFlight = norm(text)
+  try { return await playInner(text, opts, mine) } finally {
+    if (inFlight === norm(text)) inFlight = null
+  }
+}
+
+async function playInner(text: string, opts: SpeakOpts, mine: number): Promise<boolean> {
   try { await configureAudio() } catch (e) { console.log('[voice] audio mode', e) }
   let uri: string | null = null
   let temp = false
@@ -266,6 +274,11 @@ export async function speak(text: string, opts: SpeakOpts = {}): Promise<boolean
 export function enqueue(text: string, opts: SpeakOpts = {}) {
   const body = (text || '').trim()
   if (body.length < 2) return
+  // Not twice: the chat reloading from the server gives the same message a
+  // new id, and it looked new — queued again while its first reading was
+  // still downloading.
+  const k = norm(body)
+  if (k === inFlight || queue.some(q => norm(q.text) === k) || wasJustSpoken(body)) return
   queue.push({ text: body, opts })
   if (!draining) drain()
 }
