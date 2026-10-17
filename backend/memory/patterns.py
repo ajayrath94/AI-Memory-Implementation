@@ -48,6 +48,12 @@ MIN_DRIFT_MIN = 45
 # life.
 MIN_DRIFT_CONFIDENCE = 0.5
 
+# A routine steady enough to measure change against. Bengaluru's "wake" on
+# 17 Oct was 10:14 give or take four and a half hours, and enough days made it
+# "confident" — but a time that wanders that much is not a routine, and every
+# later morning would have been judged against it.
+MAX_BASELINE_SPREAD_MIN = 120
+
 
 def _tz(user_id: str) -> ZoneInfo:
     try:
@@ -267,13 +273,19 @@ def _derive(days: dict) -> list:
     # How much of the day they are actually around for — the span between the
     # two, useful for knowing when NOT to reach out.
     if firsts and lasts:
+        # spread_min here is the window's LENGTH, not its variability, so the
+        # confidence comes from how much its two ends wander. It used
+        # _confidence(n, 0), which made any window "certain" given days.
+        _, s_first = _centre_and_spread(firsts)
+        _, s_last = _centre_and_spread(lasts)
         derived.append({
             "kind":         "active_window",
             "label":        None,
             "observed_at":  _mins_to_time(_to_clock(int(median(firsts)))),
             "spread_min":   int(median(lasts) - median(firsts)),
             "observations": len(days),
-            "confidence":   _confidence(len(days), 0),
+            "confidence":   _confidence(len(days), max(s_first, s_last)),
+            "steadiness_min": max(s_first, s_last),
         })
     return derived
 
@@ -312,7 +324,7 @@ def observe(user_id: str) -> list:
     out = []
     for kind, d in use.items():
         places = {pl: {k: v for k, v in dv[kind].items() if k in
-                       ("observed_at", "spread_min", "observations", "confidence")}
+                       ("observed_at", "spread_min", "observations", "confidence", "steadiness_min")}
                   for pl, dv in derived_by_place.items() if kind in dv}
         out.append(_upsert(user_id, d, here=here, home=home, places=places,
                            here_has_own=(here in derived_by_place)))
@@ -359,11 +371,24 @@ def _upsert(user_id: str, d: dict, here: str = "", home: str = "",
     # that, never against home's declared times.
     old_places = (prev or {}).get("by_place") if isinstance((prev or {}).get("by_place"), dict) else {}
     new_places = {}
+    def _steady(o):
+        # How much it wanders: the active window's ends, or the time itself.
+        s = o.get("steadiness_min", o.get("spread_min"))
+        return o.get("confidence", 0) >= MIN_DRIFT_CONFIDENCE and \
+            s is not None and s <= MAX_BASELINE_SPREAD_MIN
+
     for pl, obs in (places or {}).items():
-        base = (old_places.get(pl) or {}).get("baseline_at")
-        if not base and obs.get("confidence", 0) >= MIN_DRIFT_CONFIDENCE:
+        old = old_places.get(pl) or {}
+        base = old.get("baseline_at")
+        # A baseline set before this rule from a routine that was never
+        # steady is dropped, and set again once the routine is.
+        if base and old.get("baseline_steady") is not True and not _steady(obs):
+            base = None
+        if not base and _steady(obs):
             base = obs.get("observed_at")
-        new_places[pl] = {**obs, "baseline_at": base, "home": pl == home}
+        new_places[pl] = {**obs, "baseline_at": base,
+                          "baseline_steady": bool(base),
+                          "home": pl == home}
     for pl, obs in old_places.items():
         new_places.setdefault(pl, obs)            # a place not seen lately keeps its routine
     row["by_place"] = new_places

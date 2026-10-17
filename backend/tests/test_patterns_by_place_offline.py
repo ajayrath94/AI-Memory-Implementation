@@ -131,3 +131,32 @@ def test_change_within_the_same_place_is_still_seen():
     DB["user_patterns"][0]["declared_at"] = "05:00:00"               # she said 5, does 6:30
     P.observe("u")
     assert 85 <= (_wake().get("drift_min") or 0) <= 100
+
+
+def test_loose_routine_sets_no_baseline_and_old_one_is_dropped():
+    from memory import patterns as P
+    _seed()
+    # Bengaluru mornings wander by hours: rewrite its wake times widely.
+    import random
+    random.seed(1)
+    for m in DB["messages"]:
+        t = datetime.fromisoformat(m["timestamp"]).astimezone(IST)
+        if t.hour in (7, 8):
+            m["timestamp"] = t.replace(hour=random.choice((6, 8, 10, 11)),
+                                       minute=random.randint(0, 59)).astimezone(timezone.utc).isoformat()
+    # a baseline set by the old rule from a loose routine
+    DB["user_patterns"][0]["by_place"] = {"Vyalikaval HBCS Layout, Bengaluru":
+                                          {"baseline_at": "10:14:00", "observed_at": "10:14:00"}}
+    P.observe("u")
+    blr = _wake()["by_place"]["Vyalikaval HBCS Layout, Bengaluru"]
+    assert blr["baseline_at"] is None, blr
+    assert _wake().get("drift_min") is None
+
+
+def test_active_window_confidence_follows_its_ends():
+    from memory import patterns as P
+    _seed()
+    P.observe("u")
+    aw = next(r for r in DB["user_patterns"] if r["kind"] == "active_window")
+    assert aw["by_place"]["Surat"]["steadiness_min"] <= 30          # steady test data
+    assert aw["by_place"]["Surat"]["baseline_at"] is not None
