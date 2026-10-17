@@ -114,6 +114,13 @@ NEWS_KINDS = {
     "world":         "WORLD",
     # "local" is her city's page, worked out from where she is.
 }
+# What each kind is called, so Nancy says "khel ki khabar", not "India".
+NEWS_LABELS = {
+    "india":         "India",
+    "sports":        "Sports",
+    "entertainment": "Entertainment (films, TV, music)",
+    "world":         "World",
+}
 _CITY: dict = {}        # "lat,lng" -> city, so the lookup is made once
 
 
@@ -183,7 +190,7 @@ def news_of_kind(user_id: str, kind: str) -> dict:
         where = city
     elif kind in NEWS_KINDS:
         url = f"https://news.google.com/rss/headlines/section/topic/{NEWS_KINDS[kind]}?{tail}"
-        where = "India"
+        where = NEWS_LABELS[kind]
     else:
         return {"error": f"unknown kind {kind!r}", "articles": []}
     try:
@@ -197,6 +204,8 @@ def news_of_kind(user_id: str, kind: str) -> dict:
         return {"error": str(e), "kind": kind, "articles": []}
     return {
         "kind":     kind,
+        # The kind as it should be named: her city for local, else Sports,
+        # World... (the stories are as India's papers report them).
         "where":    where,
         "articles": stories,
         "count":    len(stories),
