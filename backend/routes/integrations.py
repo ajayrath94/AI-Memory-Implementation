@@ -337,7 +337,7 @@ def _km(lat1, lng1, lat2, lng2):
 
 def get_nearby_places(user_id: str, place_type: str = "hospital",
                       location: str = None, radius: int = 5000,
-                      with_phone: bool = False):
+                      with_phone: bool = False, keep: int = 5):
     """
     Real places near her, nearest first, each with how far it is.
 
@@ -430,6 +430,9 @@ def get_nearby_places(user_id: str, place_type: str = "hospital",
                 "types":   p.get("types") or [],
                 "address": p.get("vicinity"),
                 "rating":  p.get("rating"),
+                # How many people rated it: a 5.0 from three people is not a
+                # 4.6 from nine hundred.
+                "reviews": p.get("user_ratings_total"),
                 "open":    p.get("opening_hours", {}).get("open_now"),
                 "lat":     plat,
                 "lng":     plng,
@@ -440,7 +443,7 @@ def get_nearby_places(user_id: str, place_type: str = "hospital",
             })
 
         places.sort(key=lambda x: x["distance_km"] if x["distance_km"] is not None else 1e9)
-        places = places[:5]
+        places = places[:max(1, keep)]
 
         # A map link for each, so she can tap it and go.
         for p in places:

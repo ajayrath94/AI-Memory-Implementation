@@ -39,10 +39,14 @@ interface Shop {
   distance_km?: number | null
   walk_min?: number | null
   open?: boolean | null
+  rating?: number | null
+  reviews?: number | null
   map_url?: string
 }
 interface ShopGroup { search: string; label: string; items: string[]; shops?: Shop[] }
-interface ShopPlan { buying: boolean; groups: ShopGroup[] }
+interface OneStop { shop: Shop; covers: string[]; missing: string[] }
+interface ShopPlan { buying: boolean; groups: ShopGroup[]; one_stop?: OneStop | null }
+type Mode = 'nearest' | 'best'
 
 const W = {
   where:   { en: 'Where can I get these?', hl: 'Kahan milega?', hi: 'कहाँ मिलेगा?' },
@@ -53,6 +57,21 @@ const W = {
   open:    { en: 'Open now', hl: 'Abhi khuli hai', hi: 'अभी खुली है' },
   shut:    { en: 'Closed now', hl: 'Abhi band hai', hi: 'अभी बंद है' },
   map:     { en: 'Map', hl: 'Naksha', hi: 'नक्शा' },
+  nearest: { en: 'Nearest', hl: 'Sabse paas', hi: 'सबसे पास' },
+  best:    { en: 'Best', hl: 'Sabse achha', hi: 'सबसे अच्छा' },
+  oneStop: { en: 'Everything in one place', hl: 'Ek hi jagah sab', hi: 'एक ही जगह सब' },
+  except:  { en: 'except', hl: 'chhodkar', hi: 'छोड़कर' },
+  people:  { en: 'ratings', hl: 'log', hi: 'लोग' },
+}
+
+function shopMeta(sh: Shop, lang: string, withRating: boolean): string {
+  return [
+    withRating && sh.rating != null
+      ? `${sh.rating}★${sh.reviews ? ` (${sh.reviews} ${pick(W.people, lang)})` : ''}` : '',
+    sh.walk_min != null ? `~${sh.walk_min} ${pick(W.walk, lang)}` : '',
+    sh.distance_km != null ? `${sh.distance_km} km` : '',
+    sh.open === true ? pick(W.open, lang) : sh.open === false ? pick(W.shut, lang) : '',
+  ].filter(Boolean).join(' · ')
 }
 
 interface ListDetail extends ListCard {
@@ -82,7 +101,8 @@ export default function ListsScreen() {
   const [newItem, setNewItem] = useState('')
   const [busy, setBusy] = useState(false)
   const [plan, setPlan] = useState<ShopPlan | null>(null)
-  const [shops, setShops] = useState<ShopGroup[] | null>(null)
+  const [shops, setShops] = useState<ShopPlan | null>(null)
+  const [mode, setMode] = useState<Mode>('nearest')
   const [shopsOpen, setShopsOpen] = useState(false)
   const [shopsLoading, setShopsLoading] = useState(false)
 
@@ -138,22 +158,29 @@ export default function ListsScreen() {
     : ''
   const listId = current?.id
 
-  const loadShops = useCallback(async (id: string) => {
+  const loadShops = useCallback(async (id: string, m: Mode) => {
     setShopsLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/lists/${userId}/${id}/shops?places=true`, { headers: H })
+      const res = await fetch(`${API_BASE}/lists/${userId}/${id}/shops?places=true&mode=${m}`, { headers: H })
       const j: ShopPlan = await res.json()
-      setShops(j.groups || [])
+      setShops({ buying: !!j.buying, groups: j.groups || [], one_stop: j.one_stop || null })
     } catch (err) {
       console.error('Shops failed:', err)
-      setShops([])
+      setShops({ buying: false, groups: [] })
     } finally {
       setShopsLoading(false)
     }
   }, [userId])
 
+  const switchMode = (m: Mode) => {
+    if (m === mode || !current) return
+    setMode(m)
+    setShops(null)
+    loadShops(current.id, m)
+  }
+
   // Another list: start closed.
-  useEffect(() => { setPlan(null); setShops(null); setShopsOpen(false) }, [listId])
+  useEffect(() => { setPlan(null); setShops(null); setShopsOpen(false); setMode('nearest') }, [listId])
 
   useEffect(() => {
     if (!planKey || !listId) { setPlan(null); return }
@@ -162,7 +189,7 @@ export default function ListsScreen() {
       .then(r => r.json()).then(j => { if (live) setPlan(j) })
       .catch(err => console.error('Shop plan failed:', err))
     setShops(null)
-    if (shopsOpen) loadShops(listId)
+    if (shopsOpen) loadShops(listId, mode)
     return () => { live = false }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planKey, userId])
@@ -171,7 +198,7 @@ export default function ListsScreen() {
     if (!current) return
     if (shopsOpen) { setShopsOpen(false); return }
     setShopsOpen(true)
-    if (!shops) loadShops(current.id)
+    if (!shops) loadShops(current.id, mode)
   }
 
   // ── item actions ──────────────────────────────────────────────────────────
@@ -386,13 +413,40 @@ export default function ListsScreen() {
           )}
           {!isKept && plan?.buying && shopsOpen && (
             <View style={[styles.shopsBox, { borderColor: theme.border }]}>
+              <View style={styles.modeRow}>
+                {(['nearest', 'best'] as Mode[]).map(m => (
+                  <TouchableOpacity key={m} activeOpacity={0.8} onPress={() => switchMode(m)}
+                    style={[styles.modeBtn, mode === m && styles.modeBtnOn]}>
+                    <Text style={[styles.modeText, mode === m && styles.modeTextOn]}>
+                      {m === 'nearest' ? '📍 ' : '⭐ '}{pick(m === 'nearest' ? W.nearest : W.best, lang)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               {shopsLoading && (
                 <View style={styles.shopsLoading}>
                   <ActivityIndicator color={Colors.accent} />
                   <Text style={styles.shopMeta}>{pick(W.looking, lang)}</Text>
                 </View>
               )}
-              {!shopsLoading && (shops || []).map(g => (
+              {!shopsLoading && mode === 'best' && shops?.one_stop && (
+                <TouchableOpacity style={styles.oneStop} activeOpacity={0.8}
+                  disabled={!shops.one_stop.shop.map_url}
+                  onPress={() => shops.one_stop?.shop.map_url && Linking.openURL(shops.one_stop.shop.map_url).catch(() => {})}>
+                  <Text style={styles.oneStopTitle}>🛍️ {pick(W.oneStop, lang)}</Text>
+                  <Text style={styles.shopName}>{shops.one_stop.shop.name}</Text>
+                  <Text style={styles.shopMeta}>{shopMeta(shops.one_stop.shop, lang, true)}</Text>
+                  <Text style={styles.shopItems}>
+                    {shops.one_stop.covers.join(', ')}
+                    {shops.one_stop.missing.length > 0
+                      ? ` — ${shops.one_stop.missing.join(', ')} ${pick(W.except, lang)}` : ''}
+                  </Text>
+                  <View style={[styles.mapPill, { alignSelf: 'flex-start', marginTop: 6 }]}>
+                    <Text style={styles.mapPillText}>📍 {pick(W.map, lang)}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              {!shopsLoading && (shops?.groups || []).map(g => (
                 <View key={g.search + g.label} style={styles.shopGroup}>
                   <Text style={styles.shopGroupTitle}>{g.label}</Text>
                   <Text style={styles.shopItems}>{g.items.join(', ')}</Text>
@@ -405,13 +459,7 @@ export default function ListsScreen() {
                       onPress={() => sh.map_url && Linking.openURL(sh.map_url).catch(() => {})}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.shopName} numberOfLines={2}>{sh.name}</Text>
-                        <Text style={styles.shopMeta}>
-                          {[
-                            sh.walk_min != null ? `~${sh.walk_min} ${pick(W.walk, lang)}` : '',
-                            sh.distance_km != null ? `${sh.distance_km} km` : '',
-                            sh.open === true ? pick(W.open, lang) : sh.open === false ? pick(W.shut, lang) : '',
-                          ].filter(Boolean).join(' · ')}
-                        </Text>
+                        <Text style={styles.shopMeta}>{shopMeta(sh, lang, mode === 'best')}</Text>
                       </View>
                       {sh.map_url && (
                         <View style={styles.mapPill}>
@@ -593,6 +641,15 @@ const styles = StyleSheet.create({
   shopMeta: { fontSize: 14, color: Colors.textSecond, marginTop: 2 },
   mapPill: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, backgroundColor: Colors.accent },
   mapPillText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  modeRow: { flexDirection: 'row', gap: 8 },
+  modeBtn: { flex: 1, minHeight: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+             borderWidth: 1, borderColor: Colors.accent + '55' },
+  modeBtnOn: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  modeText: { fontSize: 16, fontWeight: '600', color: Colors.textSecond },
+  modeTextOn: { color: '#fff', fontWeight: '700' },
+  oneStop: { borderRadius: 14, padding: 12, gap: 2, borderWidth: 2, borderColor: Colors.accentGreen,
+             backgroundColor: Colors.accentGreen + '18' },
+  oneStopTitle: { fontSize: 16, fontWeight: '700', color: Colors.accentGreen, marginBottom: 2 },
 
   empty: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32, gap: 10 },
   emptyTitle: { fontSize: 17, fontWeight: '600', color: Colors.text },

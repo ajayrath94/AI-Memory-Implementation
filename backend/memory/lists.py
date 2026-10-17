@@ -91,6 +91,33 @@ def _what(row: Dict) -> str:
     return str((row.get("fields") or {}).get("what") or "")
 
 
+def _said(row: Dict) -> Dict:
+    """An item's fields as she said them. Keys starting with "_" are the
+    app's own notes about the item (the kind of shop it comes from, for
+    "Kahan milega?"): never a column, never read out."""
+    return {k: v for k, v in (row.get("fields") or {}).items()
+            if not str(k).startswith("_")}
+
+
+def note_on_item(item_id: str, key_: str, value: str) -> bool:
+    """Keep one of the app's own notes on an item (key starts with "_"),
+    leaving what she said untouched."""
+    if not key_.startswith("_"):
+        return False
+    try:
+        rows = (_db().table("list_items").select("fields").eq("id", item_id)
+                .limit(1).execute()).data or []
+        if not rows:
+            return False
+        f = dict(rows[0].get("fields") or {})
+        f[key_] = value
+        _db().table("list_items").update({"fields": f}).eq("id", item_id).execute()
+        return True
+    except Exception as e:
+        print(f"[Lists] note failed: {e}")
+        return False
+
+
 # ── finding lists ────────────────────────────────────────────────────────────
 
 def _active(user_id: str) -> List[Dict]:
@@ -184,7 +211,7 @@ def columns(rows: List[Dict]) -> List[str]:
     counts: Dict[str, int] = {}
     for it in rows:
         for k in (it.get("fields") or {}):
-            if k != "what":
+            if k != "what" and not k.startswith("_"):
                 counts[k] = counts.get(k, 0) + 1
     return ["what"] + sorted(counts, key=lambda k: (-counts[k], k))
 
@@ -224,7 +251,7 @@ def detail(user_id: str, list_id: str) -> Optional[Dict]:
     out["columns"] = columns(rows)
     out["items"] = [{
         "id": r["id"],
-        "fields": r.get("fields") or {},
+        "fields": _said(r),
         "done": bool(r.get("done")),
         "created_at": r.get("created_at"),
     } for r in rows]
@@ -325,7 +352,7 @@ def add(user_id: str, what: str, fields: Dict = None,
             except Exception as e:
                 return {"ok": False, "why": str(e)[:80]}
             return {"ok": True, "list": lst["name"], "key": key(lst),
-                    "already_there": True, "item": merged}
+                    "already_there": True, "item": _said({"fields": merged})}
 
     row = add_item(lst["id"], what, fields)
     if not row:
@@ -363,7 +390,7 @@ def read(user_id: str, list_name: str = "") -> Dict:
         "key": key(lst),
         "purpose": lst.get("purpose"),
         "expires_on": lst.get("expires_on"),
-        "items": [r.get("fields") or {} for r in left],
+        "items": [_said(r) for r in left],
         "done": [_what(r) for r in rows if r.get("done")],
         "total": len(rows),
     }
@@ -547,7 +574,7 @@ def change(user_id: str, what: str, new_what: str = "",
         _db().table("list_items").update({"fields": f}).eq("id", r["id"]).execute()
     except Exception as e:
         return {"ok": False, "why": str(e)[:80]}
-    return {"ok": True, "now": f, "list": key(lst)}
+    return {"ok": True, "now": _said({"fields": f}), "list": key(lst)}
 
 
 def edit_item(user_id: str, list_id: str, item_id: str, fields: Dict) -> Optional[Dict]:
