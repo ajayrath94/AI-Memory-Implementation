@@ -37,33 +37,65 @@ function cleanText(text: string): string {
   return text.replace(/https?:\/\/www\.youtube\.com\/watch\?v=[\w-]+/g, '').trim()
 }
 
-// Bare links (not YouTube, which has its own player; not [name](url), which
-// the markdown already makes tappable). They were plain text she could not
-// tap — "https://www.google.com/maps/search/?api=1&query=Malnad%20Chai…"
-// in the middle of a sentence. Now each is a large button under the message.
-function bareLinks(text: string): string[] {
-  const out: string[] = []
-  const re = /https?:\/\/[^\s<>()\]]+/g
+// Links become large buttons under the message. They were plain text she
+// could not tap — "https://www.google.com/maps/search/?api=1&query=Malnad%20Chai…"
+// in the middle of a sentence.
+//
+// Two shapes arrive. A bare link (a map from an offer). And [name](link), which
+// Nancy writes for places and news so each button can carry its own name —
+// four news buttons all saying "news.google.com kholo" told her nothing. A
+// tel: link is a call button. YouTube is left alone: it has its own player.
+type Btn = { url: string; name?: string }
+
+const MD_LINK = /\[([^\]]+)\]\(((?:https?:\/\/|tel:)[^)\s]+)\)/g
+const isYouTube = (u: string) => /youtube\.com\/watch|youtu\.be\//.test(u)
+
+function linkButtons(text: string): Btn[] {
+  const out: Btn[] = []
+  const seen = new Set<string>()
+  const add = (b: Btn) => { if (!seen.has(b.url)) { seen.add(b.url); out.push(b) } }
   let m: RegExpExecArray | null
-  while ((m = re.exec(text))) {
+  const md = new RegExp(MD_LINK.source, 'g')
+  while ((m = md.exec(text))) {
+    if (!isYouTube(m[2])) add({ url: m[2], name: m[1].trim() })
+  }
+  const bare = /(?:https?:\/\/[^\s<>()\]]+|tel:\+?[\d-]{6,})/g
+  while ((m = bare.exec(text))) {
     if (text.slice(Math.max(0, m.index - 2), m.index) === '](') continue
     const url = m[0].replace(/[.,;:!?]+$/, '')
-    if (/youtube\.com\/watch|youtu\.be\//.test(url)) continue
-    if (!out.includes(url)) out.push(url)
+    if (isYouTube(url)) continue
+    add({ url })
   }
   return out
 }
 
-function linkLabel(url: string): string {
+// The text without the links: a line that is only a link goes (it is the
+// button now); a link inside a sentence leaves its name; a bare link goes.
+function withoutLinks(text: string, btns: Btn[]): string {
+  let t = text.replace(/^[ \t]*(?:[-*•][ \t]*)?\[[^\]]+\]\(((?:https?:\/\/|tel:)[^)\s]+)\)[ \t]*$/gm,
+                       (all, url) => (isYouTube(url) ? all : ''))
+  t = t.replace(new RegExp(MD_LINK.source, 'g'), (all, name, url) => (isYouTube(url) ? all : name))
+  for (const b of btns) if (!b.name) t = t.split(b.url).join('')
+  return t.replace(/\n{3,}/g, '\n\n')
+}
+
+function linkLabel(b: Btn): string {
+  const url = b.url
+  const name = (b.name || '').replace(/^📞\s*/, '').trim()
+  if (url.startsWith('tel:')) {
+    return `📞  ${name || url.slice(4)} — phone karo`
+  }
   const isMap = /google\.[^/]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)
   if (isMap) {
+    if (name) return `📍  ${name} — naksha kholo`
     const q = url.match(/[?&]query=([^&]+)/)
     let place = ''
     try { place = q ? decodeURIComponent(q[1].replace(/\+/g, ' ')) : '' } catch {}
     return place && !/^[-\d.,\s]+$/.test(place) ? `📍  ${place} — naksha kholo` : '📍  Naksha kholo'
   }
+  if (/news\.google\./.test(url)) return `📰  ${name || 'Khabar'} — poori khabar padho`
   const host = (url.match(/^https?:\/\/(?:www\.)?([^/?#]+)/) || [])[1] || 'link'
-  return `🔗  ${host} kholo`
+  return `🔗  ${name || host} kholo`
 }
 
 export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
@@ -77,9 +109,9 @@ export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
   const [editText, setEditText] = useState(message.content)
 
   const videoId   = !isUser ? extractYouTube(message.content) : null
-  const links     = !isUser ? bareLinks(message.content) : []
+  const links     = !isUser ? linkButtons(message.content) : []
   let cleanMsg    = videoId ? cleanText(message.content) : message.content
-  for (const l of links) cleanMsg = cleanMsg.split(l).join('')
+  if (links.length) cleanMsg = withoutLinks(cleanMsg, links)
   cleanMsg = cleanMsg.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/:\s*$/, '.').trim()
 
   const handleLongPress = () => { if (isUser) setShowMenu(true) }
@@ -104,12 +136,13 @@ export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
               <Markdown style={markdownStyles}>{cleanMsg}</Markdown>
             )}
 
-            {links.map(url => (
-              <TouchableOpacity key={url} activeOpacity={0.75}
-                onPress={() => Linking.openURL(url).catch(() => {})}
+            {links.map(b => (
+              <TouchableOpacity key={b.url} activeOpacity={0.75}
+                onPress={() => Linking.openURL(b.url).catch(() => {})}
                 style={styles.linkBtn}>
-                <Text style={styles.linkText} numberOfLines={2}>{linkLabel(url)}</Text>
-                <Ionicons name="open-outline" size={18} color={Colors.accent} />
+                <Text style={styles.linkText} numberOfLines={2}>{linkLabel(b)}</Text>
+                <Ionicons name={b.url.startsWith('tel:') ? 'call-outline' : 'open-outline'}
+                  size={18} color={Colors.accent} />
               </TouchableOpacity>
             ))}
 

@@ -103,12 +103,122 @@ def get_weather(user_id: str, location: str = None):
 
 # ── News ───────────────────────────────────────────────────────────────────────
 
+# The kinds of news on the Khabar sheet. Each is a Google News section for
+# India (en-IN): the stories Indian papers lead with, already sorted by
+# section. A keyword search for "sports" on the general news API brought
+# back whatever in the world mentioned the word.
+NEWS_KINDS = {
+    "india":         "NATION",
+    "sports":        "SPORTS",
+    "entertainment": "ENTERTAINMENT",
+    "world":         "WORLD",
+    # "local" is her city's page, worked out from where she is.
+}
+_CITY: dict = {}        # "lat,lng" -> city, so the lookup is made once
+
+
+def _city_of(user_id: str) -> str:
+    """The city she is in now ("Bengaluru"), for local news.
+
+    Her stored place can be as fine as "Vyalikaval HBCS Layout, Bengaluru";
+    the city is Google's `locality` for her coordinates, not a guess at
+    which part of that string is the city.
+    """
+    place, lat, lng = get_user_location(user_id)
+    if lat is not None and lng is not None:
+        k = f"{round(float(lat), 2)},{round(float(lng), 2)}"
+        if k in _CITY:
+            return _CITY[k]
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if api_key:
+            try:
+                data = http_get("https://maps.googleapis.com/maps/api/geocode/json"
+                                f"?latlng={lat},{lng}&result_type=locality&key={api_key}")
+                for res in data.get("results") or []:
+                    for comp in res.get("address_components") or []:
+                        if "locality" in (comp.get("types") or []):
+                            _CITY[k] = comp.get("long_name")
+                            return _CITY[k]
+            except Exception as e:
+                print(f"[News] city lookup failed: {e}")
+    return str(place or "").split(",")[-1].strip() or str(place or "")
+
+
+def _google_news(url: str, limit: int = 6) -> list:
+    """Stories from a Google News RSS feed: title, source, link, time."""
+    import xml.etree.ElementTree as ET
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=6) as res:
+        root = ET.fromstring(res.read())
+    out = []
+    for item in root.iter("item"):
+        title = (item.findtext("title") or "").strip()
+        src_el = item.find("source")
+        source = (src_el.text or "").strip() if src_el is not None and src_el.text else ""
+        # Titles end with " - The Hindu"; the source is given separately.
+        if source and title.endswith(" - " + source):
+            title = title[: -len(" - " + source)].strip()
+        if not title:
+            continue
+        out.append({
+            "title":     title,
+            "source":    source,
+            "url":       (item.findtext("link") or "").strip(),
+            "published": (item.findtext("pubDate") or "").strip(),
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def news_of_kind(user_id: str, kind: str) -> dict:
+    """The day's stories of one kind: local, india, sports, entertainment,
+    world."""
+    kind = (kind or "").strip().lower()
+    tail = "hl=en-IN&gl=IN&ceid=IN:en"
+    if kind == "local":
+        city = _city_of(user_id)
+        url = ("https://news.google.com/rss/headlines/section/geo/"
+               f"{urllib.parse.quote(city)}?{tail}")
+        where = city
+    elif kind in NEWS_KINDS:
+        url = f"https://news.google.com/rss/headlines/section/topic/{NEWS_KINDS[kind]}?{tail}"
+        where = "India"
+    else:
+        return {"error": f"unknown kind {kind!r}", "articles": []}
+    try:
+        stories = _google_news(url)
+        if not stories and kind == "local":
+            # A city Google News has no page for: search its name instead.
+            stories = _google_news("https://news.google.com/rss/search"
+                                   f"?q={urllib.parse.quote(where)}+when:2d&{tail}")
+    except Exception as e:
+        print(f"[News] {kind} feed failed: {e}")
+        return {"error": str(e), "kind": kind, "articles": []}
+    return {
+        "kind":     kind,
+        "where":    where,
+        "articles": stories,
+        "count":    len(stories),
+        "note": ("Tell three or four of these, one or two sentences each, in "
+                 "her language. After each, put its link as [source](url) on "
+                 "its own line so she can tap to read it. Never invent a story "
+                 "or a detail that is not in the title."),
+    }
+
+
 @router.get("/news/{user_id}")
-def get_news(user_id: str, topic: str = None):
+def get_news(user_id: str, topic: str = None, kind: str = None):
     """
     Get personalized news based on user interests.
     Cricket fan → sports news. Religious → India spiritual news.
+
+    kind (local / india / sports / entertainment / world) is the Khabar
+    sheet's choice, and reads that section instead of searching.
     """
+    if kind and not topic:
+        return news_of_kind(user_id, kind)
+
     api_key = os.getenv("NEWS_API_KEY")
     if not api_key:
         return {"error": "NEWS_API_KEY not set"}
@@ -201,6 +311,19 @@ _PLACE_ALIASES = {"clinic": "doctor", "temple": "hindu_temple", "mandir": "hindu
                   "grocery": "grocery_or_supermarket", "cinema": "movie_theater"}
 
 
+_CALL_TYPES = {"pharmacy", "doctor", "hospital", "dentist", "physiotherapist"}
+_PHONES: dict = {}
+
+
+def _phone_of(place_id: str) -> str:
+    """The place's phone number, from Details, remembered by place id."""
+    if not place_id:
+        return ""
+    if place_id not in _PHONES:
+        _PHONES[place_id] = (place_details(place_id) or {}).get("phone") or ""
+    return _PHONES[place_id]
+
+
 def _km(lat1, lng1, lat2, lng2):
     """Straight-line distance in km. Roads are longer; it is said as "about"."""
     from math import radians, sin, cos, asin, sqrt
@@ -213,7 +336,8 @@ def _km(lat1, lng1, lat2, lng2):
 
 
 def get_nearby_places(user_id: str, place_type: str = "hospital",
-                      location: str = None, radius: int = 5000):
+                      location: str = None, radius: int = 5000,
+                      with_phone: bool = False):
     """
     Real places near her, nearest first, each with how far it is.
 
@@ -318,6 +442,24 @@ def get_nearby_places(user_id: str, place_type: str = "hospital",
         places.sort(key=lambda x: x["distance_km"] if x["distance_km"] is not None else 1e9)
         places = places[:5]
 
+        # A map link for each, so she can tap it and go.
+        for p in places:
+            p["map_url"] = ("https://www.google.com/maps/search/?api=1&query="
+                            + urllib.parse.quote(p.get("name") or "")
+                            + (f"&query_place_id={p['place_id']}" if p.get("place_id") else ""))
+
+        # A number to ring, for the places she would ring: the chemist, the
+        # doctor, the hospital — by Google's own type for the place, not what
+        # was searched (a chemist search pads its results with other shops).
+        # One Details call each, for the nearest three only, and remembered.
+        callable_ = [p for p in places
+                     if with_phone and set(p.get("types") or []) & _CALL_TYPES][:3]
+        for p in callable_:
+            ph = _phone_of(p.get("place_id"))
+            if ph:
+                p["phone"] = ph
+                p["call_url"] = "tel:" + ph
+
         return {
             "location":   location,
             "place_type": place_type,
@@ -325,7 +467,11 @@ def get_nearby_places(user_id: str, place_type: str = "hospital",
             "count":      len(places),
             "distance_from": her_place,
             "note": ("Distances are straight-line from where she is; by road it "
-                     "is a little more. Say them as 'about'."
+                     "is a little more. Say them as 'about'. Say whether each is "
+                     "open now when `open` is given. For each place you name, "
+                     "put [its name](map_url) on its own line, and when it has a "
+                     "call_url, [📞 its name](call_url) on the next line, so she "
+                     "can tap to see it or ring it."
                      + (" Nothing within 5 km, so this looked up to 15 km."
                         if widened else "")),
         }

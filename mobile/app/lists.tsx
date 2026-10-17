@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, SafeAreaView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Alert, TextInput,
+  ActivityIndicator, RefreshControl, Alert, TextInput, Linking,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
@@ -9,6 +9,7 @@ import { useTheme } from '../hooks/useTheme'
 import { useT } from '../hooks/useT'
 import { Colors, API_BASE, API_KEY } from '../constants'
 import { useAppStore } from '../store/appStore'
+import { pick } from '../components/chat/shortcuts'
 
 // Her lists. Things go on them in chat ("sabudana bhi likh lena"); this is
 // where she looks before leaving the house, and ticks things off in the shop.
@@ -31,6 +32,29 @@ interface Item {
   done: boolean
   created_at: string
 }
+// "Kahan milega?" — where the things still to get can be bought.
+interface Shop {
+  name: string
+  address?: string
+  distance_km?: number | null
+  walk_min?: number | null
+  open?: boolean | null
+  map_url?: string
+}
+interface ShopGroup { search: string; label: string; items: string[]; shops?: Shop[] }
+interface ShopPlan { buying: boolean; groups: ShopGroup[] }
+
+const W = {
+  where:   { en: 'Where can I get these?', hl: 'Kahan milega?', hi: 'कहाँ मिलेगा?' },
+  hide:    { en: 'Hide shops', hl: 'Dukaanein chhupao', hi: 'दुकानें छुपाओ' },
+  looking: { en: 'Looking for shops near you…', hl: 'Paas ki dukaanein dekh rahi hoon…', hi: 'पास की दुकानें देख रही हूँ…' },
+  none:    { en: 'No shop found nearby', hl: 'Paas mein koi dukaan nahi mili', hi: 'पास में कोई दुकान नहीं मिली' },
+  walk:    { en: 'min walk', hl: 'min paidal', hi: 'मिनट पैदल' },
+  open:    { en: 'Open now', hl: 'Abhi khuli hai', hi: 'अभी खुली है' },
+  shut:    { en: 'Closed now', hl: 'Abhi band hai', hi: 'अभी बंद है' },
+  map:     { en: 'Map', hl: 'Naksha', hi: 'नक्शा' },
+}
+
 interface ListDetail extends ListCard {
   columns: string[]
   items: Item[]
@@ -49,6 +73,7 @@ export default function ListsScreen() {
   const theme = useTheme()
   const t = useT()
   const { userId } = useAppStore()
+  const lang = useAppStore(s => s.language)
   const [openLists, setOpenLists] = useState<ListCard[]>([])
   const [keptLists, setKeptLists] = useState<ListCard[]>([])
   const [loading, setLoading] = useState(true)
@@ -56,6 +81,10 @@ export default function ListsScreen() {
   const [current, setCurrent] = useState<ListDetail | null>(null)
   const [newItem, setNewItem] = useState('')
   const [busy, setBusy] = useState(false)
+  const [plan, setPlan] = useState<ShopPlan | null>(null)
+  const [shops, setShops] = useState<ShopGroup[] | null>(null)
+  const [shopsOpen, setShopsOpen] = useState(false)
+  const [shopsLoading, setShopsLoading] = useState(false)
 
   const fetchAll = useCallback(async () => {
     try {
@@ -100,6 +129,50 @@ export default function ListsScreen() {
   }
 
   const back = () => { setCurrent(null); setNewItem(''); fetchAll() }
+
+  // Whether this list is shopping, read again only when what is left on it
+  // changes (the server keeps the answer too). Ticking something off in the
+  // shop keeps the panel open; it is refreshed for what is left.
+  const planKey = current && !current.closed_at
+    ? current.id + '|' + current.items.filter(i => !i.done).map(i => i.fields.what).join('|')
+    : ''
+  const listId = current?.id
+
+  const loadShops = useCallback(async (id: string) => {
+    setShopsLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/lists/${userId}/${id}/shops?places=true`, { headers: H })
+      const j: ShopPlan = await res.json()
+      setShops(j.groups || [])
+    } catch (err) {
+      console.error('Shops failed:', err)
+      setShops([])
+    } finally {
+      setShopsLoading(false)
+    }
+  }, [userId])
+
+  // Another list: start closed.
+  useEffect(() => { setPlan(null); setShops(null); setShopsOpen(false) }, [listId])
+
+  useEffect(() => {
+    if (!planKey || !listId) { setPlan(null); return }
+    let live = true
+    fetch(`${API_BASE}/lists/${userId}/${listId}/shops`, { headers: H })
+      .then(r => r.json()).then(j => { if (live) setPlan(j) })
+      .catch(err => console.error('Shop plan failed:', err))
+    setShops(null)
+    if (shopsOpen) loadShops(listId)
+    return () => { live = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planKey, userId])
+
+  const toggleShops = () => {
+    if (!current) return
+    if (shopsOpen) { setShopsOpen(false); return }
+    setShopsOpen(true)
+    if (!shops) loadShops(current.id)
+  }
 
   // ── item actions ──────────────────────────────────────────────────────────
 
@@ -305,6 +378,53 @@ export default function ListsScreen() {
             <Text style={styles.emptyText}>{t('lists.emptyList')}</Text>
           )}
 
+          {!isKept && plan?.buying && (
+            <TouchableOpacity style={styles.whereBtn} onPress={toggleShops} activeOpacity={0.8}>
+              <Ionicons name={shopsOpen ? 'chevron-up' : 'storefront-outline'} size={22} color="#fff" />
+              <Text style={styles.bigButtonText}>{pick(shopsOpen ? W.hide : W.where, lang)}</Text>
+            </TouchableOpacity>
+          )}
+          {!isKept && plan?.buying && shopsOpen && (
+            <View style={[styles.shopsBox, { borderColor: theme.border }]}>
+              {shopsLoading && (
+                <View style={styles.shopsLoading}>
+                  <ActivityIndicator color={Colors.accent} />
+                  <Text style={styles.shopMeta}>{pick(W.looking, lang)}</Text>
+                </View>
+              )}
+              {!shopsLoading && (shops || []).map(g => (
+                <View key={g.search + g.label} style={styles.shopGroup}>
+                  <Text style={styles.shopGroupTitle}>{g.label}</Text>
+                  <Text style={styles.shopItems}>{g.items.join(', ')}</Text>
+                  {(g.shops || []).length === 0 && (
+                    <Text style={styles.shopMeta}>{pick(W.none, lang)}</Text>
+                  )}
+                  {(g.shops || []).map(sh => (
+                    <TouchableOpacity key={sh.name + (sh.map_url || '')} style={styles.shopRow}
+                      activeOpacity={0.75} disabled={!sh.map_url}
+                      onPress={() => sh.map_url && Linking.openURL(sh.map_url).catch(() => {})}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.shopName} numberOfLines={2}>{sh.name}</Text>
+                        <Text style={styles.shopMeta}>
+                          {[
+                            sh.walk_min != null ? `~${sh.walk_min} ${pick(W.walk, lang)}` : '',
+                            sh.distance_km != null ? `${sh.distance_km} km` : '',
+                            sh.open === true ? pick(W.open, lang) : sh.open === false ? pick(W.shut, lang) : '',
+                          ].filter(Boolean).join(' · ')}
+                        </Text>
+                      </View>
+                      {sh.map_url && (
+                        <View style={styles.mapPill}>
+                          <Text style={styles.mapPillText}>📍 {pick(W.map, lang)}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ))}
+            </View>
+          )}
+
           {left.map(row)}
           {done.length > 0 && (
             <>
@@ -455,6 +575,24 @@ const styles = StyleSheet.create({
   bigButtonText: { fontSize: 17, fontWeight: '700', color: '#fff' },
 
   tip: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', marginTop: 16 },
+  whereBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    minHeight: 54, borderRadius: 14, backgroundColor: Colors.accentGreen, marginBottom: 14,
+  },
+  shopsBox: { borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 16, gap: 14 },
+  shopsLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 8 },
+  shopGroup: { gap: 6 },
+  shopGroupTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
+  shopItems: { fontSize: 15, color: Colors.textSecond, marginBottom: 2 },
+  shopRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56,
+    paddingVertical: 8, paddingHorizontal: 10, borderRadius: 12,
+    backgroundColor: Colors.accent + '14', borderWidth: 1, borderColor: Colors.accent + '44',
+  },
+  shopName: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  shopMeta: { fontSize: 14, color: Colors.textSecond, marginTop: 2 },
+  mapPill: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, backgroundColor: Colors.accent },
+  mapPillText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
   empty: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32, gap: 10 },
   emptyTitle: { fontSize: 17, fontWeight: '600', color: Colors.text },

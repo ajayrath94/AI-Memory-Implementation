@@ -10,6 +10,7 @@ router is registered in main.py, like the others.
 
     GET    /lists/{user_id}                               open + kept lists
     GET    /lists/{user_id}/{list_id}                     one list, with columns
+    GET    /lists/{user_id}/{list_id}/shops?places=       is it shopping; where to buy
     POST   /lists/{user_id}                               new list
     POST   /lists/{user_id}/{list_id}/items               add an item
     POST   /lists/{user_id}/{list_id}/items/{item_id}/tick   {done: bool}
@@ -74,6 +75,20 @@ def one_list(user_id: str, list_id: str):
     if not d:
         raise HTTPException(404, "no such list")
     return d
+
+
+@router.get("/{user_id}/{list_id}/shops")
+def list_shops(user_id: str, list_id: str, places: bool = False):
+    """Where the things on this list can be bought ("Kahan milega?").
+
+    places=false: only whether it is a shopping list and how its items
+    group by kind of shop — the screen asks this when the list opens, to
+    know whether to show the button. places=true adds the nearest shops
+    for each group, when she taps it.
+    """
+    _mine(user_id, list_id)
+    from memory import shops
+    return shops.where(user_id, list_id) if places else shops.plan(user_id, list_id)
 
 
 @router.post("/{user_id}")

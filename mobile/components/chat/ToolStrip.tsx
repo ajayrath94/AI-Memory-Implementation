@@ -1,9 +1,12 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { ScrollView, TouchableOpacity, Text, StyleSheet, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { Colors } from '../../constants'
 import { useT } from '../../hooks/useT'
+import { useAppStore } from '../../store/appStore'
+import { ChoiceSheet } from './ChoiceSheet'
+import { SHEETS, Choice, pick } from './shortcuts'
 
 // What Nancy can do, as buttons above the text box.
 //
@@ -12,6 +15,9 @@ import { useT } from '../../hooks/useT'
 // check the weather, never finds it. One tap sends the same words she would
 // have said — so Nancy answers exactly as if she had typed them — or, for
 // lists, opens the screen where they are.
+//
+// Khabar, Paas mein and Aaj ka din have kinds, so they open a sheet of big
+// tiles first (shortcuts.ts) and the tile sends the sentence.
 
 type Tool = {
   id: string
@@ -21,6 +27,7 @@ type Tool = {
   say?: string           // translation key for the message sent to Nancy
   sayFallback?: string
   open?: string          // a screen instead of a message
+  sheet?: string         // a sheet of choices (SHEETS in shortcuts.ts)
 }
 
 const TOOLS: Tool[] = [
@@ -29,14 +36,11 @@ const TOOLS: Tool[] = [
     say: 'tools.weather.say', sayFallback: 'Aaj mausam kaisa hai?' },
   { id: 'music',   icon: 'musical-notes-outline', label: 'tools.music',   fallback: 'Gaane',
     say: 'tools.music.say',   sayFallback: 'Koi achha gaana sunao' },
-  { id: 'news',    icon: 'newspaper-outline',     label: 'tools.news',    fallback: 'Khabar',
-    say: 'tools.news.say',    sayFallback: 'Aaj ki khabar kya hai?' },
+  { id: 'news',    icon: 'newspaper-outline',     label: 'tools.news',    fallback: 'Khabar',  sheet: 'news' },
   { id: 'food',    icon: 'restaurant-outline',    label: 'tools.food',    fallback: 'Khana',
     say: 'tools.food.say',    sayFallback: 'Aaj kya banaun?' },
-  { id: 'places',  icon: 'location-outline',      label: 'tools.places',  fallback: 'Paas mein',
-    say: 'tools.places.say',  sayFallback: 'Paas mein kya kya hai?' },
-  { id: 'day',     icon: 'calendar-outline',      label: 'tools.day',     fallback: 'Aaj ka din',
-    say: 'tools.day.say',     sayFallback: 'Aaj mere din mein kya hai?' },
+  { id: 'places',  icon: 'location-outline',      label: 'tools.places',  fallback: 'Paas mein', sheet: 'places' },
+  { id: 'day',     icon: 'calendar-outline',      label: 'tools.day',     fallback: 'Aaj ka din', sheet: 'day' },
 ]
 
 export function ToolStrip({ onSend, disabled }: {
@@ -45,6 +49,8 @@ export function ToolStrip({ onSend, disabled }: {
 }) {
   const router = useRouter()
   const t = useT()
+  const lang = useAppStore(s => s.language)
+  const [sheet, setSheet] = useState<string | null>(null)
 
   // A key with no translation yet comes back as itself.
   const tr = (key: string, fb: string) => {
@@ -54,10 +60,18 @@ export function ToolStrip({ onSend, disabled }: {
 
   const press = (tool: Tool) => {
     if (tool.open) { router.push(tool.open as any); return }
+    if (tool.sheet) { setSheet(tool.sheet); return }
     // While Nancy is still answering, a second tap would send a second
     // message on top of the first.
     if (disabled) return
     onSend(tr(tool.say!, tool.sayFallback!))
+  }
+
+  const choose = (c: Choice) => {
+    setSheet(null)
+    if (c.open) { router.push(c.open as any); return }
+    if (disabled || !c.say) return
+    onSend(pick(c.say, lang))
   }
 
   return (
@@ -69,7 +83,7 @@ export function ToolStrip({ onSend, disabled }: {
         keyboardShouldPersistTaps="handled"
       >
         {TOOLS.map(tool => {
-          const off = disabled && !tool.open
+          const off = disabled && !tool.open && !tool.sheet
           return (
             <TouchableOpacity
               key={tool.id}
@@ -86,6 +100,8 @@ export function ToolStrip({ onSend, disabled }: {
           )
         })}
       </ScrollView>
+      <ChoiceSheet sheet={sheet ? SHEETS[sheet] : null} lang={lang} busy={disabled}
+        onPick={choose} onClose={() => setSheet(null)} />
     </View>
   )
 }

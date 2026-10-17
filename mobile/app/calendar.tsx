@@ -27,6 +27,7 @@ import {
   Platform, KeyboardAvoidingView,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
+import { useLocalSearchParams } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { useTheme } from '../hooks/useTheme'
@@ -143,6 +144,20 @@ export default function CalendarScreen() {
   const [saving, setSaving]     = useState(false)
 
   const strip = useMemo(() => Array.from({ length: 14 }, (_, i) => addDays(todayKey(), i)), [])
+
+  // "Kuch jodo" on the Aaj ka din sheet opens this screen with ?add=1: the
+  // add sheet straight away, for today, at the next hour.
+  const { add } = useLocalSearchParams<{ add?: string }>()
+  const added = useRef(false)
+  useEffect(() => {
+    if (add !== '1' || added.current) return
+    added.current = true
+    const h = Math.min(23, new Date(Date.now() + 330 * 60000).getUTCHours() + 1)
+    setDraft({
+      kind: 'event', title: '', dayKey: todayKey(), hour: h, minute: 0,
+      category: 'personal', heading: 'Kya jodna hai?',
+    })
+  }, [add])
 
   // One read of a span of days: her plans and her routine, grouped by day.
   const load = useCallback(async (fromKey: string, days: number) => {

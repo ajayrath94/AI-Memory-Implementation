@@ -101,6 +101,17 @@ NEWS_SCHEMA = {
                         # she asks for it, not a suggestion when she has not.
                     ),
                 },
+                "kind": {
+                    "type": "string",
+                    "enum": ["local", "india", "sports", "entertainment", "world"],
+                    "description": (
+                        "A kind of news rather than a topic: local (her own "
+                        "city's news), india, sports, entertainment (films, TV, "
+                        "music), world. Use when she asks for a kind of news "
+                        "('aas-paas ki khabar', 'khel ki khabar', 'duniya ki "
+                        "khabar'); use topic instead when she names a subject."
+                    ),
+                },
             },
             "required": [],
         },
@@ -668,7 +679,7 @@ TOOL_REGISTRY = {
     },
     "get_news": {
         "schema":  NEWS_SCHEMA,
-        "handler": lambda args, user_id: get_news(user_id, args.get("topic")),
+        "handler": lambda args, user_id: get_news(user_id, args.get("topic"), args.get("kind")),
     },
     "get_places": {
         "schema":  PLACES_SCHEMA,
@@ -676,6 +687,7 @@ TOOL_REGISTRY = {
             user_id,
             args.get("place_type") or "hospital",
             args.get("location"),
+            with_phone=True,      # a call button for the chemist or doctor
         ),
     },
 }

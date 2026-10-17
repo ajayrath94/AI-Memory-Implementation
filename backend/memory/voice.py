@@ -190,19 +190,28 @@ def _speakable(text: str, lang: str = "") -> str:
     import re
     import unicodedata
     t = text or ""
-    # [Malnad Chai](https://…) is heard as "Malnad Chai".
-    t = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"\1 ", t)
-    links = re.findall(r"https?://\S+|www\.\S+", text or "")
-    t = re.sub(r"https?://\S+|www\.\S+", " ", t)
+    # A link on a line of its own is a button under the message; its name
+    # was already said in the sentence above, so the line is not read.
+    t = re.sub(r"(?m)^[ \t]*(?:[-*•][ \t]*)?\[[^\]]+\]\((?:https?://|tel:)[^)\s]+\)[ \t]*$", " ", t)
+    # [Malnad Chai](https://…) inside a sentence is heard as "Malnad Chai".
+    # [📞 Apollo Pharmacy](tel:…) the same way — and the number is not read.
+    t = re.sub(r"\[([^\]]+)\]\(((?:https?://|tel:)[^)\s]+)\)", r"\1 ", t)
+    links = re.findall(r"https?://\S+|www\.\S+|tel:\S+", text or "")
+    t = re.sub(r"https?://\S+|www\.\S+|tel:\S+", " ", t)
     t = re.sub(r"[*_#`>]+", " ", t)          # markdown marks are for the eye
     t = "".join(c for c in t
                 if unicodedata.category(c) not in ("So", "Cs", "Co")
                 and c not in "\u200d\ufe0f")
     t = re.sub(r"\s+", " ", t).strip()
     if links:
-        kind = ("map" if any(("google." in l and "/maps" in l) or "maps.google." in l or "maps.app" in l
+        calls = any(l.startswith("tel:") for l in links)
+        links = [l for l in links if not l.startswith("tel:")] or links
+        kind = ("call" if calls and all(l.startswith("tel:") for l in links)
+                else "map+call" if calls and any(("google." in l and "/maps" in l) for l in links)
+                else "map" if any(("google." in l and "/maps" in l) or "maps.google." in l or "maps.app" in l
                              or "goo.gl/maps" in l for l in links)
                 else "video" if any("youtube.com" in l or "youtu.be" in l for l in links)
+                else "news" if all("news.google." in l for l in links)
                 else "link")
         english = (lang or "").lower().startswith("en")
         say = {
@@ -212,6 +221,12 @@ def _speakable(text: str, lang: str = "") -> str:
             ("map", True): "The map is just below. Tap it to open.",
             ("video", True): "The video is just below. Tap it to play.",
             ("link", True): "The link is just below. Tap it to open.",
+            ("news", False): "Har khabar ka link neeche hai, dabaakar poori khabar padh lijiye.",
+            ("news", True): "Each story's link is just below. Tap one to read it in full.",
+            ("call", False): "Neeche phone ka button hai, dabaakar phone kar lijiye.",
+            ("map+call", False): "Neeche naksha aur phone ke button hain, dabaakar dekh lijiye.",
+            ("call", True): "The call button is just below. Tap it to ring.",
+            ("map+call", True): "The map and call buttons are just below. Tap one to open it.",
         }[(kind, english)]
         t = re.sub(r"\s*[:\-\u2013\u2014]+\s*$", ".", t)   # "…pee sakti hain:" ends the sentence
         if t and t[-1] not in ".!?\u0964":
