@@ -17,6 +17,7 @@ router is registered in main.py, like the others.
     PATCH  /lists/{user_id}/{list_id}/items/{item_id}     {fields: {...}}
     DELETE /lists/{user_id}/{list_id}/items/{item_id}
     POST   /lists/{user_id}/{list_id}/close               {keep: bool}
+    POST   /lists/{user_id}/{list_id}/walk                {action: start|got|skip|stop}
     POST   /lists/{user_id}/{list_id}/reuse               kept → new open list
 """
 from typing import Dict, Optional
@@ -46,6 +47,11 @@ class TickIn(BaseModel):
 
 class EditIn(BaseModel):
     fields: Dict[str, str]
+
+
+class WalkIn(BaseModel):
+    # start | got | skip | stop — the list card's buttons.
+    action: str
 
 
 class CloseIn(BaseModel):
@@ -91,6 +97,13 @@ def list_shops(user_id: str, list_id: str, places: bool = False, mode: str = "ne
     _mine(user_id, list_id)
     from memory import shops
     return shops.where(user_id, list_id, mode) if places else shops.plan(user_id, list_id)
+
+
+@router.post("/{user_id}/{list_id}/walk")
+def walk(user_id: str, list_id: str, body: WalkIn):
+    """The list card in the chat, one tap at a time."""
+    _mine(user_id, list_id)
+    return L.walk_step(user_id, list_id, (body.action or "").strip().lower())
 
 
 @router.post("/{user_id}")

@@ -246,6 +246,8 @@ def _speakable(text: str, lang: str = "") -> str:
     import re
     import unicodedata
     t = text or ""
+    # The list card's marker is for the app to draw, not to be read.
+    t = re.sub(r"\[\[list:[^\]]*\]\]", " ", t)
     # A link on a line of its own is a button under the message; its name
     # was already said in the sentence above, so the line is not read.
     t = re.sub(r"(?m)^[ \t]*(?:[-*•][ \t]*)?\[[^\]]+\]\((?:https?://|tel:)[^)\s]+\)[ \t]*$", " ", t)

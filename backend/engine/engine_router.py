@@ -1227,6 +1227,14 @@ async def process_input(text: str, model: str,
             print(f"[Router] episode ask-check failed: {_ae}")
     threading.Thread(target=_asked, daemon=True).start()
 
+    # The list card: a reply that read a list carries its marker, and the app
+    # draws the card from it (memory/lists.with_card).
+    try:
+        from memory.lists import with_card
+        reply = with_card(reply, tool_results)
+    except Exception as _lc:
+        print(f"[Lists] card marker failed: {_lc}")
+
     # 14. Save assistant message with embedding
     save_message(
         session_id=sid, role="assistant", content=reply, model=model,

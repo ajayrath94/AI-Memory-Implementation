@@ -220,7 +220,8 @@ export default function ListsScreen() {
 
   // "Kahan milega?" from the Listein sheet (?shops=1): her latest open list
   // that has things to buy, opened with the shops already showing.
-  const { shops: wantShops } = useLocalSearchParams<{ shops?: string }>()
+  // From a list card in the chat, ?id= names the list: that one first.
+  const { shops: wantShops, id: wantId } = useLocalSearchParams<{ shops?: string; id?: string }>()
   const askedShops = useRef(false)
   const pendingShops = useRef<string | null>(null)
   const [notice, setNotice] = useState('')
@@ -229,7 +230,10 @@ export default function ListsScreen() {
     askedShops.current = true
     ;(async () => {
       setNotice(pick(W.finding, lang))
-      for (const l of openLists) {
+      const order = wantId
+        ? [...openLists.filter(l => l.id === wantId), ...openLists.filter(l => l.id !== wantId)]
+        : openLists
+      for (const l of order) {
         try {
           const r = await fetch(`${API_BASE}/lists/${userId}/${l.id}/shops`, { headers: H })
           const j: ShopPlan = await r.json()

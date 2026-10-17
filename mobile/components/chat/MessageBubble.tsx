@@ -10,6 +10,7 @@ import { Colors, Typography, Spacing, Radius } from '../../constants'
 import { YouTubePlayer } from '../media/YouTubePlayer'
 import { useAppStore } from '../../store/appStore'
 import { LINK, pick } from '../../i18n/words'
+import { ListCard } from './ListCard'
 
 interface Message {
   id:          string
@@ -114,9 +115,13 @@ export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
   const [editText, setEditText] = useState(message.content)
 
   const videoId   = !isUser ? extractYouTube(message.content) : null
+  // A list Nancy read carries its card as [[list:<id>]] (memory/lists.py).
+  const cardIds   = !isUser ? Array.from(new Set(
+    (message.content.match(/\[\[list:([0-9a-fA-F-]{8,})\]\]/g) || []).map(m => m.slice(7, -2)))) : []
   const links     = !isUser ? linkButtons(message.content) : []
   let cleanMsg    = videoId ? cleanText(message.content) : message.content
   if (links.length) cleanMsg = withoutLinks(cleanMsg, links)
+  cleanMsg = cleanMsg.replace(/\[\[list:[^\]]*\]\]/g, '').trim()
   cleanMsg = cleanMsg.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/:\s*$/, '.').trim()
 
   const handleLongPress = () => { if (isUser) setShowMenu(true) }
@@ -140,6 +145,8 @@ export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
             ) : (
               <Markdown style={markdownStyles}>{cleanMsg}</Markdown>
             )}
+
+            {cardIds.map(id => <ListCard key={id} listId={id} />)}
 
             {links.map(b => (
               <TouchableOpacity key={b.url} activeOpacity={0.75}

@@ -249,6 +249,10 @@ def detail(user_id: str, list_id: str) -> Optional[Dict]:
     c = {"total": len(rows), "left": sum(1 for r in rows if not r.get("done"))}
     out = _card(lst, c)
     out["columns"] = columns(rows)
+    # The item being read out in a shop, if a walk is going on: the list card
+    # in the chat highlights it.
+    here = _cursor_item(lst)
+    out["cursor"] = here["id"] if here else None
     out["items"] = [{
         "id": r["id"],
         "fields": _said(r),
@@ -393,6 +397,8 @@ def read(user_id: str, list_name: str = "") -> Dict:
         "items": [_said(r) for r in left],
         "done": [_what(r) for r in rows if r.get("done")],
         "total": len(rows),
+        "list_id": lst["id"],
+        "note": CARD_NOTE,
     }
     others = [key(l) for l in _active(user_id) if l["id"] != lst["id"]]
     if others:
@@ -815,7 +821,8 @@ def next_item(user_id: str, list_name: str = "") -> Dict:
     _set_cursor(lst["id"], nxt["id"])
     return {"ok": True, "list": key(lst), "item": nxt.get("fields") or {},
             "left": len(left), "second_pass": second_pass,
-            "only_one_left": len(left) == 1}
+            "only_one_left": len(left) == 1, "list_id": lst["id"],
+            "note": CARD_NOTE_WALK}
 
 
 def tick_current(user_id: str, list_name: str = "") -> Dict:
@@ -867,6 +874,96 @@ def walking(user_id: str) -> Optional[Dict]:
         if here:
             return {"list": lst.get("name"), "key": key(lst), "item": _what(here)}
     return None
+
+
+# ── the list card in the chat ────────────────────────────────────────────────
+#
+# Going through a list in a shop took 24 messages for 12 things (17 Oct):
+# one question and one answer for each. Now, when Nancy reads a list, her
+# reply carries a card (the app draws it from the marker) with every item,
+# a tick for each, and in a shop the item in hand highlighted with "Mil gaya"
+# and "Baad mein" buttons. Taps go straight to walk_step; no chat message per
+# item. Answering in words still works, and the card follows.
+
+CARD_RE = r"\[\[list:[0-9a-fA-F-]{8,}\]\]"
+CARD_NOTE = ("A card with the whole list, a tick box for each thing, appears "
+             "under your reply by itself. Say what is on it in a sentence or "
+             "two (how many, the things), not as a numbered list, and never "
+             "write the card yourself.")
+CARD_NOTE_WALK = ("A card with the list appears under your reply, the item in "
+                  "hand highlighted, with Mil gaya / Baad mein buttons she can "
+                  "tap. Say only this item. Never write the card yourself.")
+
+
+def card_marker(tool_results) -> str:
+    """The marker for the list Nancy read this turn, or "". Only reading a
+    list (whole, or starting one at a time) shows a card; ticking one thing
+    off by voice does not add another — the card already there updates."""
+    for tr in tool_results or []:
+        if not isinstance(tr, dict) or tr.get("tool") != "read_list":
+            continue
+        d = tr.get("data") or {}
+        if d.get("ok") and d.get("list_id"):
+            return f"[[list:{d['list_id']}]]"
+    return ""
+
+
+def with_card(reply: str, tool_results) -> str:
+    """The reply with exactly the card this turn earned: any marker the model
+    copied from earlier messages is taken out first."""
+    import re
+    text = re.sub(CARD_RE, "", reply or "").rstrip()
+    m = card_marker(tool_results)
+    return f"{text}\n\n{m}" if m else text
+
+
+def _next_of(lst: Dict) -> Dict:
+    left = _items_of(lst["id"], include_done=False)
+    if not left:
+        _set_cursor(lst["id"], None)
+        return {"done": True, "left": 0}
+    here = _cursor_item(lst)
+    nxt, second_pass = None, False
+    if here:
+        after = str(here.get("created_at") or "")
+        nxt = next((r for r in left if str(r.get("created_at") or "") > after), None)
+        if nxt is None:
+            nxt, second_pass = left[0], True
+    else:
+        nxt = left[0]
+    if second_pass:
+        # Once round on the card: what is left is shown, not read again.
+        _set_cursor(lst["id"], None)
+        return {"done": True, "left": len(left), "round_over": True}
+    _set_cursor(lst["id"], nxt["id"])
+    return {"done": False, "left": len(left),
+            "item": {"id": nxt["id"], "what": _what(nxt)}}
+
+
+def walk_step(user_id: str, list_id: str, action: str) -> Dict:
+    """One tap on the card: start, got (tick the item in hand), skip, stop.
+    Returns the next item to highlight (and say), or done."""
+    lst = get(user_id, list_id)
+    if not lst or lst.get("closed_at"):
+        return {"ok": False, "why": "no such open list"}
+    if action == "start":
+        _set_cursor(lst["id"], None)
+        lst["last_read_item_id"] = None
+    elif action == "got":
+        here = _cursor_item(lst)
+        if here:
+            _set_done(here["id"], True)
+            print(f"[Lists] {user_id}: ticked {_what(here)!r} (card)")
+    elif action == "stop":
+        _set_cursor(lst["id"], None)
+        return {"ok": True, "done": True, "stopped": True,
+                "left": len(_items_of(lst["id"], include_done=False))}
+    elif action != "skip":
+        return {"ok": False, "why": f"unknown action {action!r}"}
+    lst = get(user_id, list_id) or lst
+    out = _next_of(lst)
+    out["ok"] = True
+    return out
 
 
 # ── for the conversation ─────────────────────────────────────────────────────
