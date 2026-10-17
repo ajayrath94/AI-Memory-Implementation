@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Modal, TextInput, TouchableWithoutFeedback,
-  Keyboard,
+  Keyboard, Linking,
 } from 'react-native'
 import Markdown from 'react-native-markdown-display'
 import { Ionicons } from '@expo/vector-icons'
@@ -37,6 +37,35 @@ function cleanText(text: string): string {
   return text.replace(/https?:\/\/www\.youtube\.com\/watch\?v=[\w-]+/g, '').trim()
 }
 
+// Bare links (not YouTube, which has its own player; not [name](url), which
+// the markdown already makes tappable). They were plain text she could not
+// tap — "https://www.google.com/maps/search/?api=1&query=Malnad%20Chai…"
+// in the middle of a sentence. Now each is a large button under the message.
+function bareLinks(text: string): string[] {
+  const out: string[] = []
+  const re = /https?:\/\/[^\s<>()\]]+/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) {
+    if (text.slice(Math.max(0, m.index - 2), m.index) === '](') continue
+    const url = m[0].replace(/[.,;:!?]+$/, '')
+    if (/youtube\.com\/watch|youtu\.be\//.test(url)) continue
+    if (!out.includes(url)) out.push(url)
+  }
+  return out
+}
+
+function linkLabel(url: string): string {
+  const isMap = /google\.[^/]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)
+  if (isMap) {
+    const q = url.match(/[?&]query=([^&]+)/)
+    let place = ''
+    try { place = q ? decodeURIComponent(q[1].replace(/\+/g, ' ')) : '' } catch {}
+    return place && !/^[-\d.,\s]+$/.test(place) ? `📍  ${place} — naksha kholo` : '📍  Naksha kholo'
+  }
+  const host = (url.match(/^https?:\/\/(?:www\.)?([^/?#]+)/) || [])[1] || 'link'
+  return `🔗  ${host} kholo`
+}
+
 export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
   const isUser = message.role === 'user'
   const time   = new Date(message.timestamp).toLocaleTimeString([], {
@@ -48,7 +77,10 @@ export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
   const [editText, setEditText] = useState(message.content)
 
   const videoId   = !isUser ? extractYouTube(message.content) : null
-  const cleanMsg  = videoId ? cleanText(message.content) : message.content
+  const links     = !isUser ? bareLinks(message.content) : []
+  let cleanMsg    = videoId ? cleanText(message.content) : message.content
+  for (const l of links) cleanMsg = cleanMsg.split(l).join('')
+  cleanMsg = cleanMsg.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/:\s*$/, '.').trim()
 
   const handleLongPress = () => { if (isUser) setShowMenu(true) }
   const handleEdit      = () => { setShowMenu(false); setEditText(message.content); setEditMode(true) }
@@ -71,6 +103,15 @@ export function MessageBubble({ message, onResend, onSpeak, speaking }: Props) {
             ) : (
               <Markdown style={markdownStyles}>{cleanMsg}</Markdown>
             )}
+
+            {links.map(url => (
+              <TouchableOpacity key={url} activeOpacity={0.75}
+                onPress={() => Linking.openURL(url).catch(() => {})}
+                style={styles.linkBtn}>
+                <Text style={styles.linkText} numberOfLines={2}>{linkLabel(url)}</Text>
+                <Ionicons name="open-outline" size={18} color={Colors.accent} />
+              </TouchableOpacity>
+            ))}
 
             {videoId && (
               <YouTubePlayer video={{
@@ -191,6 +232,11 @@ const styles = StyleSheet.create({
   bubbleBot:   { backgroundColor: Colors.bgCard, borderBottomLeftRadius: Radius.sm, borderWidth: 0.5, borderColor: Colors.border },
   textUser:    { ...Typography.body, color: Colors.text, lineHeight: 24 },
   footer:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: Spacing.xs, gap: Spacing.xs },
+  linkBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm,
+                 marginTop: Spacing.sm, paddingVertical: 12, paddingHorizontal: Spacing.md,
+                 borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.accent + '66',
+                 backgroundColor: Colors.accent + '14' },
+  linkText:    { flex: 1, color: Colors.accent, fontSize: 16, fontWeight: '600' },
   speakBtn: {
     paddingRight: 6,
     paddingVertical: 2,

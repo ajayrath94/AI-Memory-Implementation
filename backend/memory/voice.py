@@ -175,20 +175,49 @@ def _google(text: str, lang: str) -> Optional[bytes]:
         return None
 
 
-def _speakable(text: str) -> str:
+def _speakable(text: str, lang: str = "") -> str:
     """The message as it should be heard.
 
     A map link went to the voice whole — "https colon slash slash www dot
     google dot com" — and so did the heart at the end. Links and pictographs
     are for the eye; the text on screen keeps them.
+
+    But a link taken out silently left her not knowing there was anything to
+    tap (17 Oct: a chai place, its map link, and the voice said nothing about
+    it). So the voice ends by saying where it is — a map, a video, a link —
+    once, in her language.
     """
     import re
     import unicodedata
-    t = re.sub(r"https?://\S+|www\.\S+", " ", text or "")
+    t = text or ""
+    # [Malnad Chai](https://…) is heard as "Malnad Chai".
+    t = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"\1 ", t)
+    links = re.findall(r"https?://\S+|www\.\S+", text or "")
+    t = re.sub(r"https?://\S+|www\.\S+", " ", t)
+    t = re.sub(r"[*_#`>]+", " ", t)          # markdown marks are for the eye
     t = "".join(c for c in t
                 if unicodedata.category(c) not in ("So", "Cs", "Co")
                 and c not in "\u200d\ufe0f")
-    return re.sub(r"\s+", " ", t).strip()
+    t = re.sub(r"\s+", " ", t).strip()
+    if links:
+        kind = ("map" if any(("google." in l and "/maps" in l) or "maps.google." in l or "maps.app" in l
+                             or "goo.gl/maps" in l for l in links)
+                else "video" if any("youtube.com" in l or "youtu.be" in l for l in links)
+                else "link")
+        english = (lang or "").lower().startswith("en")
+        say = {
+            ("map", False): "Neeche naksha hai, dabaakar dekh lijiye.",
+            ("video", False): "Neeche video hai, dabaakar chala lijiye.",
+            ("link", False): "Neeche link hai, dabaakar dekh lijiye.",
+            ("map", True): "The map is just below. Tap it to open.",
+            ("video", True): "The video is just below. Tap it to play.",
+            ("link", True): "The link is just below. Tap it to open.",
+        }[(kind, english)]
+        t = re.sub(r"\s*[:\-\u2013\u2014]+\s*$", ".", t)   # "…pee sakti hain:" ends the sentence
+        if t and t[-1] not in ".!?\u0964":
+            t += "."
+        t = f"{t} {say}".strip()
+    return t
 
 
 def speak(user_id: str, text: str, intent: str = "",
@@ -199,11 +228,11 @@ def speak(user_id: str, text: str, intent: str = "",
     both providers fail, and the caller shows the text as it always did —
     voice is an addition, never a dependency.
     """
-    text = _speakable(text)
+    speaker, lang = _voice_for(user_id)
+    text = _speakable(text, lang)
     if len(text) < 2:
         return None
 
-    speaker, lang = _voice_for(user_id)
     instruction = tone_for(intent, valence)
 
     audio = _sarvam(text, lang, speaker, instruction)
