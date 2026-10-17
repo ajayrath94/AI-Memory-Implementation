@@ -112,10 +112,16 @@ def get_due_schedule_items(user_id: str, hour: int = None,
     keep = []
     for r in items:
         if isinstance(r, dict) and r.get("type") == "medication":
-            hh, mm = _parse_hhmm(r.get("time_of_day", ""))
-            if hh >= 0:
+            # The items carry "time" (HH:MM) and "delta_min", not the table's
+            # "time_of_day". Reading time_of_day found nothing, so every dose
+            # passed and 17 Oct's tablets still went 44 minutes early.
+            delta = r.get("delta_min")
+            if delta is None:
+                hh, mm = _parse_hhmm(r.get("time") or r.get("time_of_day") or "")
+                delta = (hh * 60 + mm - now_min) if hh >= 0 else None
+            if delta is not None:
                 lead = 0 if "after" in str(r.get("notes") or "").lower() else _MED_LEAD_MIN
-                if now_min < hh * 60 + mm - lead:
+                if delta > lead:
                     continue
         keep.append(r)
     return keep

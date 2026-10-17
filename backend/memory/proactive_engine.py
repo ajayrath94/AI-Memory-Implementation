@@ -259,8 +259,11 @@ def _proactive_check_inner(user_id: str, override_hour: int = None) -> dict:
             d = decision("MEDICATION_REMINDER", "dose_due", pending[0], "high")
             # Which dose, not only which drug. log_decision keys on it, so
             # the evening Metformin is no longer a "duplicate" of the
-            # morning one.
-            d["dose_at"] = next((str(m.get("time_of_day") or "")[:5]
+            # morning one. The due items carry "time", not the table's
+            # "time_of_day": reading time_of_day gave "", both BP doses
+            # shared one key, and on 16 Oct the 20:00 tablet was decided
+            # three times and dropped as a duplicate of the morning one.
+            d["dose_at"] = next((str(m.get("time") or m.get("time_of_day") or "")[:5]
                                  for m in meds
                                  if m.get("label", "dawai") == pending[0]), "")
             return d
