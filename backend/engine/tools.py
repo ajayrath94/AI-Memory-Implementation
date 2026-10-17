@@ -532,8 +532,12 @@ LIST_CLOSE_SCHEMA = {
             "because everything is ticked; she may add more.\n\n"
             "ASK FIRST, and pass what she says as `keep`: rakh lein agli "
             "baar ke liye, ya hata dein? A kept list can be started again "
-            "next time; a dropped one is gone. It is hers to decide, and if "
-            "she does not say, keep it."
+            "next time; a dropped one is gone. It is hers to decide. Leave "
+            "`keep` out until she has answered: the result then says to ask, "
+            "and nothing is closed.\n"
+            "Also for dropping a list she kept earlier ('purani bazar wali "
+            "list hata do'): keep=false with its name or date. If the result "
+            "says not found or asks which, tell her; never say it is gone."
         ),
         "parameters": {
             "type": "object",
@@ -542,7 +546,7 @@ LIST_CLOSE_SCHEMA = {
                     "type": "boolean",
                     "description": (
                         "True to keep it for next time, false to delete it. "
-                        "What SHE said. Default true."
+                        "What SHE said. Leave out if she has not said."
                     ),
                 },
                 "list_name": {"type": "string"},
@@ -626,8 +630,12 @@ def _handle_list_change(args: dict, user_id: str) -> dict:
 
 def _handle_list_close(args: dict, user_id: str) -> dict:
     from memory.lists import close
-    return close(user_id, args.get("list_name") or "",
-                 keep=bool(args.get("keep", True)))
+    # keep left out = her answer is not known: close() returns "ask_first"
+    # and nothing is closed.
+    k = args.get("keep")
+    keep = None if k is None else (k if isinstance(k, bool)
+                                   else str(k).strip().lower() in ("true", "1", "yes"))
+    return close(user_id, args.get("list_name") or "", keep=keep)
 
 
 def _handle_list_reuse(args: dict, user_id: str) -> dict:

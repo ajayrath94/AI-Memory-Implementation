@@ -26,14 +26,20 @@ MUTATING = ("add_to_list", "tick_off_list", "change_list_item",
             "close_list", "reuse_list")
 
 
-def _open_lists(user_id: str) -> List[Dict]:
+def _open_lists(user_id: str, with_kept: bool = False) -> List[Dict]:
     from memory import lists as L
     out = []
-    for lst in L._active(user_id) or []:
+    rows_ = list(L._active(user_id) or [])
+    if with_kept:
+        # Kept lists too: "13 Oct wali list hata di" was said about a kept
+        # one, and the guard, reading open lists only, could not see it.
+        rows_ += [dict(l, _kept=True) for l in (L._kept_rows(user_id, 5) or [])]
+    for lst in rows_:
         rows = L._items_of(lst["id"]) or []
-        out.append({"name": L.key(lst), "items": [
+        out.append({"name": L.key(lst), "kept": bool(lst.get("_kept")), "items": [
             {"what": L._what(r), "done": bool(r.get("done")),
-             "details": {k: v for k, v in (r.get("fields") or {}).items() if k != "what"}}
+             "details": {k: v for k, v in (r.get("fields") or {}).items()
+                         if k != "what" and not str(k).startswith("_")}}
             for r in rows]})
     return out
 
@@ -60,7 +66,7 @@ def _state(lists: List[Dict]) -> str:
         return "(no open lists)"
     lines = []
     for l in lists:
-        lines.append(f"List '{l['name']}':")
+        lines.append(f"List '{l['name']}'" + (" (KEPT: finished, saved for next time)" if l.get("kept") else "") + ":")
         for i in l["items"]:
             d = ", ".join(f"{k}: {v}" for k, v in i["details"].items())
             lines.append(f"  [{'x' if i['done'] else ' '}] {i['what']}" + (f" ({d})" if d else ""))
@@ -81,7 +87,7 @@ The companion replied:
 List tools the companion ran this turn, with results:
 {ran}
 
-Her open lists NOW (after those tools; [x] = crossed off):
+Her lists NOW (after those tools; [x] = crossed off):
 {state}
 
 Does the list match the conversation? It should reflect:
@@ -92,7 +98,9 @@ Does the list match the conversation? It should reflect:
 If something is missing, call the list tools now to make the list match. Rules:
 - Only what she said or agreed to, or what the reply claimed. Never invent items.
 - Something she got is crossed off with tick_off_list ("sab aa gaya" = everything=true), not removed.
-- close_list with keep=false only if she clearly said to drop/delete the list; otherwise keep=true.
+- close_list with keep=false only if she clearly said to drop/delete that list (it may be a KEPT one;
+  name it). keep=true only if she clearly said to keep it. If she asked to close a list but has not
+  said keep or drop, do NOT close it: the companion must ask her first.
 - If a tool above already did it, do not do it again.
 If nothing is missing, call no tool and answer exactly: NONE"""
 
@@ -101,7 +109,7 @@ def check_after_reply(user_id: str, model: str, her_text: str, prev_reply: str,
                       reply: str, tool_results: List[Dict]) -> Optional[List[Dict]]:
     """Returns the fixes made ([] if none, None if the turn wasn't about a list)."""
     try:
-        lists = _open_lists(user_id)
+        lists = _open_lists(user_id, with_kept=True)
     except Exception as e:
         print(f"[Lists] guard: read failed: {e}")
         return None

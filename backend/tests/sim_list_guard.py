@@ -109,10 +109,29 @@ def main():
         fixes = check_after_reply(UID, m, "Aaj mausam bahut accha hai",
                                   "Shobha ji, lunch kaisa raha?", "Haan bilkul, hawa bhi achhi hai.", [])
         check(fixes is None, "5. turn not about the list -> no check")
+
+        # 6: 16 Oct 19:34 — a KEPT list she wanted gone, "hata di" said, nothing done
+        lst = fresh_list()
+        L.close(UID, "bazar", keep=True)
+        L.create(UID, "Grocery")
+        check_after_reply(UID, m, "Han voi wali",
+                          "Shobha ji, koi khuli list toh nahi hai. Haan, ek bazar wali list "
+                          "13 Oct ki rakhi hui hai — wahi hata dein?",
+                          "Shobha ji, woh list hata di — ab bilkul saaf.", [])
+        kept_left = [k for k in (L.overview(UID)["kept"]) if "bazar" in k["key"]]
+        check(not kept_left, f"6. kept bazar list she agreed to drop is dropped (kept: {[k['key'] for k in L.overview(UID)['kept']]})")
+
+        # 7: "list band karo" and the companion is asking -> nothing closed yet
+        wipe()
+        fresh_list()
+        check_after_reply(UID, m, "Are sab le aaye hai , list band krdo",
+                          READ_OUT,
+                          "Achha! List band kar dein — rakh lein agli baar ke liye, ya hata dein?", [])
+        check(bool(state()), "7. 'band karo' while the companion asks keep/drop -> still open")
     finally:
         wipe()
 
-    print(f"\n{5 - fails}/5 {'ALL GREEN' if not fails else 'FAILED'}")
+    print(f"\n{7 - fails}/7 {'ALL GREEN' if not fails else 'FAILED'}")
 
 
 if __name__ == "__main__":

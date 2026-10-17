@@ -641,7 +641,7 @@ def _close_row(lst: Dict, keep: bool) -> None:
         _db().table("lists").delete().eq("id", lst["id"]).execute()
 
 
-def close(user_id: str, list_name: str = "", keep: bool = True) -> Dict:
+def close(user_id: str, list_name: str = "", keep: Optional[bool] = True) -> Dict:
     """Done with. She decides whether it stays.
 
     The companion asks — rakh lein agli baar ke liye, ya hata dein — and
@@ -649,10 +649,36 @@ def close(user_id: str, list_name: str = "", keep: bool = True) -> Dict:
     drop is the worse mistake. A kept list also accumulates a record of an
     elderly woman's errands and her medical questions, which is why she is
     asked rather than it being assumed.
+
+    keep=None means her answer is not known yet: nothing is closed, and the
+    result tells the companion to ask. On 16 Oct "list band krdo" was closed
+    and kept without asking, and she had to ask again to have it dropped.
+
+    Dropping also finds a KEPT list. It only looked at open ones, so "13 Oct
+    wali list hata do" found nothing, the companion said "hata di", and the
+    list was still there the next day.
     """
     lst = _find(user_id, list_name)
+    if not lst and keep is False:
+        kept = _kept_rows(user_id)
+        if list_name:
+            lst = _match(kept, list_name)
+        elif len(kept) == 1:
+            lst = kept[0]
+        elif kept:
+            return {"ok": False, "why": "which kept list?",
+                    "kept_lists": [key(l) for l in kept[:5]],
+                    "say": "Ask her which one; then call again with list_name."}
     if not lst:
-        return {"ok": False, "why": "no list"}
+        return {"ok": False, "why": "no list",
+                "kept_lists": [key(l) for l in _kept_rows(user_id, 5)]}
+    if keep is None:
+        return {"ok": False, "why": "ask_first", "list": key(lst),
+                "say": "Ask her first: rakh lein agli baar ke liye, ya hata dein? "
+                       "Then call close_list again with keep set to her answer. "
+                       "Do not say it is closed."}
+    if keep and lst.get("closed_at"):
+        return {"ok": True, "closed": key(lst), "kept": True, "already": True}
     try:
         _close_row(lst, keep)
         print(f"[Lists] {user_id}: closed {key(lst)!r}"
@@ -854,8 +880,14 @@ def hint(user_id: str) -> str:
     "mil gaya" mid-walk lands on the right thing.
     """
     rows = _active(user_id)
-    if not rows:
+    kept = _kept_rows(user_id, 5)
+    if not rows and not kept:
         return ""
+    if not rows:
+        return ("\n\nHER KEPT LISTS (finished, saved for next time): "
+                + ", ".join(key(l) for l in kept)
+                + ". She can start one again (reuse_list) or drop it "
+                "(close_list keep=false with its name). Do not bring them up.")
     lines = []
     for lst in rows[:5]:
         left = _items_of(lst["id"], include_done=False)
@@ -869,6 +901,9 @@ def hint(user_id: str) -> str:
            "\nDo not read these back unless she asks or it is plainly relevant. "
            "Knowing they are there is the point. Use the list tools for any "
            "change; never claim something is on a list without the tool.")
+    if kept:
+        out += ("\nKept lists (finished, saved): " + ", ".join(key(l) for l in kept)
+                + ". Drop one with close_list keep=false and its name.")
     w = walking(user_id)
     if w:
         out += (f"\n\nSHE IS GOING THROUGH '{w['list']}' ONE THING AT A TIME. "
