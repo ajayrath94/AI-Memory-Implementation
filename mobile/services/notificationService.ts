@@ -3,6 +3,7 @@ import { Platform } from 'react-native'
 import Constants from 'expo-constants'
 import { API_BASE } from '../constants'
 import { getAuthHeaders } from './authService'
+import { speak, enqueue, prefetch, pruneVoices, getPreference, wasJustSpoken } from './voiceService'
 
 // Show notifications even when the app is foregrounded.
 Notifications.setNotificationHandler({
@@ -22,10 +23,29 @@ Notifications.setNotificationHandler({
  * responded to was gone. The message itself is written to her session when
  * pushed, so the chat already contains it by the time she arrives.
  */
-Notifications.addNotificationResponseReceivedListener(response => {
+function _userId(): string {
   try {
-    const data = response.notification.request.content.data as any
-    console.log('[notif] tapped', data?.type || 'unknown')
+    const { useAppStore } = require('../store/appStore')
+    return useAppStore.getState().userId || 'default'
+  } catch { return 'default' }
+}
+
+/** A reminder's words, from a notification — local alert or server push. */
+function _reminderText(n: Notifications.Notification): string | null {
+  const c = n.request.content
+  const data = (c.data || {}) as any
+  const isReminder = data.kind === 'reminder' || data.kind === 'calendar' || data.kind === 'user'
+                     || data.type === 'reminder' || !!data.reminderId || !!data.reminder_id
+  return isReminder ? (c.body || null) : null
+}
+
+let _handled = ''
+async function _onOpened(response: Notifications.NotificationResponse) {
+  const id = response.notification.request.identifier
+  if (id && id === _handled) return            // cold start: listener and last-response both fire
+  _handled = id
+  try {
+    console.log('[notif] tapped', (response.notification.request.content.data as any)?.type || 'unknown')
     // expo-router is imported lazily: this module is loaded before the router
     // is ready, and importing it at the top throws on a cold start.
     const { router } = require('expo-router')
@@ -33,6 +53,44 @@ Notifications.addNotificationResponseReceivedListener(response => {
   } catch (e) {
     console.log('[notif] tap handling failed', e)
   }
+  // She tapped a reminder: say it. From the voice kept on the phone when it
+  // was scheduled, so it speaks without internet too. Always — tapping it is
+  // her asking, whatever the chat's playback setting.
+  const text = _reminderText(response.notification)
+  if (text && !wasJustSpoken(text)) {
+    setTimeout(() => { speak(text, { userId: _userId(), intent: 'reminder' }) }, 700)
+  }
+}
+
+/**
+ * Tapping a notification opens the conversation, and a reminder is spoken.
+ *
+ * Nothing handled taps at all, so a message she had just read on the lock
+ * screen led nowhere — the app opened wherever it had been, and the thing she
+ * responded to was gone. The message itself is written to her session when
+ * pushed, so the chat already contains it by the time she arrives.
+ */
+Notifications.addNotificationResponseReceivedListener(r => { _onOpened(r) })
+
+// A tap that STARTED the app can arrive before the listener exists.
+setTimeout(() => {
+  Notifications.getLastNotificationResponseAsync()
+    .then(r => {
+      if (r && Date.now() - r.notification.date < 5 * 60 * 1000) _onOpened(r)
+    })
+    .catch(() => {})
+}, 1500)
+
+// A reminder that rings while she is in the app is read out straight away
+// (after anything already being read), unless she has turned voice off.
+Notifications.addNotificationReceivedListener(async n => {
+  const text = _reminderText(n)
+  if (!text || wasJustSpoken(text)) return
+  try {
+    const p = await getPreference(_userId())
+    if (p.playback === 'off') return
+  } catch {}
+  enqueue(text, { userId: _userId(), intent: 'reminder' })
 })
 
 let _permissionAsked = false
@@ -129,6 +187,10 @@ export async function scheduleReminderNudges(
   }
   console.log(`[notif] scheduled ${scheduled} nudge(s) for "${reminder.what}"`)
   if (scheduled > 0) await markOnDevice([reminder.id])
+  // Its voice, kept now while she is online, so the tap speaks offline.
+  for (const n of reminder.nudges) {
+    if (new Date(n.at).getTime() > now) prefetch(n.message, { userId: _userId() }).catch(() => {})
+  }
   return scheduled
 }
 
@@ -165,6 +227,7 @@ export async function syncReminderNotifications(
     const now = Date.now()
     let scheduled = 0
     const onPhone: string[] = []
+    const words: string[] = []
 
     for (const r of upcoming) {
       const before = scheduled
@@ -177,6 +240,7 @@ export async function syncReminderNotifications(
       for (const p of points) {
         const when = new Date(p.at).getTime()
         if (isNaN(when) || when <= now) continue
+        words.push(p.message)
         try {
           await Notifications.scheduleNotificationAsync({
             content: {
@@ -199,6 +263,9 @@ export async function syncReminderNotifications(
     }
     console.log(`[notif] synced ${scheduled} notification(s) from ${upcoming.length} reminders`)
     await markOnDevice(onPhone)
+    // The voices for what is coming, kept on the phone; the rest let go.
+    pruneVoices(words).catch(() => {})
+    for (const w of words) prefetch(w, { userId }).catch(() => {})
     return scheduled
   } catch (e) {
     console.error('[notif] sync failed', e)
@@ -208,9 +275,10 @@ export async function syncReminderNotifications(
 
 /** A warm, simple notification message for a reminder with no pre-written nudge. */
 function reminderMessage(r: { what: string; source?: string }): string {
-  const what = r.what || 'Reminder'
-  if (r.source === 'calendar') return `Yaad hai na? ${what} aaj hai.`
-  return `Yaad dila rahi hoon: ${what}`
+  // The same words the server writes into her chat when it fires
+  // (reminder_engine.fire_due), so a reminder spoken on her tap is known
+  // when the chat shows it, and is not read out twice.
+  return `Yaad dila rahi hoon: ${r.what || 'Reminder'}`
 }
 
 /**

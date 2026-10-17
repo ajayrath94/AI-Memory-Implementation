@@ -271,7 +271,10 @@ def get_due_reminders(limit: int = 50) -> list:
                     print(f"[Reminder] mark-missed failed: {e}")
                 continue
             if at <= now:
-                out.append({"reminder": r, "nudge_index": 0, "message": r.get("what")})
+                # The phone's own alert says exactly this (notificationService
+                # reminderMessage), so the chat line and the alert match.
+                out.append({"reminder": r, "nudge_index": 0,
+                            "message": f"Yaad dila rahi hoon: {r.get('what') or 'Reminder'}"})
             continue
         for i, n in enumerate(nudges):
             if n.get("fired"):
@@ -452,6 +455,17 @@ def fire_due(tag: str = "Reminder") -> list:
                               body=msg, data={"type": "reminder", "reminder_id": rem["id"]})
                 except Exception as pe:
                     print(f"[{tag}] push failed for {rem.get('id')}: {pe}")
+            # Into her chat too. A reminder lived only as an alert: she tapped
+            # it, the app opened on a chat without it, nothing was read out,
+            # and Nancy never knew she had reminded her — so "haan, chali
+            # gayi" had nothing to answer. The phone matches these words to
+            # what it already spoke, so it is not read twice.
+            try:
+                from supabase_store import session_for, save_message
+                sess = session_for(rem["user_id"])
+                save_message(sess["id"], "assistant", msg, "reminder")
+            except Exception as se:
+                print(f"[{tag}] chat write failed: {se}")
             print(f"[{tag}] fired nudge for {rem.get('what')} ({rem['user_id']}) by {by}")
             fired.append({"user_id": rem["user_id"], "what": rem.get("what"),
                           "message": msg, "delivered_by": by})

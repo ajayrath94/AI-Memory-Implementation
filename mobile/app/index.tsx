@@ -15,7 +15,7 @@ import { syncLocation } from '../services/locationService'
 import { useChat } from '../hooks/useChat'
 import { useT } from '../hooks/useT'
 import { MessageBubble } from '../components/chat/MessageBubble'
-import { speak, stop as stopVoice, getPreference, onPlayingChange, type Playback } from '../services/voiceService'
+import { speak, enqueue, wasJustSpoken, stop as stopVoice, getPreference, onPlayingChange, type Playback } from '../services/voiceService'
 import { ChatInput } from '../components/chat/ChatInput'
 import { ToolStrip } from '../components/chat/ToolStrip'
 
@@ -74,19 +74,30 @@ export default function ChatScreen() {
       .catch(() => {})
   }, [userId])
 
-  // Speak a new arrival, when she has asked for that. Only the newest, and
-  // only once: auto-play is for the message that just came in, not for the
-  // conversation she is scrolling back through.
+  // Speak new arrivals, when she has asked for that.
+  //
+  // Opening the app reads only the newest message, not the history. After
+  // that, every new Nancy message is read, in order — two that arrive
+  // together are queued, not spoken on top of each other (they were). A
+  // message already spoken a moment ago — a reminder she tapped, which the
+  // server also writes into the chat — is not read again.
   useEffect(() => {
     if (playback !== 'auto' || !messages.length) return
     const last = messages[messages.length - 1]
-    if (!last || last.role !== 'assistant') return
-    if (spokenRef.current === last.id) return
-    // An offer waits to be asked for, unless she has said otherwise.
-    const isOffer = /youtube\.com\/watch/.test(last.content)
-    if (isOffer && !speakOffers) { spokenRef.current = last.id; return }
+    if (!last) return
+    const seenAt = spokenRef.current
+      ? messages.findIndex(m => m.id === spokenRef.current) : -1
+    const fresh = seenAt >= 0
+      ? messages.slice(seenAt + 1)
+      : [last]                                  // first look: the newest only
     spokenRef.current = last.id
-    speak(last.content, { id: last.id, userId })
+    for (const m of fresh) {
+      if (m.role !== 'assistant') continue
+      // An offer waits to be asked for, unless she has said otherwise.
+      if (/youtube\.com\/watch/.test(m.content) && !speakOffers) continue
+      if (wasJustSpoken(m.content)) continue
+      enqueue(m.content, { id: m.id, userId })
+    }
   }, [messages, playback, speakOffers, userId])
 
   // A voice still talking about the last thing while she writes the next is
